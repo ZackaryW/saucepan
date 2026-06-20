@@ -78,6 +78,16 @@ Re-clone and refresh the index entry. Local sauces do not support update.
 saucepan . update owner/my-tool
 ```
 
+### `path <name>`
+
+Print the on-disk directory path of an installed sauce. Designed for shell composition — outputs a bare path with no decoration.
+
+```
+saucepan . path owner/my-tool
+```
+
+Exit 1 if the sauce is not installed. The path is always the cloned repo root, so any file inside it can be reached with normal path arithmetic.
+
 ### `list [--json]`
 
 Show installed sauces.
@@ -189,6 +199,9 @@ Directory names under `github/` use `--` as a separator for `/` so `owner/repo` 
 saucepan is designed to be called from other tools. The `--json` flag and `cat` subcommand exist specifically for this use case; exit codes are stable and suitable for shell conditionals.
 
 ```bash
+# Resolve the artifact path and use it directly
+cp "$(saucepan /workspace path owner/my-tool)/build/output.bin" /usr/local/bin/
+
 # Get the version of an installed sauce
 saucepan /workspace cat sauce owner/my-tool 2>/dev/null | jq -r .sauce.version
 
