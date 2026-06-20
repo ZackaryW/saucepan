@@ -1,0 +1,97 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    name: macOS (${{ matrix.target }})
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        target:
+          - x86_64-apple-darwin
+          - aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: saucepan-${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/saucepan
+
+  macos-universal:
+    name: macOS Universal
+    needs: build-macos
+    runs-on: macos-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: saucepan-x86_64-apple-darwin
+          path: x86_64
+      - uses: actions/download-artifact@v4
+        with:
+          name: saucepan-aarch64-apple-darwin
+          path: aarch64
+      - name: Create universal binary
+        run: |
+          lipo -create -output saucepan-universal-apple-darwin \
+            x86_64/saucepan \
+            aarch64/saucepan
+          chmod +x saucepan-universal-apple-darwin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: saucepan-universal-apple-darwin
+          path: saucepan-universal-apple-darwin
+
+  build-windows:
+    name: Windows (${{ matrix.target }})
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        target:
+          - x86_64-pc-windows-msvc
+          - aarch64-pc-windows-msvc
+          - i686-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: saucepan-${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/saucepan.exe
+
+  release:
+    name: Create Release
+    needs: [build-macos, macos-universal, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Stage release assets
+        run: |
+          mkdir dist
+          cp artifacts/saucepan-x86_64-apple-darwin/saucepan              dist/saucepan-x86_64-apple-darwin
+          cp artifacts/saucepan-aarch64-apple-darwin/saucepan             dist/saucepan-aarch64-apple-darwin
+          cp artifacts/saucepan-universal-apple-darwin/saucepan-universal-apple-darwin dist/saucepan-universal-apple-darwin
+          cp artifacts/saucepan-x86_64-pc-windows-msvc/saucepan.exe      dist/saucepan-x86_64-pc-windows-msvc.exe
+          cp artifacts/saucepan-aarch64-pc-windows-msvc/saucepan.exe     dist/saucepan-aarch64-pc-windows-msvc.exe
+          cp artifacts/saucepan-i686-pc-windows-msvc/saucepan.exe        dist/saucepan-i686-pc-windows-msvc.exe
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
