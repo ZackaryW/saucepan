@@ -31,6 +31,8 @@ enum Cmd {
     Update { name: String },
     /// List installed sauces
     List,
+    /// Print the on-disk path of an installed sauce
+    Path { name: String },
     /// Search buckets with a jq filter
     Search { filter: String },
     /// Manage registered buckets
@@ -91,6 +93,7 @@ fn run() -> Result<()> {
         Cmd::Install { name } => commands::install::install(root, name, &config),
         Cmd::Update { name } => commands::update::update(root, name, &config),
         Cmd::List => commands::list::list(root, json),
+        Cmd::Path { name } => commands::path::path(root, name),
         Cmd::Search { filter } => commands::search::search(root, filter, &config),
         Cmd::Bucket { action } => match action {
             BucketAction::Add { url } => commands::bucket::add(root, url),

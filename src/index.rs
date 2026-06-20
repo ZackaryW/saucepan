@@ -1,11 +1,12 @@
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::bucket::{BucketEntry, BucketRegistry};
 use crate::error::Conflict;
 use crate::sauce::Sauce;
 use crate::utils::fs::atomic_write;
+use crate::utils::naming::repo_dir;
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -28,6 +29,20 @@ impl IndexEntry {
 
     pub fn name(&self) -> &str {
         &self.sauce().name
+    }
+
+    /// Resolve the on-disk path where this entry's artifact lives.
+    ///
+    /// For `Local` entries the stored path is returned as-is.
+    /// For `Github` and `Customgit` the path is derived from `root` using the
+    /// same formula as `fetch_sauce`, so this is always consistent with what
+    /// was cloned.
+    pub fn artifact_path(&self, root: &Path) -> PathBuf {
+        match self {
+            Self::Local { path, .. } => PathBuf::from(path),
+            Self::Github { repo, .. } => root.join("github").join(repo_dir(repo)),
+            Self::Customgit { sauce, .. } => root.join("customgit").join(repo_dir(&sauce.name)),
+        }
     }
 }
 
