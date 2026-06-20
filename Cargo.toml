@@ -1,6 +1,6 @@
 [package]
 name = "saucepan"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "Composable multi-source artifact resolver — install sauce manifests from local, GitHub, or custom Git sources"
 license = "MIT"
