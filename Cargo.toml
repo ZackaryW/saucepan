@@ -2,6 +2,17 @@
 name = "saucepan"
 version = "0.1.0"
 edition = "2024"
+description = "Composable multi-source artifact resolver — install sauce manifests from local, GitHub, or custom Git sources"
+license = "MIT"
+repository = "https://github.com/ZackaryW/saucepan"
+keywords = ["artifact", "package-manager", "git", "middleware", "cli"]
+categories = ["command-line-utilities", "development-tools"]
+readme = "README.md"
+exclude = [
+    "playground/",
+    ".cc-history/",
+    "features/",
+]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
