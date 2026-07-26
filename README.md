@@ -40,7 +40,7 @@ jq = "/usr/local/bin/jq"
 # Enable GitHub source
 [github]
 binary = "git"          # or "gh" for GitHub CLI
-token  = ""             # optional
+token  = ""             # optional with gh; raw git uses native credentials
 manifest = "sauce.json" # default; name of the manifest file in each repo
 
 # Enable a custom Git server
@@ -60,33 +60,55 @@ When `install` is called, sources are tried in order: `github` then `customgit`.
 saucepan <root> [--json] <command>
 ```
 
-### `install <name>`
+### `install <target> [--ref <ref>]`
 
-Fetch and record a sauce. For `github`, `<name>` is `owner/repo`. For `customgit`, `<name>` is appended to the configured base URL.
+Fetch and record a sauce. For `github`, `<target>` may be `owner/repo`, an explicit Git URL, or a filesystem path. Raw `git` expands a strict `owner/repo` target to `https://github.com/owner/repo.git`; `gh` accepts the slug directly. For `customgit`, `<target>` is appended to the configured base URL.
 
 ```
 saucepan . install owner/my-tool
+saucepan . install owner/my-tool --ref v1.2.0
 ```
 
-Exit 1 if no source can satisfy the name. Exit 4 if the same name is already installed from a different source type (uninstall first).
+`--ref` accepts a branch, tag, or commit. Saucepan records both the requested ref and resolved commit. Without `--ref`, installation follows the repository default branch as before.
+
+After installation, commands address the sauce by the `name` declared in its manifest, which may differ from the repository target. Exit 1 if no source can satisfy the target. Exit 4 if the manifest name is already installed from a different source type or origin (uninstall first).
 
 ### `update <name>`
 
 Re-clone and refresh the index entry. Local sauces do not support update.
 
 ```
-saucepan . update owner/my-tool
+saucepan . update my-tool
 ```
+
+An installation with a stored ref resolves the same ref again: branches can advance, tags resolve to their tagged commit, and commit SHAs remain pinned.
 
 ### `path <name>`
 
 Print the on-disk directory path of an installed sauce. Designed for shell composition — outputs a bare path with no decoration.
 
 ```
-saucepan . path owner/my-tool
+saucepan . path my-tool
 ```
 
 Exit 1 if the sauce is not installed. The path is always the cloned repo root, so any file inside it can be reached with normal path arithmetic.
+
+### `uninstall <name>`
+
+Remove an installed sauce by its manifest name.
+
+```
+saucepan . uninstall my-tool
+```
+
+GitHub and custom-Git checkouts are deleted only from their Saucepan-managed workspace directories. Local entries are removed from the index without deleting their source paths. Exit 1 if the sauce is not installed.
+
+### Private repositories
+
+- With `binary = "gh"`, an optional configured `token` is supplied as `GITHUB_TOKEN`.
+- With `binary = "git"`, authentication comes from native Git Credential Manager, an SSH agent, or existing Git configuration. A configured `token` is ignored with a warning for backward compatibility.
+
+Saucepan does not place tokens in clone URLs, generate askpass scripts, or modify global Git configuration.
 
 ### `list [--json]`
 
@@ -182,6 +204,8 @@ An array of stubs. The `url` field is informational; saucepan does not fetch fro
 ```
 
 Directory names under `github/` use `--` as a separator for `/` so `owner/repo` and `owner_repo` never collide.
+
+GitHub index entries written by newer versions may also contain optional `reference` and `resolved_commit` fields. Existing entries without these fields remain valid.
 
 ## Exit codes
 
