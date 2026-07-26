@@ -26,9 +26,16 @@ struct Cli {
 #[derive(Subcommand)]
 enum Cmd {
     /// Install a sauce by name
-    Install { name: String },
+    Install {
+        name: String,
+        /// Git branch, tag, or commit to install
+        #[arg(long = "ref")]
+        reference: Option<String>,
+    },
     /// Update an installed sauce
     Update { name: String },
+    /// Remove an installed sauce
+    Uninstall { name: String },
     /// List installed sauces
     List,
     /// Print the on-disk path of an installed sauce
@@ -90,8 +97,11 @@ fn run() -> Result<()> {
     let json = cli.json;
 
     match &cli.command {
-        Cmd::Install { name } => commands::install::install(root, name, &config),
+        Cmd::Install { name, reference } => {
+            commands::install::install(root, name, reference.as_deref(), &config)
+        }
         Cmd::Update { name } => commands::update::update(root, name, &config),
+        Cmd::Uninstall { name } => commands::uninstall::uninstall(root, name),
         Cmd::List => commands::list::list(root, json),
         Cmd::Path { name } => commands::path::path(root, name),
         Cmd::Search { filter } => commands::search::search(root, filter, &config),

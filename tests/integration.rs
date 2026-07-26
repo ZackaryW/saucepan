@@ -243,6 +243,7 @@ fn install_no_sources_errors() {
         .args(["install", "my-lib"])
         .assert()
         .failure()
+        .code(3)
         .stderr(contains("no sources enabled"));
 }
 
@@ -321,6 +322,28 @@ fn default_sauce_json() -> &'static str {
     r#"{"name":"my-lib","version":"1.0.0","description":"A test sauce"}"#
 }
 
+fn git_in(repo: &TempDir, args: &[&str]) -> String {
+    let output = std::process::Command::new("git")
+        .args(args)
+        .current_dir(repo.path())
+        .env("GIT_AUTHOR_NAME", "test").env("GIT_AUTHOR_EMAIL", "test@test.com")
+        .env("GIT_COMMITTER_NAME", "test").env("GIT_COMMITTER_EMAIL", "test@test.com")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "git {:?} failed: {}", args, String::from_utf8_lossy(&output.stderr));
+    String::from_utf8(output.stdout).unwrap().trim().to_string()
+}
+
+fn commit_manifest(repo: &TempDir, version: &str) -> String {
+    fs::write(
+        repo.path().join("sauce.json"),
+        format!(r#"{{"name":"my-lib","version":"{version}","description":"A test sauce"}}"#),
+    ).unwrap();
+    git_in(repo, &["add", "sauce.json"]);
+    git_in(repo, &["commit", "-m", &format!("version {version}")]);
+    git_in(repo, &["rev-parse", "HEAD"])
+}
+
 // ── install: github source ────────────────────────────────────────────────────
 
 #[test]
@@ -361,6 +384,93 @@ fn install_github_writes_index_entry() {
 }
 
 #[test]
+fn install_github_records_default_branch_commit() {
+    if !which_git() { return; }
+    let workspace = TempDir::new().unwrap();
+    let repo = make_git_repo("sauce.json", default_sauce_json());
+    let expected = git_in(&repo, &["rev-parse", "HEAD"]);
+    write_config(&workspace, "[github]\nbinary = \"git\"\n");
+
+    saucepan(&workspace)
+        .args(["install", repo.path().to_str().unwrap()])
+        .assert()
+        .success();
+
+    let idx: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(workspace.path().join(".saucepan/index.json")).unwrap()
+    ).unwrap();
+    assert_eq!(idx[0]["resolved_commit"], expected);
+    assert!(idx[0].get("reference").is_none());
+}
+
+#[test]
+fn install_github_branch_ref_records_branch_head() {
+    if !which_git() { return; }
+    let workspace = TempDir::new().unwrap();
+    let repo = make_git_repo("sauce.json", default_sauce_json());
+    git_in(&repo, &["checkout", "-b", "feature"]);
+    let expected = commit_manifest(&repo, "2.0.0");
+    write_config(&workspace, "[github]\nbinary = \"git\"\n");
+
+    saucepan(&workspace)
+        .args(["install", repo.path().to_str().unwrap(), "--ref", "feature"])
+        .assert()
+        .success();
+
+    let idx: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(workspace.path().join(".saucepan/index.json")).unwrap()
+    ).unwrap();
+    assert_eq!(idx[0]["reference"], "feature");
+    assert_eq!(idx[0]["resolved_commit"], expected);
+    assert_eq!(idx[0]["sauce"]["version"], "2.0.0");
+}
+
+#[test]
+fn install_github_tag_ref_reads_tagged_manifest() {
+    if !which_git() { return; }
+    let workspace = TempDir::new().unwrap();
+    let repo = make_git_repo("sauce.json", default_sauce_json());
+    let expected = git_in(&repo, &["rev-parse", "HEAD"]);
+    git_in(&repo, &["tag", "v1.0.0"]);
+    commit_manifest(&repo, "2.0.0");
+    write_config(&workspace, "[github]\nbinary = \"git\"\n");
+
+    saucepan(&workspace)
+        .args(["install", repo.path().to_str().unwrap(), "--ref", "v1.0.0"])
+        .assert()
+        .success();
+
+    let idx: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(workspace.path().join(".saucepan/index.json")).unwrap()
+    ).unwrap();
+    assert_eq!(idx[0]["reference"], "v1.0.0");
+    assert_eq!(idx[0]["resolved_commit"], expected);
+    assert_eq!(idx[0]["sauce"]["version"], "1.0.0");
+}
+
+#[test]
+fn install_github_commit_ref_reads_pinned_manifest() {
+    if !which_git() { return; }
+    let workspace = TempDir::new().unwrap();
+    let repo = make_git_repo("sauce.json", default_sauce_json());
+    let expected = git_in(&repo, &["rev-parse", "HEAD"]);
+    commit_manifest(&repo, "2.0.0");
+    write_config(&workspace, "[github]\nbinary = \"git\"\n");
+
+    saucepan(&workspace)
+        .args(["install", repo.path().to_str().unwrap(), "--ref", &expected])
+        .assert()
+        .success();
+
+    let idx: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(workspace.path().join(".saucepan/index.json")).unwrap()
+    ).unwrap();
+    assert_eq!(idx[0]["reference"], expected);
+    assert_eq!(idx[0]["resolved_commit"], expected);
+    assert_eq!(idx[0]["sauce"]["version"], "1.0.0");
+}
+
+#[test]
 fn install_github_custom_manifest_name() {
     if !which_git() { return; }
     let workspace = TempDir::new().unwrap();
@@ -388,7 +498,46 @@ fn install_github_missing_manifest_errors() {
         .args(["install", repo.path().to_str().unwrap()])
         .assert()
         .failure()
+        .code(1)
         .stderr(contains("could not install"));
+}
+
+#[test]
+fn install_backend_launch_failure_returns_source_error() {
+    let workspace = TempDir::new().unwrap();
+    write_config(&workspace, "[github]\nbinary = \"gh\"\n");
+    let empty_path = workspace.path().join("empty-path");
+    fs::create_dir(&empty_path).unwrap();
+
+    saucepan(&workspace)
+        .env("PATH", &empty_path)
+        .args(["install", "owner/repo"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(contains("could not install"))
+        .stderr(contains("github source"));
+}
+
+#[test]
+fn install_falls_back_from_github_to_customgit() {
+    if !which_git() { return; }
+    let workspace = TempDir::new().unwrap();
+    let repo = make_git_repo("sauce.json", default_sauce_json());
+    let base = repo.path().parent().unwrap().to_str().unwrap().replace('\\', "/");
+    let repo_name = repo.path().file_name().unwrap().to_str().unwrap();
+    write_config(
+        &workspace,
+        &format!(
+            "[github]\nbinary = \"git\"\n[customgit]\nurl = \"{base}\"\nbinary = \"git\"\n"
+        ),
+    );
+
+    saucepan(&workspace)
+        .args(["install", repo_name])
+        .assert()
+        .success()
+        .stdout(contains("from customgit"));
 }
 
 // ── install: customgit source ─────────────────────────────────────────────────
@@ -457,6 +606,216 @@ fn update_github_refreshes_index() {
 
     let idx_raw = fs::read_to_string(workspace.path().join(".saucepan/index.json")).unwrap();
     assert!(idx_raw.contains("\"version\": \"2.0.0\""), "index should reflect updated version");
+}
+
+#[test]
+fn install_raw_git_with_token_warns_once_and_uses_native_credentials() {
+    if !which_git() { return; }
+    let workspace = TempDir::new().unwrap();
+    let repo = make_git_repo("sauce.json", default_sauce_json());
+    write_config(&workspace, "[github]\nbinary = \"git\"\ntoken = \"ignored-secret\"\n");
+
+    let output = saucepan(&workspace)
+        .args(["install", repo.path().to_str().unwrap()])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert_eq!(stderr.matches("native Git credentials").count(), 1, "stderr: {stderr}");
+}
+
+#[test]
+fn update_github_branch_ref_advances_and_refreshes_revision() {
+    if !which_git() { return; }
+    let workspace = TempDir::new().unwrap();
+    let repo = make_git_repo("sauce.json", default_sauce_json());
+    git_in(&repo, &["checkout", "-b", "feature"]);
+    write_config(&workspace, "[github]\nbinary = \"git\"\n");
+
+    saucepan(&workspace)
+        .args(["install", repo.path().to_str().unwrap(), "--ref", "feature"])
+        .assert()
+        .success();
+    let expected = commit_manifest(&repo, "2.0.0");
+
+    saucepan(&workspace)
+        .args(["update", "my-lib"])
+        .assert()
+        .success();
+
+    let idx: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(workspace.path().join(".saucepan/index.json")).unwrap()
+    ).unwrap();
+    assert_eq!(idx[0]["reference"], "feature");
+    assert_eq!(idx[0]["resolved_commit"], expected);
+    assert_eq!(idx[0]["sauce"]["version"], "2.0.0");
+}
+
+#[test]
+fn update_github_tag_ref_stays_on_tagged_commit() {
+    if !which_git() { return; }
+    let workspace = TempDir::new().unwrap();
+    let repo = make_git_repo("sauce.json", default_sauce_json());
+    let expected = git_in(&repo, &["rev-parse", "HEAD"]);
+    git_in(&repo, &["tag", "v1.0.0"]);
+    write_config(&workspace, "[github]\nbinary = \"git\"\n");
+
+    saucepan(&workspace)
+        .args(["install", repo.path().to_str().unwrap(), "--ref", "v1.0.0"])
+        .assert()
+        .success();
+    commit_manifest(&repo, "2.0.0");
+
+    saucepan(&workspace)
+        .args(["update", "my-lib"])
+        .assert()
+        .success();
+
+    let idx: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(workspace.path().join(".saucepan/index.json")).unwrap()
+    ).unwrap();
+    assert_eq!(idx[0]["resolved_commit"], expected);
+    assert_eq!(idx[0]["sauce"]["version"], "1.0.0");
+}
+
+#[test]
+fn update_github_commit_ref_remains_pinned() {
+    if !which_git() { return; }
+    let workspace = TempDir::new().unwrap();
+    let repo = make_git_repo("sauce.json", default_sauce_json());
+    let expected = git_in(&repo, &["rev-parse", "HEAD"]);
+    write_config(&workspace, "[github]\nbinary = \"git\"\n");
+
+    saucepan(&workspace)
+        .args(["install", repo.path().to_str().unwrap(), "--ref", &expected])
+        .assert()
+        .success();
+    commit_manifest(&repo, "2.0.0");
+
+    saucepan(&workspace)
+        .args(["update", "my-lib"])
+        .assert()
+        .success();
+
+    let idx: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(workspace.path().join(".saucepan/index.json")).unwrap()
+    ).unwrap();
+    assert_eq!(idx[0]["resolved_commit"], expected);
+    assert_eq!(idx[0]["sauce"]["version"], "1.0.0");
+}
+
+// ── uninstall ────────────────────────────────────────────────────────────────
+
+#[test]
+fn uninstall_github_removes_index_entry_and_managed_checkout() {
+    if !which_git() { return; }
+    let workspace = TempDir::new().unwrap();
+    let repo = make_git_repo("sauce.json", default_sauce_json());
+    write_config(&workspace, "[github]\nbinary = \"git\"\n");
+    saucepan(&workspace)
+        .args(["install", repo.path().to_str().unwrap()])
+        .assert()
+        .success();
+    let checkout = fs::read_dir(workspace.path().join("github"))
+        .unwrap().next().unwrap().unwrap().path();
+
+    saucepan(&workspace)
+        .args(["uninstall", "my-lib"])
+        .assert()
+        .success()
+        .stdout(contains("uninstalled my-lib"));
+
+    assert!(!checkout.exists());
+    assert_eq!(fs::read_to_string(workspace.path().join(".saucepan/index.json")).unwrap(), "[]");
+}
+
+#[test]
+fn uninstall_customgit_removes_index_entry_and_managed_checkout() {
+    if !which_git() { return; }
+    let workspace = TempDir::new().unwrap();
+    let repo = make_git_repo("sauce.json", default_sauce_json());
+    let base = repo.path().parent().unwrap().to_str().unwrap().replace('\\', "/");
+    let repo_name = repo.path().file_name().unwrap().to_str().unwrap();
+    write_config(&workspace, &format!("[customgit]\nurl = \"{base}\"\nbinary = \"git\"\n"));
+    saucepan(&workspace)
+        .args(["install", repo_name])
+        .assert()
+        .success();
+    let checkout = fs::read_dir(workspace.path().join("customgit"))
+        .unwrap().next().unwrap().unwrap().path();
+
+    saucepan(&workspace)
+        .args(["uninstall", "my-lib"])
+        .assert()
+        .success();
+
+    assert!(!checkout.exists());
+    assert_eq!(fs::read_to_string(workspace.path().join(".saucepan/index.json")).unwrap(), "[]");
+}
+
+#[test]
+fn uninstall_local_removes_only_index_entry() {
+    let workspace = TempDir::new().unwrap();
+    let local = TempDir::new().unwrap();
+    write_config(&workspace, "[local]\n");
+    write_file(
+        &workspace,
+        ".saucepan/index.json",
+        &format!(
+            r#"[{{"source_type":"local","path":"{}","sauce":{{"name":"my-lib","version":"1.0.0","description":"desc"}}}}]"#,
+            local.path().to_str().unwrap().replace('\\', "\\\\")
+        ),
+    );
+
+    saucepan(&workspace)
+        .args(["uninstall", "my-lib"])
+        .assert()
+        .success();
+
+    assert!(local.path().exists());
+    assert_eq!(fs::read_to_string(workspace.path().join(".saucepan/index.json")).unwrap(), "[]");
+}
+
+#[test]
+fn uninstall_missing_managed_checkout_removes_stale_entry() {
+    if !which_git() { return; }
+    let workspace = TempDir::new().unwrap();
+    let repo = make_git_repo("sauce.json", default_sauce_json());
+    write_config(&workspace, "[github]\nbinary = \"git\"\n");
+    saucepan(&workspace)
+        .args(["install", repo.path().to_str().unwrap()])
+        .assert()
+        .success();
+    fs::remove_dir_all(workspace.path().join("github")).unwrap();
+
+    saucepan(&workspace)
+        .args(["uninstall", "my-lib"])
+        .assert()
+        .success();
+
+    assert_eq!(fs::read_to_string(workspace.path().join(".saucepan/index.json")).unwrap(), "[]");
+}
+
+#[test]
+fn uninstall_unknown_returns_not_found_and_preserves_index() {
+    let workspace = TempDir::new().unwrap();
+    write_config(&workspace, "[local]\n");
+    write_file(
+        &workspace,
+        ".saucepan/index.json",
+        r#"[{"source_type":"local","path":"/fake","sauce":{"name":"existing","version":"1.0.0","description":"desc"}}]"#,
+    );
+    let before = fs::read_to_string(workspace.path().join(".saucepan/index.json")).unwrap();
+
+    saucepan(&workspace)
+        .args(["uninstall", "missing"])
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(contains("not installed"));
+
+    assert_eq!(fs::read_to_string(workspace.path().join(".saucepan/index.json")).unwrap(), before);
 }
 
 // ── search: custom jq path ────────────────────────────────────────────────────

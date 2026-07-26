@@ -19,6 +19,12 @@ Feature: Update an installed sauce
     Then .saucepan/index.json reflects the new version
     And stdout contains "updated"
 
+  Scenario: Update a github sauce resolves its stored ref
+    Given the sauce is installed from github with branch, tag, or commit <ref>
+    When I run update <name>
+    Then the same requested ref is resolved again
+    And .saucepan/index.json contains the resolved commit and refreshed manifest
+
   Scenario: Update a customgit sauce pulls latest and refreshes index
     Given the sauce is installed from customgit source
     When I run update <name>

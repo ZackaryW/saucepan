@@ -13,9 +13,22 @@ use crate::utils::naming::repo_dir;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "source_type", rename_all = "lowercase")]
 pub enum IndexEntry {
-    Local { path: String, sauce: Sauce },
-    Github { repo: String, sauce: Sauce },
-    Customgit { url: String, sauce: Sauce },
+    Local {
+        path: String,
+        sauce: Sauce,
+    },
+    Github {
+        repo: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reference: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        resolved_commit: Option<String>,
+        sauce: Sauce,
+    },
+    Customgit {
+        url: String,
+        sauce: Sauce,
+    },
 }
 
 impl IndexEntry {
@@ -41,7 +54,34 @@ impl IndexEntry {
         match self {
             Self::Local { path, .. } => PathBuf::from(path),
             Self::Github { repo, .. } => root.join("github").join(repo_dir(repo)),
-            Self::Customgit { sauce, .. } => root.join("customgit").join(repo_dir(&sauce.name)),
+            Self::Customgit { url, .. } => {
+                let dir_name = url.rsplit('/').next().unwrap_or(url);
+                root.join("customgit").join(repo_dir(dir_name))
+            }
+        }
+    }
+
+    fn same_source_type(&self, other: &Self) -> bool {
+        matches!(
+            (self, other),
+            (Self::Local { .. }, Self::Local { .. })
+                | (Self::Github { .. }, Self::Github { .. })
+                | (Self::Customgit { .. }, Self::Customgit { .. })
+        )
+    }
+
+    fn same_origin(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Local { path: left, .. }, Self::Local { path: right, .. }) => left == right,
+            (
+                Self::Github { repo: left, .. },
+                Self::Github { repo: right, .. },
+            ) => left == right,
+            (
+                Self::Customgit { url: left, .. },
+                Self::Customgit { url: right, .. },
+            ) => left == right,
+            _ => false,
         }
     }
 }
@@ -84,9 +124,18 @@ pub fn save_index(root: &Path, index: &LocalIndex) -> Result<()> {
 /// preventing silent cross-source overwrites.
 pub fn upsert(index: &mut LocalIndex, entry: IndexEntry) -> Result<()> {
     if let Some(pos) = index.iter().position(|e| e.name() == entry.name()) {
-        if std::mem::discriminant(&index[pos]) != std::mem::discriminant(&entry) {
+        if !index[pos].same_source_type(&entry) {
             return Err(Conflict(format!(
                 "sauce '{}' is already installed from a different source type; \
+                 run `saucepan <root> uninstall {}` first",
+                entry.name(),
+                entry.name()
+            ))
+            .into());
+        }
+        if !index[pos].same_origin(&entry) {
+            return Err(Conflict(format!(
+                "sauce '{}' is already installed from a different origin; \
                  run `saucepan <root> uninstall {}` first",
                 entry.name(),
                 entry.name()
@@ -161,7 +210,10 @@ mod tests {
     #[test]
     fn save_and_load_roundtrip() {
         let dir = TempDir::new().unwrap();
-        let entry = IndexEntry::Local { path: "/fake".to_string(), sauce: make_sauce("my-lib", "1.0.0") };
+        let entry = IndexEntry::Local {
+            path: "/fake".to_string(),
+            sauce: make_sauce("my-lib", "1.0.0"),
+        };
         save_index(dir.path(), &vec![entry]).unwrap();
         let loaded = load_index(dir.path()).unwrap();
         assert_eq!(loaded.len(), 1);
@@ -177,17 +229,68 @@ mod tests {
     }
 
     #[test]
+    fn legacy_github_entry_deserializes_without_revision_metadata() {
+        let raw = r#"{"source_type":"github","repo":"owner/repo","sauce":{"name":"a","version":"1.0","description":"test"}}"#;
+        let entry: IndexEntry = serde_json::from_str(raw).unwrap();
+
+        match entry {
+            IndexEntry::Github {
+                repo,
+                reference,
+                resolved_commit,
+                sauce,
+            } => {
+                assert_eq!(repo, "owner/repo");
+                assert_eq!(sauce.name, "a");
+                assert!(reference.is_none());
+                assert!(resolved_commit.is_none());
+            }
+            _ => panic!("expected github entry"),
+        }
+    }
+
+    fn make_github(repo: &str, name: &str, version: &str) -> IndexEntry {
+        IndexEntry::Github {
+            repo: repo.to_string(),
+            reference: None,
+            resolved_commit: None,
+            sauce: make_sauce(name, version),
+        }
+    }
+
+    #[test]
+    fn absent_github_revision_metadata_is_omitted_when_serialized() {
+        let entry = IndexEntry::Github {
+            repo: "owner/repo".to_string(),
+            reference: None,
+            resolved_commit: None,
+            sauce: make_sauce("a", "1.0"),
+        };
+
+        let raw = serde_json::to_string(&entry).unwrap();
+        assert!(!raw.contains("reference"));
+        assert!(!raw.contains("resolved_commit"));
+    }
+
+    #[test]
     fn upsert_adds_new_entry() {
         let mut idx = vec![];
-        upsert(&mut idx, IndexEntry::Local { path: "/a".to_string(), sauce: make_sauce("a", "1.0") }).unwrap();
+        upsert(
+            &mut idx,
+            IndexEntry::Local {
+                path: "/a".to_string(),
+                sauce: make_sauce("a", "1.0"),
+            },
+        )
+        .unwrap();
         assert_eq!(idx.len(), 1);
     }
 
     #[test]
     fn upsert_replaces_same_source_type() {
         let mut idx = vec![];
-        upsert(&mut idx, IndexEntry::Github { repo: "r".to_string(), sauce: make_sauce("a", "1.0") }).unwrap();
-        upsert(&mut idx, IndexEntry::Github { repo: "r".to_string(), sauce: make_sauce("a", "2.0") }).unwrap();
+        upsert(&mut idx, make_github("r", "a", "1.0")).unwrap();
+        upsert(&mut idx, make_github("r", "a", "2.0")).unwrap();
         assert_eq!(idx.len(), 1);
         assert_eq!(idx[0].sauce().version, "2.0");
     }
@@ -195,18 +298,70 @@ mod tests {
     #[test]
     fn upsert_errors_on_source_type_conflict() {
         let mut idx = vec![];
-        upsert(&mut idx, IndexEntry::Local { path: "/a".to_string(), sauce: make_sauce("a", "1.0") }).unwrap();
-        let err = upsert(&mut idx, IndexEntry::Github { repo: "r".to_string(), sauce: make_sauce("a", "2.0") });
+        upsert(
+            &mut idx,
+            IndexEntry::Local {
+                path: "/a".to_string(),
+                sauce: make_sauce("a", "1.0"),
+            },
+        )
+        .unwrap();
+        let err = upsert(&mut idx, make_github("r", "a", "2.0"));
         assert!(err.is_err());
         assert!(err.unwrap_err().to_string().contains("different source type"));
+        assert!(matches!(&idx[0], IndexEntry::Local { path, .. } if path == "/a"));
+        assert_eq!(idx[0].sauce().version, "1.0");
+    }
+
+    #[test]
+    fn upsert_errors_when_different_github_origin_reuses_name() {
+        let mut idx = vec![make_github("owner/one", "a", "1.0")];
+
+        let err = upsert(&mut idx, make_github("owner/two", "a", "2.0")).unwrap_err();
+
+        assert!(err.to_string().contains("different origin"));
+        assert!(matches!(&idx[0], IndexEntry::Github { repo, .. } if repo == "owner/one"));
+        assert_eq!(idx[0].sauce().version, "1.0");
+    }
+
+    #[test]
+    fn upsert_errors_when_different_customgit_origin_reuses_name() {
+        let mut idx = vec![IndexEntry::Customgit {
+            url: "https://one.example/a".to_string(),
+            sauce: make_sauce("a", "1.0"),
+        }];
+        let incoming = IndexEntry::Customgit {
+            url: "https://two.example/a".to_string(),
+            sauce: make_sauce("a", "2.0"),
+        };
+
+        let err = upsert(&mut idx, incoming).unwrap_err();
+
+        assert!(err.to_string().contains("different origin"));
+        assert!(matches!(
+            &idx[0],
+            IndexEntry::Customgit { url, .. } if url == "https://one.example/a"
+        ));
+        assert_eq!(idx[0].sauce().version, "1.0");
     }
 
     #[test]
     fn upsert_preserves_other_entries() {
         let mut idx = vec![];
-        upsert(&mut idx, IndexEntry::Local { path: "/a".to_string(), sauce: make_sauce("a", "1.0") }).unwrap();
-        upsert(&mut idx, IndexEntry::Local { path: "/b".to_string(), sauce: make_sauce("b", "1.0") }).unwrap();
-        upsert(&mut idx, IndexEntry::Local { path: "/a".to_string(), sauce: make_sauce("a", "2.0") }).unwrap();
+        for (path, name, version) in [
+            ("/a", "a", "1.0"),
+            ("/b", "b", "1.0"),
+            ("/a", "a", "2.0"),
+        ] {
+            upsert(
+                &mut idx,
+                IndexEntry::Local {
+                    path: path.to_string(),
+                    sauce: make_sauce(name, version),
+                },
+            )
+            .unwrap();
+        }
         assert_eq!(idx.len(), 2);
         assert_eq!(idx[0].sauce().version, "2.0");
         assert_eq!(idx[1].name(), "b");
