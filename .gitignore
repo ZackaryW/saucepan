@@ -26,3 +26,4 @@ target/
 # Python (resolvers/python/)
 __pycache__/
 *.pyc
+.venv/

@@ -222,6 +222,8 @@ GitHub index entries written by newer versions may also contain optional `refere
 
 saucepan is designed to be called from other tools. The `--json` flag and `cat` subcommand exist specifically for this use case; exit codes are stable and suitable for shell conditionals.
 
+Python callers can use the [`sdk/python`](sdk/python/README.md) object-oriented client over this existing CLI.
+
 ```bash
 # Resolve the artifact path and use it directly
 cp "$(saucepan /workspace path owner/my-tool)/build/output.bin" /usr/local/bin/

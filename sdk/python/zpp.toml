@@ -1,0 +1,5 @@
+[bdd]
+stack = "python"
+
+[tdd]
+stack = "python"
