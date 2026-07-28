@@ -80,9 +80,26 @@ jobs:
           name: saucepan-${{ matrix.target }}
           path: target/${{ matrix.target }}/release/saucepan.exe
 
+  build-linux:
+    name: Linux (x86_64-unknown-linux-musl)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+      - name: Install musl tools
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Build
+        run: cargo build --release --target x86_64-unknown-linux-musl
+      - uses: actions/upload-artifact@v4
+        with:
+          name: saucepan-x86_64-unknown-linux-musl
+          path: target/x86_64-unknown-linux-musl/release/saucepan
+
   release:
     name: Create Release
-    needs: [build-macos, macos-universal, build-windows]
+    needs: [build-macos, macos-universal, build-windows, build-linux]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -97,6 +114,7 @@ jobs:
           cp artifacts/saucepan-x86_64-pc-windows-msvc/saucepan.exe      dist/saucepan-x86_64-pc-windows-msvc.exe
           cp artifacts/saucepan-aarch64-pc-windows-msvc/saucepan.exe     dist/saucepan-aarch64-pc-windows-msvc.exe
           cp artifacts/saucepan-i686-pc-windows-msvc/saucepan.exe        dist/saucepan-i686-pc-windows-msvc.exe
+          cp artifacts/saucepan-x86_64-unknown-linux-musl/saucepan       dist/saucepan-x86_64-unknown-linux-musl
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
