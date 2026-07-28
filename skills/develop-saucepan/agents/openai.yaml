@@ -1,0 +1,4 @@
+interface:
+  display_name: "Develop with Saucepan"
+  short_description: "Integrate and extend Saucepan components"
+  default_prompt: "Use $develop-saucepan to integrate or develop Saucepan using only the required submodule components."
