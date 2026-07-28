@@ -22,3 +22,7 @@ target/
 /.cc-history
 /playground
 /.codex
+
+# Python (resolvers/python/)
+__pycache__/
+*.pyc
