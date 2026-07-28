@@ -6,7 +6,7 @@ use crate::bucket::{BucketEntry, BucketRegistry};
 use crate::error::Conflict;
 use crate::sauce::Sauce;
 use crate::utils::fs::atomic_write;
-use crate::utils::naming::repo_dir;
+use crate::utils::naming::{repo_dir, terminal_component};
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -55,19 +55,9 @@ impl IndexEntry {
             Self::Local { path, .. } => PathBuf::from(path),
             Self::Github { repo, .. } => root.join("github").join(repo_dir(repo)),
             Self::Customgit { url, .. } => {
-                let dir_name = url.rsplit('/').next().unwrap_or(url);
-                root.join("customgit").join(repo_dir(dir_name))
+                root.join("customgit").join(repo_dir(terminal_component(url)))
             }
         }
-    }
-
-    fn same_source_type(&self, other: &Self) -> bool {
-        matches!(
-            (self, other),
-            (Self::Local { .. }, Self::Local { .. })
-                | (Self::Github { .. }, Self::Github { .. })
-                | (Self::Customgit { .. }, Self::Customgit { .. })
-        )
     }
 
     fn same_origin(&self, other: &Self) -> bool {
@@ -124,7 +114,7 @@ pub fn save_index(root: &Path, index: &LocalIndex) -> Result<()> {
 /// preventing silent cross-source overwrites.
 pub fn upsert(index: &mut LocalIndex, entry: IndexEntry) -> Result<()> {
     if let Some(pos) = index.iter().position(|e| e.name() == entry.name()) {
-        if !index[pos].same_source_type(&entry) {
+        if std::mem::discriminant(&index[pos]) != std::mem::discriminant(&entry) {
             return Err(Conflict(format!(
                 "sauce '{}' is already installed from a different source type; \
                  run `saucepan <root> uninstall {}` first",

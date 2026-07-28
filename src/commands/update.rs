@@ -5,6 +5,7 @@ use crate::config::Config;
 use crate::error::NotFound;
 use crate::index::{self, IndexEntry};
 use crate::sources::git::{self, GitFetchOptions};
+use crate::utils::naming::terminal_component;
 
 pub fn update(root: &Path, name: &str, config: &Config) -> Result<()> {
     let mut idx = index::load_index(root)?;
@@ -48,7 +49,7 @@ pub fn update(root: &Path, name: &str, config: &Config) -> Result<()> {
             };
             // dir_name is the final path component (the package name relative to base)
             let url = url.clone();
-            let dir_name = url.rsplit('/').next().unwrap_or(&url);
+            let dir_name = terminal_component(&url);
             let fetched = git::fetch_sauce(
                 &url,
                 dir_name,

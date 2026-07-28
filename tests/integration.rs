@@ -3,6 +3,10 @@ use predicates::str::contains;
 use std::fs;
 use tempfile::TempDir;
 
+mod utils;
+use utils::git::{commit_manifest, default_sauce_json, git_in, make_git_repo, which_git};
+use utils::index::{read_index_json, read_index_text};
+
 fn saucepan(dir: &TempDir) -> Command {
     let mut cmd = Command::cargo_bin("saucepan").unwrap();
     cmd.arg(dir.path());
@@ -276,15 +280,7 @@ fn update_local_sauce_errors() {
         .stderr(contains("local sauces do not support update"));
 }
 
-// ── git helpers ──────────────────────────────────────────────────────────────
-
-fn which_git() -> bool {
-    std::process::Command::new("git")
-        .arg("--version")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-}
+// ── jq helper ────────────────────────────────────────────────────────────────
 
 fn which_jq() -> bool {
     std::process::Command::new("jq")
@@ -292,56 +288,6 @@ fn which_jq() -> bool {
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)
-}
-
-/// Create a bare-minimum git repo containing a manifest file.
-fn make_git_repo(manifest_name: &str, manifest_content: &str) -> TempDir {
-    let repo = TempDir::new().unwrap();
-    let p = repo.path();
-    let git = |args: &[&str]| {
-        std::process::Command::new("git")
-            .args(args)
-            .current_dir(p)
-            .env("GIT_AUTHOR_NAME", "test")
-            .env("GIT_AUTHOR_EMAIL", "test@test.com")
-            .env("GIT_COMMITTER_NAME", "test")
-            .env("GIT_COMMITTER_EMAIL", "test@test.com")
-            .output()
-            .unwrap()
-    };
-    git(&["init"]);
-    git(&["config", "user.email", "test@test.com"]);
-    git(&["config", "user.name", "test"]);
-    fs::write(p.join(manifest_name), manifest_content).unwrap();
-    git(&["add", "."]);
-    git(&["commit", "-m", "init"]);
-    repo
-}
-
-fn default_sauce_json() -> &'static str {
-    r#"{"name":"my-lib","version":"1.0.0","description":"A test sauce"}"#
-}
-
-fn git_in(repo: &TempDir, args: &[&str]) -> String {
-    let output = std::process::Command::new("git")
-        .args(args)
-        .current_dir(repo.path())
-        .env("GIT_AUTHOR_NAME", "test").env("GIT_AUTHOR_EMAIL", "test@test.com")
-        .env("GIT_COMMITTER_NAME", "test").env("GIT_COMMITTER_EMAIL", "test@test.com")
-        .output()
-        .unwrap();
-    assert!(output.status.success(), "git {:?} failed: {}", args, String::from_utf8_lossy(&output.stderr));
-    String::from_utf8(output.stdout).unwrap().trim().to_string()
-}
-
-fn commit_manifest(repo: &TempDir, version: &str) -> String {
-    fs::write(
-        repo.path().join("sauce.json"),
-        format!(r#"{{"name":"my-lib","version":"{version}","description":"A test sauce"}}"#),
-    ).unwrap();
-    git_in(repo, &["add", "sauce.json"]);
-    git_in(repo, &["commit", "-m", &format!("version {version}")]);
-    git_in(repo, &["rev-parse", "HEAD"])
 }
 
 // ── install: github source ────────────────────────────────────────────────────
@@ -378,7 +324,7 @@ fn install_github_writes_index_entry() {
         .assert()
         .success();
 
-    let idx_raw = fs::read_to_string(workspace.path().join(".saucepan/index.json")).unwrap();
+    let idx_raw = read_index_text(&workspace);
     assert!(idx_raw.contains("\"source_type\": \"github\""));
     assert!(idx_raw.contains("\"name\": \"my-lib\""));
 }
@@ -396,9 +342,7 @@ fn install_github_records_default_branch_commit() {
         .assert()
         .success();
 
-    let idx: serde_json::Value = serde_json::from_str(
-        &fs::read_to_string(workspace.path().join(".saucepan/index.json")).unwrap()
-    ).unwrap();
+    let idx = read_index_json(&workspace);
     assert_eq!(idx[0]["resolved_commit"], expected);
     assert!(idx[0].get("reference").is_none());
 }
@@ -417,9 +361,7 @@ fn install_github_branch_ref_records_branch_head() {
         .assert()
         .success();
 
-    let idx: serde_json::Value = serde_json::from_str(
-        &fs::read_to_string(workspace.path().join(".saucepan/index.json")).unwrap()
-    ).unwrap();
+    let idx = read_index_json(&workspace);
     assert_eq!(idx[0]["reference"], "feature");
     assert_eq!(idx[0]["resolved_commit"], expected);
     assert_eq!(idx[0]["sauce"]["version"], "2.0.0");
@@ -440,9 +382,7 @@ fn install_github_tag_ref_reads_tagged_manifest() {
         .assert()
         .success();
 
-    let idx: serde_json::Value = serde_json::from_str(
-        &fs::read_to_string(workspace.path().join(".saucepan/index.json")).unwrap()
-    ).unwrap();
+    let idx = read_index_json(&workspace);
     assert_eq!(idx[0]["reference"], "v1.0.0");
     assert_eq!(idx[0]["resolved_commit"], expected);
     assert_eq!(idx[0]["sauce"]["version"], "1.0.0");
@@ -462,9 +402,7 @@ fn install_github_commit_ref_reads_pinned_manifest() {
         .assert()
         .success();
 
-    let idx: serde_json::Value = serde_json::from_str(
-        &fs::read_to_string(workspace.path().join(".saucepan/index.json")).unwrap()
-    ).unwrap();
+    let idx = read_index_json(&workspace);
     assert_eq!(idx[0]["reference"], expected);
     assert_eq!(idx[0]["resolved_commit"], expected);
     assert_eq!(idx[0]["sauce"]["version"], "1.0.0");
@@ -585,18 +523,8 @@ fn update_github_refreshes_index() {
         repo.path().join("sauce.json"),
         r#"{"name":"my-lib","version":"2.0.0","description":"Updated"}"#,
     ).unwrap();
-    std::process::Command::new("git")
-        .args(["add", ".", "--", "sauce.json"])
-        .current_dir(repo.path())
-        .env("GIT_AUTHOR_NAME", "test").env("GIT_AUTHOR_EMAIL", "test@test.com")
-        .env("GIT_COMMITTER_NAME", "test").env("GIT_COMMITTER_EMAIL", "test@test.com")
-        .output().unwrap();
-    std::process::Command::new("git")
-        .args(["commit", "-m", "bump version"])
-        .current_dir(repo.path())
-        .env("GIT_AUTHOR_NAME", "test").env("GIT_AUTHOR_EMAIL", "test@test.com")
-        .env("GIT_COMMITTER_NAME", "test").env("GIT_COMMITTER_EMAIL", "test@test.com")
-        .output().unwrap();
+    git_in(&repo, &["add", ".", "--", "sauce.json"]);
+    git_in(&repo, &["commit", "-m", "bump version"]);
 
     saucepan(&workspace)
         .args(["update", "my-lib"])
@@ -604,8 +532,37 @@ fn update_github_refreshes_index() {
         .success()
         .stdout(contains("updated"));
 
-    let idx_raw = fs::read_to_string(workspace.path().join(".saucepan/index.json")).unwrap();
+    let idx_raw = read_index_text(&workspace);
     assert!(idx_raw.contains("\"version\": \"2.0.0\""), "index should reflect updated version");
+}
+
+#[test]
+fn update_github_partial_destination_is_replaced() {
+    if !which_git() { return; }
+    let workspace = TempDir::new().unwrap();
+    let repo = make_git_repo("sauce.json", default_sauce_json());
+    write_config(&workspace, "[github]\nbinary = \"git\"\n");
+
+    saucepan(&workspace)
+        .args(["install", repo.path().to_str().unwrap()])
+        .assert()
+        .success();
+
+    let checkout = fs::read_dir(workspace.path().join("github"))
+        .unwrap().next().unwrap().unwrap().path();
+    fs::remove_dir_all(checkout.join(".git")).unwrap();
+    assert!(checkout.exists(), "destination should remain, minus .git");
+
+    saucepan(&workspace)
+        .args(["update", "my-lib"])
+        .assert()
+        .success()
+        .stdout(contains("updated"));
+
+    assert!(
+        checkout.join(".git").is_dir(),
+        "partial destination should be cleaned up and replaced with a fresh clone"
+    );
 }
 
 #[test]
@@ -644,9 +601,7 @@ fn update_github_branch_ref_advances_and_refreshes_revision() {
         .assert()
         .success();
 
-    let idx: serde_json::Value = serde_json::from_str(
-        &fs::read_to_string(workspace.path().join(".saucepan/index.json")).unwrap()
-    ).unwrap();
+    let idx = read_index_json(&workspace);
     assert_eq!(idx[0]["reference"], "feature");
     assert_eq!(idx[0]["resolved_commit"], expected);
     assert_eq!(idx[0]["sauce"]["version"], "2.0.0");
@@ -672,9 +627,7 @@ fn update_github_tag_ref_stays_on_tagged_commit() {
         .assert()
         .success();
 
-    let idx: serde_json::Value = serde_json::from_str(
-        &fs::read_to_string(workspace.path().join(".saucepan/index.json")).unwrap()
-    ).unwrap();
+    let idx = read_index_json(&workspace);
     assert_eq!(idx[0]["resolved_commit"], expected);
     assert_eq!(idx[0]["sauce"]["version"], "1.0.0");
 }
@@ -698,9 +651,7 @@ fn update_github_commit_ref_remains_pinned() {
         .assert()
         .success();
 
-    let idx: serde_json::Value = serde_json::from_str(
-        &fs::read_to_string(workspace.path().join(".saucepan/index.json")).unwrap()
-    ).unwrap();
+    let idx = read_index_json(&workspace);
     assert_eq!(idx[0]["resolved_commit"], expected);
     assert_eq!(idx[0]["sauce"]["version"], "1.0.0");
 }
@@ -727,7 +678,7 @@ fn uninstall_github_removes_index_entry_and_managed_checkout() {
         .stdout(contains("uninstalled my-lib"));
 
     assert!(!checkout.exists());
-    assert_eq!(fs::read_to_string(workspace.path().join(".saucepan/index.json")).unwrap(), "[]");
+    assert_eq!(read_index_text(&workspace), "[]");
 }
 
 #[test]
@@ -751,7 +702,7 @@ fn uninstall_customgit_removes_index_entry_and_managed_checkout() {
         .success();
 
     assert!(!checkout.exists());
-    assert_eq!(fs::read_to_string(workspace.path().join(".saucepan/index.json")).unwrap(), "[]");
+    assert_eq!(read_index_text(&workspace), "[]");
 }
 
 #[test]
@@ -774,7 +725,7 @@ fn uninstall_local_removes_only_index_entry() {
         .success();
 
     assert!(local.path().exists());
-    assert_eq!(fs::read_to_string(workspace.path().join(".saucepan/index.json")).unwrap(), "[]");
+    assert_eq!(read_index_text(&workspace), "[]");
 }
 
 #[test]
@@ -794,7 +745,7 @@ fn uninstall_missing_managed_checkout_removes_stale_entry() {
         .assert()
         .success();
 
-    assert_eq!(fs::read_to_string(workspace.path().join(".saucepan/index.json")).unwrap(), "[]");
+    assert_eq!(read_index_text(&workspace), "[]");
 }
 
 #[test]
@@ -806,7 +757,7 @@ fn uninstall_unknown_returns_not_found_and_preserves_index() {
         ".saucepan/index.json",
         r#"[{"source_type":"local","path":"/fake","sauce":{"name":"existing","version":"1.0.0","description":"desc"}}]"#,
     );
-    let before = fs::read_to_string(workspace.path().join(".saucepan/index.json")).unwrap();
+    let before = read_index_text(&workspace);
 
     saucepan(&workspace)
         .args(["uninstall", "missing"])
@@ -815,7 +766,7 @@ fn uninstall_unknown_returns_not_found_and_preserves_index() {
         .code(1)
         .stderr(contains("not installed"));
 
-    assert_eq!(fs::read_to_string(workspace.path().join(".saucepan/index.json")).unwrap(), before);
+    assert_eq!(read_index_text(&workspace), before);
 }
 
 // ── search: custom jq path ────────────────────────────────────────────────────

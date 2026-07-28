@@ -1,3 +1,11 @@
+/// Extract the final forward-slash-delimited component of a target string.
+///
+/// Used to derive a terminal name from a custom-Git URL or slug, e.g.
+/// `https://example.com/owner/repo` -> `repo`.
+pub fn terminal_component(s: &str) -> &str {
+    s.rsplit('/').next().unwrap_or(s)
+}
+
 /// Convert a logical repo name to a safe on-disk directory name.
 ///
 /// Uses `--` as separator for `/` so that `owner/repo` → `owner--repo`
@@ -41,5 +49,26 @@ mod tests {
     #[test]
     fn plain_name_unchanged() {
         assert_eq!(repo_dir("mylib"), "mylib");
+    }
+
+    #[test]
+    fn terminal_component_extracts_final_segment() {
+        assert_eq!(
+            terminal_component("https://example.com/owner/repo"),
+            "repo"
+        );
+    }
+
+    #[test]
+    fn terminal_component_of_plain_name_is_unchanged() {
+        assert_eq!(terminal_component("my-package"), "my-package");
+    }
+
+    #[test]
+    fn terminal_component_with_trailing_separator_is_empty() {
+        assert_eq!(
+            terminal_component("https://example.com/owner/repo/"),
+            ""
+        );
     }
 }

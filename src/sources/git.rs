@@ -51,16 +51,14 @@ pub fn fetch_sauce(
             // Valid existing clone — pull latest.
             pull(opts, &dest)?;
         }
-    } else if dest.exists() {
-        // Exists but not a valid git repo (partial or failed previous clone).
-        // Remove the debris and re-clone so we don't end up stuck.
-        std::fs::remove_dir_all(&dest)
-            .with_context(|| format!("cannot clean up partial clone at {}", dest.display()))?;
-        clone(repo_url, opts, &dest)?;
-        if let Some(reference) = opts.reference {
-            fetch_and_checkout(opts, &dest, reference)?;
-        }
     } else {
+        if dest.exists() {
+            // Exists but not a valid git repo (partial or failed previous clone).
+            // Remove the debris and re-clone so we don't end up stuck.
+            std::fs::remove_dir_all(&dest).with_context(|| {
+                format!("cannot clean up partial clone at {}", dest.display())
+            })?;
+        }
         clone(repo_url, opts, &dest)?;
         if let Some(reference) = opts.reference {
             fetch_and_checkout(opts, &dest, reference)?;
