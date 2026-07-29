@@ -36,11 +36,18 @@ responsibility.
 The public model is rooted at a `Workspace`:
 
 - `workspace.sauces` yields `Sauce` snapshots. Each exposes `name`, `version`,
-  `description`, and optional `reference` and `resolved_commit` values. A sauce
-  can `update()` or `uninstall()` itself, and its `path` property returns a
-  `pathlib.Path`.
+  `description`, optional `reference` and `resolved_commit` values, and
+  `manifest_source` — a mapping reporting where the entry's manifest came
+  from: `{"kind": "repository"}` or `{"kind": "index", "index": "<registered
+  index target>"}`. An entry written before this field existed has no
+  `manifest_source` key at all; the SDK treats that the same as an explicit
+  `{"kind": "repository"}`. A sauce can `update()` or `uninstall()` itself,
+  and its `path` property returns a `pathlib.Path`.
 - `workspace.buckets` yields `Bucket` entities. Each exposes its `url`, can
-  return parsed stubs with `stubs()`, and can `remove()` itself.
+  return parsed stubs with `stubs()`, and can `remove()` itself. Each stub is
+  a `BucketStub` — a dict of the raw parsed entry that also exposes `name`,
+  `version`, and `url` as attributes, plus `extra`: a mapping of every field
+  beyond those three, empty (never missing) when the entry carries none.
 - `workspace.install(target, reference=None)` installs a target and returns the
   resulting `Sauce` entity.
 
@@ -150,6 +157,13 @@ package imports; every absolute top-level import was checked against
 imports are `json`, `os`, `pathlib`, `shutil`, `subprocess`, and `typing`; all
 other imports are relative within `saucepan_sdk`. Reviewers should repeat this
 check whenever a runtime import is added.
+
+The walk was repeated on 2026-07-28 after adding `Sauce.manifest_source` and
+`BucketStub` (with its `extra` mapping): the same five modules were walked, no
+new absolute import appeared, and the reviewed standard-library set is
+unchanged (`json`, `os`, `pathlib`, `shutil`, `subprocess`, `typing`); the two
+new attributes are built entirely from data already carried on parsed
+entries.
 
 ## Vendor only the Python SDK
 

@@ -57,7 +57,15 @@ enum Cmd {
 #[derive(Subcommand)]
 enum BucketAction {
     /// Add a bucket URL
-    Add { url: String },
+    Add {
+        url: String,
+        /// Pin a repository-target index to an explicit git ref; resolved
+        /// and recorded immediately
+        #[arg(long = "ref")]
+        reference: Option<String>,
+    },
+    /// Re-fetch a registered bucket and record the commit it resolved to
+    Refresh { url: String },
     /// Remove a bucket by URL
     Remove { url: String },
     /// List registered buckets
@@ -106,7 +114,10 @@ fn run() -> Result<()> {
         Cmd::Path { name } => commands::path::path(root, name),
         Cmd::Search { filter } => commands::search::search(root, filter, &config),
         Cmd::Bucket { action } => match action {
-            BucketAction::Add { url } => commands::bucket::add(root, url),
+            BucketAction::Add { url, reference } => {
+                commands::bucket::add(root, url, reference.as_deref(), &config)
+            }
+            BucketAction::Refresh { url } => commands::bucket::refresh(root, url, &config),
             BucketAction::Remove { url } => commands::bucket::remove(root, url),
             BucketAction::List => commands::bucket::list(root, json),
         },
@@ -114,7 +125,7 @@ fn run() -> Result<()> {
             CatTarget::Index => commands::cat::cat_index(root),
             CatTarget::Buckets => commands::cat::cat_buckets(root),
             CatTarget::Sauce { name } => commands::cat::cat_sauce(root, name),
-            CatTarget::Bucket { url } => commands::cat::cat_bucket(url),
+            CatTarget::Bucket { url } => commands::cat::cat_bucket(root, url, &config),
         },
     }
 }

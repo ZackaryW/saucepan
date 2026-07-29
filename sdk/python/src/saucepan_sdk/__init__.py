@@ -8,11 +8,12 @@ from .errors import (
     SaucepanError,
     SourceError,
 )
-from .entities import Bucket, Sauce
+from .entities import Bucket, BucketStub, Sauce
 from .workspace import Workspace
 
 __all__ = [
     "Bucket",
+    "BucketStub",
     "ConfigError",
     "Conflict",
     "InternalError",

@@ -21,6 +21,9 @@ class Sauce:
         self.description = manifest["description"]
         self.reference: Optional[str] = entry.get("reference")
         self.resolved_commit: Optional[str] = entry.get("resolved_commit")
+        self.manifest_source: Mapping[str, Any] = entry.get(
+            "manifest_source", {"kind": "repository"}
+        )
 
     def update(self) -> "Sauce":
         """Update and refresh this snapshot in place."""
@@ -40,6 +43,30 @@ class Sauce:
         return Path(output.strip())
 
 
+class BucketStub(dict):
+    """One parsed bucket stub, exposing required fields and any extras.
+
+    Behaves as the raw parsed mapping (so existing dict-style access and
+    equality checks keep working unchanged), while also exposing ``name``,
+    ``version``, ``url``, and ``extra`` as attributes. ``extra`` holds every
+    field beyond the required three and is an empty mapping, never missing,
+    when the entry carries none.
+    """
+
+    _REQUIRED_KEYS = ("name", "version", "url")
+
+    def __init__(self, entry: Mapping[str, Any]) -> None:
+        super().__init__(entry)
+        self.name = entry["name"]
+        self.version = entry["version"]
+        self.url = entry["url"]
+        self.extra: Mapping[str, Any] = {
+            key: value
+            for key, value in entry.items()
+            if key not in self._REQUIRED_KEYS
+        }
+
+
 class Bucket:
     """One registered bucket source."""
 
@@ -53,4 +80,4 @@ class Bucket:
 
     def stubs(self) -> List[Any]:
         """Return parsed sauce stubs from this bucket."""
-        return self._workspace.cat_bucket(self.url)
+        return [BucketStub(entry) for entry in self._workspace.cat_bucket(self.url)]

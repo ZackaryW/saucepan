@@ -10,6 +10,44 @@ use crate::utils::naming::{repo_dir, terminal_component};
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
+/// Which link of the manifest resolution chain supplied an entry's manifest.
+///
+/// Defaults to `Repository` so entries written before this field existed —
+/// which have no `manifest_source` key at all — deserialize as if their
+/// manifest came from the repository, matching actual past behavior.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum ManifestSource {
+    /// The manifest came from the fetched target's own root manifest.
+    ///
+    /// The default, so an entry written before `manifest_source` existed —
+    /// which has no such key at all — deserializes as repository-sourced,
+    /// which is what it was.
+    #[default]
+    Repository,
+    /// The manifest came from a registered central index.
+    Index {
+        /// The registered index target that supplied the manifest.
+        index: String,
+    },
+}
+
+impl ManifestSource {
+    /// The manifest came from the target's own repository. This is the only
+    /// source today; every current install/update call site uses this
+    /// explicitly so behavior is unchanged until the resolution chain exists.
+    pub fn repository() -> Self {
+        Self::Repository
+    }
+
+    /// The manifest came from a registered central index — `index` is the
+    /// registered index target that supplied it. Used by the manifest
+    /// resolution chain's central-index link (`sources::git::CentralIndexLink`).
+    pub fn index(index: impl Into<String>) -> Self {
+        Self::Index { index: index.into() }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "source_type", rename_all = "lowercase")]
 pub enum IndexEntry {
@@ -23,10 +61,14 @@ pub enum IndexEntry {
         reference: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         resolved_commit: Option<String>,
+        #[serde(default)]
+        manifest_source: ManifestSource,
         sauce: Sauce,
     },
     Customgit {
         url: String,
+        #[serde(default)]
+        manifest_source: ManifestSource,
         sauce: Sauce,
     },
 }
@@ -156,12 +198,21 @@ pub fn save_registry(root: &Path, registry: &BucketRegistry) -> Result<()> {
     atomic_write(&buckets_path(root), serde_json::to_string_pretty(registry)?.as_bytes())
 }
 
-pub fn registry_add(root: &Path, url: &str) -> Result<()> {
+/// Register a bucket (a local path, `file://` URL, or repository target).
+///
+/// `reference` pins an explicit ref on a repository-target index (see
+/// `BucketEntry::reference`); pass `None` for a local path or `file://` URL,
+/// or for a repository target that should always read the latest state.
+pub fn registry_add(root: &Path, url: &str, reference: Option<&str>) -> Result<()> {
     let mut reg = load_registry(root)?;
     if reg.iter().any(|e| e.url == url) {
         bail!("bucket already registered: {url}");
     }
-    reg.push(BucketEntry { url: url.to_string() });
+    reg.push(BucketEntry {
+        url: url.to_string(),
+        reference: reference.map(str::to_string),
+        resolved_commit: None,
+    });
     save_registry(root, &reg)
 }
 
@@ -228,15 +279,53 @@ mod tests {
                 repo,
                 reference,
                 resolved_commit,
+                manifest_source,
                 sauce,
             } => {
                 assert_eq!(repo, "owner/repo");
                 assert_eq!(sauce.name, "a");
                 assert!(reference.is_none());
                 assert!(resolved_commit.is_none());
+                assert_eq!(manifest_source, ManifestSource::Repository);
             }
             _ => panic!("expected github entry"),
         }
+    }
+
+    /// Mirrors `legacy_github_entry_deserializes_without_revision_metadata`:
+    /// an entry written before `manifest_source` existed has no such key at
+    /// all, and must still deserialize, defaulting the field as if the
+    /// manifest came from the repository (the only source that existed then).
+    #[test]
+    fn legacy_entry_deserializes_without_manifest_source() {
+        let raw = r#"{"source_type":"github","repo":"owner/repo","reference":"v1.0","resolved_commit":"abc123","sauce":{"name":"a","version":"1.0","description":"test"}}"#;
+        let entry: IndexEntry = serde_json::from_str(raw).unwrap();
+
+        match entry {
+            IndexEntry::Github { manifest_source, .. } => {
+                assert_eq!(manifest_source, ManifestSource::Repository);
+            }
+            _ => panic!("expected github entry"),
+        }
+
+        let raw = r#"{"source_type":"customgit","url":"https://example.com/a","sauce":{"name":"a","version":"1.0","description":"test"}}"#;
+        let entry: IndexEntry = serde_json::from_str(raw).unwrap();
+
+        match entry {
+            IndexEntry::Customgit { manifest_source, .. } => {
+                assert_eq!(manifest_source, ManifestSource::Repository);
+            }
+            _ => panic!("expected customgit entry"),
+        }
+    }
+
+    #[test]
+    fn manifest_source_repository_and_index_serialize_as_tagged_shape() {
+        let raw = serde_json::to_string(&ManifestSource::Repository).unwrap();
+        assert_eq!(raw, r#"{"kind":"repository"}"#);
+
+        let raw = serde_json::to_string(&ManifestSource::index("my-index")).unwrap();
+        assert_eq!(raw, r#"{"kind":"index","index":"my-index"}"#);
     }
 
     fn make_github(repo: &str, name: &str, version: &str) -> IndexEntry {
@@ -244,6 +333,7 @@ mod tests {
             repo: repo.to_string(),
             reference: None,
             resolved_commit: None,
+            manifest_source: ManifestSource::repository(),
             sauce: make_sauce(name, version),
         }
     }
@@ -254,6 +344,7 @@ mod tests {
             repo: "owner/repo".to_string(),
             reference: None,
             resolved_commit: None,
+            manifest_source: ManifestSource::repository(),
             sauce: make_sauce("a", "1.0"),
         };
 
@@ -318,10 +409,12 @@ mod tests {
     fn upsert_errors_when_different_customgit_origin_reuses_name() {
         let mut idx = vec![IndexEntry::Customgit {
             url: "https://one.example/a".to_string(),
+            manifest_source: ManifestSource::repository(),
             sauce: make_sauce("a", "1.0"),
         }];
         let incoming = IndexEntry::Customgit {
             url: "https://two.example/a".to_string(),
+            manifest_source: ManifestSource::repository(),
             sauce: make_sauce("a", "2.0"),
         };
 
@@ -366,7 +459,7 @@ mod tests {
     #[test]
     fn registry_add_and_load() {
         let dir = TempDir::new().unwrap();
-        registry_add(dir.path(), "https://example.com/b.json").unwrap();
+        registry_add(dir.path(), "https://example.com/b.json", None).unwrap();
         let reg = load_registry(dir.path()).unwrap();
         assert_eq!(reg.len(), 1);
         assert_eq!(reg[0].url, "https://example.com/b.json");
@@ -375,15 +468,51 @@ mod tests {
     #[test]
     fn registry_add_duplicate_errors() {
         let dir = TempDir::new().unwrap();
-        registry_add(dir.path(), "https://example.com/b.json").unwrap();
-        assert!(registry_add(dir.path(), "https://example.com/b.json").is_err());
+        registry_add(dir.path(), "https://example.com/b.json", None).unwrap();
+        assert!(registry_add(dir.path(), "https://example.com/b.json", None).is_err());
     }
 
     #[test]
     fn registry_remove_entry() {
         let dir = TempDir::new().unwrap();
-        registry_add(dir.path(), "https://example.com/b.json").unwrap();
+        registry_add(dir.path(), "https://example.com/b.json", None).unwrap();
         registry_remove(dir.path(), "https://example.com/b.json").unwrap();
         assert!(load_registry(dir.path()).unwrap().is_empty());
+    }
+
+    /// Registration by repository target: a bare `owner/repo`-shaped string
+    /// (or any other git-clonable target) registers exactly like a local path
+    /// or `file://` URL does — the registry does not need to know which kind
+    /// of target it is, only `fetch_bucket` (bucket.rs) does, at read time.
+    #[test]
+    fn registry_add_accepts_a_repository_target() {
+        let dir = TempDir::new().unwrap();
+        registry_add(dir.path(), "owner/central-index", None).unwrap();
+        let reg = load_registry(dir.path()).unwrap();
+        assert_eq!(reg[0].url, "owner/central-index");
+        assert!(reg[0].reference.is_none());
+    }
+
+    /// An index entry registered with an explicit ref records that ref, so a
+    /// later fetch can resolve and pin to it (see
+    /// bucket::tests::fetch_bucket_repository_target_respects_pinned_reference
+    /// for the fetch-time behavior this enables).
+    #[test]
+    fn registry_add_records_an_explicit_reference() {
+        let dir = TempDir::new().unwrap();
+        registry_add(dir.path(), "owner/central-index", Some("v1.2.0")).unwrap();
+        let reg = load_registry(dir.path()).unwrap();
+        assert_eq!(reg[0].reference.as_deref(), Some("v1.2.0"));
+        // Not yet resolved until the index is actually fetched.
+        assert!(reg[0].resolved_commit.is_none());
+    }
+
+    #[test]
+    fn registry_entry_without_reference_omits_it_when_serialized() {
+        let dir = TempDir::new().unwrap();
+        registry_add(dir.path(), "https://example.com/b.json", None).unwrap();
+        let raw = std::fs::read_to_string(buckets_path(dir.path())).unwrap();
+        assert!(!raw.contains("reference"));
+        assert!(!raw.contains("resolved_commit"));
     }
 }

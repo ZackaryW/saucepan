@@ -33,6 +33,7 @@ pub fn update(root: &Path, name: &str, config: &Config) -> Result<()> {
                 repo,
                 reference: reference.clone(),
                 resolved_commit: Some(fetched.resolved_commit),
+                manifest_source: fetched.manifest_source,
                 sauce: fetched.sauce,
             }
         }
@@ -60,6 +61,7 @@ pub fn update(root: &Path, name: &str, config: &Config) -> Result<()> {
             )?;
             IndexEntry::Customgit {
                 url,
+                manifest_source: fetched.manifest_source,
                 sauce: fetched.sauce,
             }
         }

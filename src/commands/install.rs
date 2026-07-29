@@ -42,6 +42,7 @@ pub fn install(
                     repo: name.to_string(),
                     reference: reference.map(str::to_string),
                     resolved_commit: Some(fetched.resolved_commit),
+                    manifest_source: fetched.manifest_source,
                     sauce: fetched.sauce,
                 })?;
                 index::save_index(root, &idx)?;
@@ -69,6 +70,7 @@ pub fn install(
                     &mut idx,
                     IndexEntry::Customgit {
                         url: repo_url,
+                        manifest_source: fetched.manifest_source,
                         sauce: fetched.sauce,
                     },
                 )?;
