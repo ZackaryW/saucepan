@@ -130,8 +130,9 @@ result, while consecutive reads of `workspace.buckets` reuse one `cat buckets`
 result.
 
 Every SDK mutation invalidates both caches: install, update, uninstall, bucket
-add, and bucket remove (including their entity-level forms). The next collection
-read therefore observes the mutated state. In addition, `sauce.update()` reads
+add, bucket refresh, and bucket remove (including their entity-level forms). The
+next collection read therefore observes the mutated state. In addition,
+`sauce.update()` reads
 that sauce's new entry and replaces the fields on the same `Sauce` object, so
 the caller does not need to reacquire it or refresh explicitly:
 

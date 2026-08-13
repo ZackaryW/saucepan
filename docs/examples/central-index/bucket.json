@@ -1,0 +1,13 @@
+[
+  {
+    "name": "plain-script-entry",
+    "version": "2.0.0",
+    "url": "owner/plain-script-repo",
+    "ref": "v2.0.0",
+    "manifest": {
+      "name": "widget-cli",
+      "version": "2.0.0",
+      "description": "Curated by a central index"
+    }
+  }
+]

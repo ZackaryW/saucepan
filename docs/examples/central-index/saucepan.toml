@@ -1,0 +1,5 @@
+[github]
+binary = "git"
+
+[index]
+binary = "git"
