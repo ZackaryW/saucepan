@@ -35,7 +35,7 @@ Saucepan SHALL replace an existing entry only when manifest name, source type, a
 - **THEN** Saucepan returns a conflict and preserves the existing index entry
 
 ### Requirement: Stable error categories
-Saucepan SHALL map known missing targets or exhausted manifest resolution to exit code 1, Git/gh transport or execution failures to exit code 2, missing or invalid source configuration to exit code 3, origin conflicts to exit code 4, and unexpected failures to exit code 5.
+Saucepan SHALL expose known missing targets or exhausted manifest resolution as exit code 1, Git/gh transport or execution failures as exit code 2, missing or invalid source configuration as exit code 3, origin conflicts as exit code 4, and unexpected failures as exit code 5 through its public command boundary.
 
 #### Scenario: No sources are enabled
 - **WHEN** a user runs install with no source sections enabled

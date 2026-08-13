@@ -11,7 +11,7 @@ macro_rules! typed_error {
     };
 }
 
-typed_error!(NotFound);    // exit 1
+typed_error!(NotFound); // exit 1
 typed_error!(SourceError); // exit 2
 typed_error!(ConfigError); // exit 3
-typed_error!(Conflict);    // exit 4
+typed_error!(Conflict); // exit 4

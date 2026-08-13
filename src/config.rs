@@ -55,7 +55,10 @@ impl Config {
     /// (`bucket add`/`refresh`, `search`, `cat bucket`). Defaults to `git`
     /// when no `[index]` section is configured.
     pub fn index_binary(&self) -> GitBinary {
-        self.index.as_ref().map(|i| i.binary.clone()).unwrap_or_default()
+        self.index
+            .as_ref()
+            .map(|i| i.binary.clone())
+            .unwrap_or_default()
     }
 
     /// The token to use for standalone central-index fetches, if configured.
@@ -269,7 +272,10 @@ mod tests {
             "[github]\ntoken = \"github-secret\"\n[index]\ntoken = \"index-secret\"\n",
         );
         let cfg = Config::load(&root).unwrap();
-        assert_eq!(cfg.github.as_ref().unwrap().token.as_deref(), Some("github-secret"));
+        assert_eq!(
+            cfg.github.as_ref().unwrap().token.as_deref(),
+            Some("github-secret")
+        );
         assert_eq!(cfg.index_token(), Some("index-secret"));
     }
 }

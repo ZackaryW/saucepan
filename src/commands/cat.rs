@@ -36,7 +36,10 @@ pub fn cat_bucket(root: &Path, url: &str, config: &Config) -> Result<()> {
     // bucket, reuse its pinned reference so an ad hoc `cat bucket` of a
     // pinned index reads the same state `search`/install resolution would.
     let registry = load_registry(root)?;
-    let reference = registry.iter().find(|e| e.url == url).and_then(|e| e.reference.as_deref());
+    let reference = registry
+        .iter()
+        .find(|e| e.url == url)
+        .and_then(|e| e.reference.as_deref());
     let binary = config.index_binary();
     let opts = GitFetchOptions {
         binary: &binary,

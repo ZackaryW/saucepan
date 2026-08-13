@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::path::Path;
 
 use crate::config::Config;
@@ -15,7 +15,9 @@ pub fn update(root: &Path, name: &str, config: &Config) -> Result<()> {
         .ok_or_else(|| NotFound(format!("'{name}' is not installed")))?;
 
     let updated = match &idx[pos] {
-        IndexEntry::Github { repo, reference, .. } => {
+        IndexEntry::Github {
+            repo, reference, ..
+        } => {
             let gh = config
                 .github
                 .as_ref()
@@ -51,14 +53,8 @@ pub fn update(root: &Path, name: &str, config: &Config) -> Result<()> {
             // dir_name is the final path component (the package name relative to base)
             let url = url.clone();
             let dir_name = terminal_component(&url);
-            let fetched = git::fetch_sauce(
-                &url,
-                dir_name,
-                &opts,
-                root,
-                "customgit",
-                cg.manifest_name(),
-            )?;
+            let fetched =
+                git::fetch_sauce(&url, dir_name, &opts, root, "customgit", cg.manifest_name())?;
             IndexEntry::Customgit {
                 url,
                 manifest_source: fetched.manifest_source,
@@ -68,7 +64,11 @@ pub fn update(root: &Path, name: &str, config: &Config) -> Result<()> {
         IndexEntry::Local { .. } => bail!("local sauces do not support update"),
     };
 
-    println!("updated {} to {}", updated.sauce().name, updated.sauce().version);
+    println!(
+        "updated {} to {}",
+        updated.sauce().name,
+        updated.sauce().version
+    );
     idx[pos] = updated;
     index::save_index(root, &idx)
 }

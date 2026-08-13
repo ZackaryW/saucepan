@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::path::{Component, Path};
 
 use crate::error::NotFound;
@@ -22,8 +22,9 @@ pub fn uninstall(root: &Path, name: &str) -> Result<()> {
         let checkout = entry.artifact_path(root);
         ensure_managed_path(&base, &checkout)?;
         if checkout.exists() {
-            std::fs::remove_dir_all(&checkout)
-                .with_context(|| format!("cannot remove managed checkout {}", checkout.display()))?;
+            std::fs::remove_dir_all(&checkout).with_context(|| {
+                format!("cannot remove managed checkout {}", checkout.display())
+            })?;
         }
     }
 

@@ -70,8 +70,8 @@ pub fn normalize_target(target: &str) -> String {
 /// return the canonical, lower-cased `owner/repo` form. Otherwise `None` —
 /// the caller must leave the string's case alone.
 fn github_owner_repo(s: &str) -> Option<String> {
-    let rest = strip_ci_prefix(s, "https://github.com/")
-        .or_else(|| strip_ci_prefix(s, "git@github.com:"));
+    let rest =
+        strip_ci_prefix(s, "https://github.com/").or_else(|| strip_ci_prefix(s, "git@github.com:"));
 
     let owner_repo = match rest {
         Some(rest) => rest,
@@ -106,7 +106,9 @@ fn github_owner_repo(s: &str) -> Option<String> {
 /// host are conventionally case-insensitive.
 fn strip_ci_prefix<'a>(s: &'a str, prefix: &str) -> Option<&'a str> {
     let candidate = s.get(..prefix.len())?;
-    candidate.eq_ignore_ascii_case(prefix).then(|| &s[prefix.len()..])
+    candidate
+        .eq_ignore_ascii_case(prefix)
+        .then(|| &s[prefix.len()..])
 }
 
 #[cfg(test)]
@@ -140,10 +142,7 @@ mod tests {
 
     #[test]
     fn terminal_component_extracts_final_segment() {
-        assert_eq!(
-            terminal_component("https://example.com/owner/repo"),
-            "repo"
-        );
+        assert_eq!(terminal_component("https://example.com/owner/repo"), "repo");
     }
 
     #[test]
@@ -153,10 +152,7 @@ mod tests {
 
     #[test]
     fn terminal_component_with_trailing_separator_is_empty() {
-        assert_eq!(
-            terminal_component("https://example.com/owner/repo/"),
-            ""
-        );
+        assert_eq!(terminal_component("https://example.com/owner/repo/"), "");
     }
 
     #[test]
@@ -192,7 +188,10 @@ mod tests {
 
     #[test]
     fn normalize_target_folds_case_for_github_shaped_targets() {
-        assert_eq!(normalize_target("Owner/Widget"), normalize_target("owner/widget"));
+        assert_eq!(
+            normalize_target("Owner/Widget"),
+            normalize_target("owner/widget")
+        );
         assert_eq!(
             normalize_target("https://github.com/Owner/Widget"),
             normalize_target("owner/widget")

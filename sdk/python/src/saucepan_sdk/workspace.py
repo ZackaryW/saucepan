@@ -80,9 +80,17 @@ class Workspace:
         """Return the parsed stubs from one bucket document."""
         return self._runner.run_json("cat", "bucket", url)
 
-    def add_bucket(self, url: str) -> Bucket:
-        """Register a bucket and return its entity."""
-        self._mutate("bucket", "add", url)
+    def add_bucket(self, url: str, reference: Optional[str] = None) -> Bucket:
+        """Register a bucket, optionally pinned to a ref, and return its entity."""
+        args = ["bucket", "add", url]
+        if reference is not None:
+            args.extend(["--ref", reference])
+        self._mutate(*args)
+        return Bucket(self, url)
+
+    def refresh_bucket(self, url: str) -> Bucket:
+        """Refresh a registered bucket and return its entity."""
+        self._mutate("bucket", "refresh", url)
         return Bucket(self, url)
 
     def remove_bucket(self, url: str) -> None:

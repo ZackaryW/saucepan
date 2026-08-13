@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -44,7 +44,9 @@ impl ManifestSource {
     /// registered index target that supplied it. Used by the manifest
     /// resolution chain's central-index link (`sources::git::CentralIndexLink`).
     pub fn index(index: impl Into<String>) -> Self {
-        Self::Index { index: index.into() }
+        Self::Index {
+            index: index.into(),
+        }
     }
 }
 
@@ -96,23 +98,19 @@ impl IndexEntry {
         match self {
             Self::Local { path, .. } => PathBuf::from(path),
             Self::Github { repo, .. } => root.join("github").join(repo_dir(repo)),
-            Self::Customgit { url, .. } => {
-                root.join("customgit").join(repo_dir(terminal_component(url)))
-            }
+            Self::Customgit { url, .. } => root
+                .join("customgit")
+                .join(repo_dir(terminal_component(url))),
         }
     }
 
     fn same_origin(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Local { path: left, .. }, Self::Local { path: right, .. }) => left == right,
-            (
-                Self::Github { repo: left, .. },
-                Self::Github { repo: right, .. },
-            ) => left == right,
-            (
-                Self::Customgit { url: left, .. },
-                Self::Customgit { url: right, .. },
-            ) => left == right,
+            (Self::Github { repo: left, .. }, Self::Github { repo: right, .. }) => left == right,
+            (Self::Customgit { url: left, .. }, Self::Customgit { url: right, .. }) => {
+                left == right
+            }
             _ => false,
         }
     }
@@ -148,7 +146,10 @@ pub fn load_index(root: &Path) -> Result<LocalIndex> {
 
 pub fn save_index(root: &Path, index: &LocalIndex) -> Result<()> {
     std::fs::create_dir_all(saucepan_dir(root))?;
-    atomic_write(&index_path(root), serde_json::to_string_pretty(index)?.as_bytes())
+    atomic_write(
+        &index_path(root),
+        serde_json::to_string_pretty(index)?.as_bytes(),
+    )
 }
 
 /// Insert or replace an entry by sauce name.
@@ -195,7 +196,10 @@ pub fn load_registry(root: &Path) -> Result<BucketRegistry> {
 
 pub fn save_registry(root: &Path, registry: &BucketRegistry) -> Result<()> {
     std::fs::create_dir_all(saucepan_dir(root))?;
-    atomic_write(&buckets_path(root), serde_json::to_string_pretty(registry)?.as_bytes())
+    atomic_write(
+        &buckets_path(root),
+        serde_json::to_string_pretty(registry)?.as_bytes(),
+    )
 }
 
 /// Register a bucket (a local path, `file://` URL, or repository target).
@@ -302,7 +306,9 @@ mod tests {
         let entry: IndexEntry = serde_json::from_str(raw).unwrap();
 
         match entry {
-            IndexEntry::Github { manifest_source, .. } => {
+            IndexEntry::Github {
+                manifest_source, ..
+            } => {
                 assert_eq!(manifest_source, ManifestSource::Repository);
             }
             _ => panic!("expected github entry"),
@@ -312,7 +318,9 @@ mod tests {
         let entry: IndexEntry = serde_json::from_str(raw).unwrap();
 
         match entry {
-            IndexEntry::Customgit { manifest_source, .. } => {
+            IndexEntry::Customgit {
+                manifest_source, ..
+            } => {
                 assert_eq!(manifest_source, ManifestSource::Repository);
             }
             _ => panic!("expected customgit entry"),
@@ -389,7 +397,11 @@ mod tests {
         .unwrap();
         let err = upsert(&mut idx, make_github("r", "a", "2.0"));
         assert!(err.is_err());
-        assert!(err.unwrap_err().to_string().contains("different source type"));
+        assert!(
+            err.unwrap_err()
+                .to_string()
+                .contains("different source type")
+        );
         assert!(matches!(&idx[0], IndexEntry::Local { path, .. } if path == "/a"));
         assert_eq!(idx[0].sauce().version, "1.0");
     }
@@ -431,11 +443,7 @@ mod tests {
     #[test]
     fn upsert_preserves_other_entries() {
         let mut idx = vec![];
-        for (path, name, version) in [
-            ("/a", "a", "1.0"),
-            ("/b", "b", "1.0"),
-            ("/a", "a", "2.0"),
-        ] {
+        for (path, name, version) in [("/a", "a", "1.0"), ("/b", "b", "1.0"), ("/a", "a", "2.0")] {
             upsert(
                 &mut idx,
                 IndexEntry::Local {

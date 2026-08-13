@@ -6,12 +6,7 @@ use crate::error::{ConfigError, NotFound, SourceError};
 use crate::index::{self, IndexEntry};
 use crate::sources::git::{self, GitFetchOptions};
 
-pub fn install(
-    root: &Path,
-    name: &str,
-    reference: Option<&str>,
-    config: &Config,
-) -> Result<()> {
+pub fn install(root: &Path, name: &str, reference: Option<&str>, config: &Config) -> Result<()> {
     if !config.local_enabled() && !config.github_enabled() && !config.customgit_enabled() {
         return Err(ConfigError("no sources enabled in saucepan.toml".to_string()).into());
     }
@@ -19,11 +14,15 @@ pub fn install(
     // Load the index once; reuse for both the existence check and the save.
     let mut idx = index::load_index(root)?;
 
-    if config.local_enabled() {
-        if let Some(entry) = idx.iter().find(|e| e.name() == name) {
-            println!("already installed: {} {}", entry.sauce().name, entry.sauce().version);
-            return Ok(());
-        }
+    if config.local_enabled()
+        && let Some(entry) = idx.iter().find(|e| e.name() == name)
+    {
+        println!(
+            "already installed: {} {}",
+            entry.sauce().name,
+            entry.sauce().version
+        );
+        return Ok(());
     }
 
     let mut failures = Vec::new();
@@ -38,13 +37,16 @@ pub fn install(
         };
         match git::fetch_sauce(name, name, &opts, root, "github", gh.manifest_name()) {
             Ok(fetched) => {
-                index::upsert(&mut idx, IndexEntry::Github {
-                    repo: name.to_string(),
-                    reference: reference.map(str::to_string),
-                    resolved_commit: Some(fetched.resolved_commit),
-                    manifest_source: fetched.manifest_source,
-                    sauce: fetched.sauce,
-                })?;
+                index::upsert(
+                    &mut idx,
+                    IndexEntry::Github {
+                        repo: name.to_string(),
+                        reference: reference.map(str::to_string),
+                        resolved_commit: Some(fetched.resolved_commit),
+                        manifest_source: fetched.manifest_source,
+                        sauce: fetched.sauce,
+                    },
+                )?;
                 index::save_index(root, &idx)?;
                 println!("installed {name} from github");
                 return Ok(());
@@ -64,7 +66,14 @@ pub fn install(
             reference: None,
         };
         let repo_url = format!("{}/{}", cg.url.trim_end_matches('/'), name);
-        match git::fetch_sauce(&repo_url, name, &opts, root, "customgit", cg.manifest_name()) {
+        match git::fetch_sauce(
+            &repo_url,
+            name,
+            &opts,
+            root,
+            "customgit",
+            cg.manifest_name(),
+        ) {
             Ok(fetched) => {
                 index::upsert(
                     &mut idx,

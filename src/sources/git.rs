@@ -28,7 +28,7 @@ pub struct GitFetchResult {
 ///
 /// - `repo_url`  — the remote URL passed to git/gh (what to clone from)
 /// - `dir_name`  — logical name used to derive the on-disk directory
-///                 (e.g. `owner/repo` for github, `package-name` for customgit)
+///   (e.g. `owner/repo` for github, `package-name` for customgit)
 /// - `root`      — workspace root; repo lands at `<root>/<source_subdir>/<repo_dir(dir_name)>/`
 pub fn fetch_sauce(
     repo_url: &str,
@@ -87,9 +87,8 @@ fn clone_or_update(
         if dest.exists() {
             // Exists but not a valid git repo (partial or failed previous clone).
             // Remove the debris and re-clone so we don't end up stuck.
-            std::fs::remove_dir_all(&dest).with_context(|| {
-                format!("cannot clean up partial clone at {}", dest.display())
-            })?;
+            std::fs::remove_dir_all(&dest)
+                .with_context(|| format!("cannot clean up partial clone at {}", dest.display()))?;
         }
         clone(repo_url, opts, &dest)?;
         if let Some(reference) = opts.reference {
@@ -205,8 +204,7 @@ impl ManifestLink {
                         // separator, `\` vs `/`, or another of the equivalent
                         // GitHub forms). Both strings stay as-given for
                         // storage and display — see `naming::normalize_target`.
-                        if naming::normalize_target(&stub.url)
-                            != naming::normalize_target(repo_url)
+                        if naming::normalize_target(&stub.url) != naming::normalize_target(repo_url)
                         {
                             continue;
                         }
@@ -216,8 +214,7 @@ impl ManifestLink {
                             // nothing for this link to offer from this entry.
                             continue;
                         };
-                        let Some(entry_ref) = stub.extra.get("ref").and_then(|v| v.as_str())
-                        else {
+                        let Some(entry_ref) = stub.extra.get("ref").and_then(|v| v.as_str()) else {
                             eprintln!(
                                 "warning: index {} entry for {repo_url} supplies a manifest \
                                  without a ref; rejecting entry",
@@ -336,7 +333,10 @@ pub fn fetch_bucket_index(
     let dest = clone_or_update(target, target, opts, root, "indexes")?;
     let bucket_path = dest.join(INDEX_BUCKET_FILE);
     let contents = std::fs::read_to_string(&bucket_path).with_context(|| {
-        format!("cannot read {INDEX_BUCKET_FILE} from {}", bucket_path.display())
+        format!(
+            "cannot read {INDEX_BUCKET_FILE} from {}",
+            bucket_path.display()
+        )
     })?;
     let index: BucketIndex = serde_json::from_str(&contents).context("invalid bucket.json")?;
     let resolved_commit = git_output(opts, &dest, &["rev-parse", "HEAD"])?;
@@ -403,18 +403,27 @@ fn is_strict_github_slug(target: &str) -> bool {
 
 // ── pull ──────────────────────────────────────────────────────────────────────
 
-/// Always uses `git pull` regardless of original clone binary.
+/// Refresh an unpinned checkout regardless of its original clone binary.
 /// After a `gh repo clone`, the credential helper is already configured so
-/// plain `git pull` works inside the repo.
+/// plain Git works inside the repo. A detached checkout can occur when a
+/// central index supplied the previous manifest ref; fetch its refs without
+/// merging so the current resolution chain can select the next ref.
 fn pull(opts: &GitFetchOptions<'_>, dest: &Path) -> Result<()> {
     let mut cmd = git_command(opts);
-    cmd.current_dir(dest).args(["pull"]);
+    cmd.current_dir(dest);
+    if try_git_output(opts, dest, &["symbolic-ref", "-q", "HEAD"]).is_none() {
+        cmd.args(["fetch", "origin", "--tags", "--prune"]);
+    } else {
+        cmd.arg("pull");
+    }
     run(cmd)
 }
 
 fn fetch_and_checkout(opts: &GitFetchOptions<'_>, dest: &Path, reference: &str) -> Result<()> {
     let mut fetch = git_command(opts);
-    fetch.current_dir(dest).args(["fetch", "origin", "--tags", "--prune"]);
+    fetch
+        .current_dir(dest)
+        .args(["fetch", "origin", "--tags", "--prune"]);
     run(fetch)?;
 
     let candidates = [
@@ -428,7 +437,9 @@ fn fetch_and_checkout(opts: &GitFetchOptions<'_>, dest: &Path, reference: &str) 
         .ok_or_else(|| NotFound(format!("git ref not found: {reference}")))?;
 
     let mut checkout = git_command(opts);
-    checkout.current_dir(dest).args(["checkout", "--detach", &resolved]);
+    checkout
+        .current_dir(dest)
+        .args(["checkout", "--detach", &resolved]);
     run(checkout)
 }
 
@@ -439,10 +450,10 @@ fn git_command(opts: &GitFetchOptions<'_>) -> Command {
     if let Some(key) = opts.ssl_key {
         cmd.env("GIT_SSL_KEY", key);
     }
-    if opts.binary == &GitBinary::Gh {
-        if let Some(token) = opts.token {
-            cmd.env("GITHUB_TOKEN", token);
-        }
+    if opts.binary == &GitBinary::Gh
+        && let Some(token) = opts.token
+    {
+        cmd.env("GITHUB_TOKEN", token);
     }
     cmd
 }
@@ -473,7 +484,7 @@ fn try_git_output(opts: &GitFetchOptions<'_>, dest: &Path, args: &[&str]) -> Opt
 
 #[cfg(test)]
 mod tests {
-    use super::{git_command, github_clone_target, GitFetchOptions};
+    use super::{GitFetchOptions, git_command, github_clone_target};
     use crate::config::GitBinary;
     use crate::utils::naming::repo_dir;
     use std::collections::HashMap;
@@ -503,7 +514,10 @@ mod tests {
 
     #[test]
     fn gh_keeps_strict_github_slug() {
-        assert_eq!(github_clone_target("owner/repo", &GitBinary::Gh), "owner/repo");
+        assert_eq!(
+            github_clone_target("owner/repo", &GitBinary::Gh),
+            "owner/repo"
+        );
     }
 
     #[test]

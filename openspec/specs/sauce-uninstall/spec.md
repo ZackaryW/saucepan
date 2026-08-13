@@ -5,7 +5,7 @@ Define safe removal of installed sauce records and Saucepan-managed Git checkout
 ## Requirements
 
 ### Requirement: Uninstall by manifest name
-Saucepan SHALL provide `uninstall <manifest-name>` and SHALL remove the matching entry from the local index.
+Saucepan SHALL provide `uninstall <manifest-name>` through the public command boundary and SHALL remove the matching entry from the local index.
 
 #### Scenario: Uninstall an installed sauce
 - **WHEN** a user uninstalls an installed manifest name

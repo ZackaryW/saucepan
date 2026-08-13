@@ -93,11 +93,19 @@ The SDK SHALL raise exceptions derived from a common base for non-zero exit code
 - **THEN** no exception is raised and the parsed result is returned
 
 ### Requirement: Full command-surface coverage
-The SDK SHALL cover the complete CLI surface: install with an optional ref, update, uninstall, list, path, search, bucket add, bucket remove, bucket list, and the index, buckets, sauce, and bucket `cat` targets. Search results SHALL be returned as raw parsed JSON values, because the output shape is determined by the caller's filter.
+The SDK SHALL cover the complete CLI surface: install with an optional ref, update, uninstall, list, path, search, bucket add with an optional ref, bucket refresh, bucket remove, bucket list, and the index, buckets, sauce, and bucket `cat` targets. Search results SHALL be returned as raw parsed JSON values, because the output shape is determined by the caller's filter.
 
 #### Scenario: Install accepts an optional ref
 - **WHEN** a caller installs a target with a branch, tag, or commit
 - **THEN** the SDK passes the ref to the install command and the resulting sauce records the requested ref and resolved commit
+
+#### Scenario: Bucket add accepts an optional ref
+- **WHEN** a caller registers a bucket with a branch, tag, or commit
+- **THEN** the SDK passes the ref to `bucket add` and invalidates its cached bucket collection after success
+
+#### Scenario: Bucket refresh is reachable
+- **WHEN** a caller refreshes a registered bucket
+- **THEN** the SDK invokes `bucket refresh`, invalidates cached bucket state, and returns normally on success
 
 #### Scenario: Every cat target is reachable
 - **WHEN** a caller requests the full index, the bucket list, a single sauce entry, or a bucket document
@@ -145,7 +153,7 @@ The `sdk/` directory SHALL be excluded from the published `saucepan` Rust crate 
 - **THEN** `sdk/` is not included in the package file list
 
 ### Requirement: Python test governance scoped to the SDK
-Python BDD and TDD stack configuration SHALL be scoped to the SDK directory so that it does not govern the Rust tree. The SDK's behavior scenarios and unit tests SHALL exercise an actually-built saucepan binary rather than substitutes for it, so that divergence between the SDK and the CLI is detected by the suite.
+Python BDD and TDD stack configuration SHALL be scoped to the SDK directory so that it does not govern the Rust tree. The SDK's behavior scenarios and unit tests SHALL exercise an actually-built saucepan binary rather than substitutes for it, so that divergence between the SDK and the CLI is detected by the suite. Each SDK behavior capability SHALL own an independently runnable feature root with thin bindings and delegated shared lifecycle support.
 
 #### Scenario: Rust tree is unaffected by Python stack configuration
 - **WHEN** the governance stack configuration is resolved for the repository root
@@ -159,9 +167,9 @@ Python BDD and TDD stack configuration SHALL be scoped to the SDK directory so t
 - **WHEN** the CLI's flags, JSON output shape, or exit-code mapping change without a corresponding SDK change
 - **THEN** the SDK suite fails rather than silently returning incorrect results
 
-#### Scenario: SDK BDD is separate from repository-root Gherkin
-- **WHEN** the SDK's behavior scenarios are executed
-- **THEN** they run from the SDK project's own feature directory and step definitions, leaving the repository-root feature files untouched
+#### Scenario: SDK capability root runs independently
+- **WHEN** an SDK behavior capability is selected for verification
+- **THEN** its feature root runs independently from repository-root capabilities and other SDK capability roots
 
 ### Requirement: Sauce snapshots expose manifest source
 A `Sauce` snapshot SHALL expose the source that supplied its manifest, so a caller can distinguish an entry described by its own repository from one described by a central index without parsing raw state.

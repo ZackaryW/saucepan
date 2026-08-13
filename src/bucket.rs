@@ -163,7 +163,12 @@ mod tests {
         .unwrap();
 
         let binary = GitBinary::Git;
-        let opts = GitFetchOptions { binary: &binary, token: None, ssl_key: None, reference: None };
+        let opts = GitFetchOptions {
+            binary: &binary,
+            token: None,
+            ssl_key: None,
+            reference: None,
+        };
         let index = fetch_bucket(bucket_file.to_str().unwrap(), workspace.path(), &opts).unwrap();
 
         assert_eq!(index.len(), 1);
@@ -182,7 +187,12 @@ mod tests {
         let file_url = format!("file://{}", bucket_file.to_str().unwrap());
 
         let binary = GitBinary::Git;
-        let opts = GitFetchOptions { binary: &binary, token: None, ssl_key: None, reference: None };
+        let opts = GitFetchOptions {
+            binary: &binary,
+            token: None,
+            ssl_key: None,
+            reference: None,
+        };
         let index = fetch_bucket(&file_url, workspace.path(), &opts).unwrap();
 
         assert_eq!(index.len(), 1);
@@ -194,12 +204,16 @@ mod tests {
         if !which_git() {
             return;
         }
-        let index_repo = make_index_repo(
-            r#"[{"name":"a","version":"1.0.0","url":"https://example.com/a"}]"#,
-        );
+        let index_repo =
+            make_index_repo(r#"[{"name":"a","version":"1.0.0","url":"https://example.com/a"}]"#);
         let workspace = TempDir::new().unwrap();
         let binary = GitBinary::Git;
-        let opts = GitFetchOptions { binary: &binary, token: None, ssl_key: None, reference: None };
+        let opts = GitFetchOptions {
+            binary: &binary,
+            token: None,
+            ssl_key: None,
+            reference: None,
+        };
 
         let index =
             fetch_bucket(index_repo.path().to_str().unwrap(), workspace.path(), &opts).unwrap();
@@ -214,9 +228,8 @@ mod tests {
         if !which_git() {
             return;
         }
-        let index_repo = make_index_repo(
-            r#"[{"name":"a","version":"1.0.0","url":"https://example.com/a"}]"#,
-        );
+        let index_repo =
+            make_index_repo(r#"[{"name":"a","version":"1.0.0","url":"https://example.com/a"}]"#);
         git_in(&index_repo, &["tag", "v1"]);
         // Advance the index repo past the tag; a pinned fetch must still see v1's content.
         std::fs::write(
@@ -229,8 +242,12 @@ mod tests {
 
         let workspace = TempDir::new().unwrap();
         let binary = GitBinary::Git;
-        let opts =
-            GitFetchOptions { binary: &binary, token: None, ssl_key: None, reference: Some("v1") };
+        let opts = GitFetchOptions {
+            binary: &binary,
+            token: None,
+            ssl_key: None,
+            reference: Some("v1"),
+        };
 
         let index =
             fetch_bucket(index_repo.path().to_str().unwrap(), workspace.path(), &opts).unwrap();

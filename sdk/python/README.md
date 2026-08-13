@@ -62,6 +62,9 @@ installed.uninstall()
 
 for bucket in workspace.buckets:
     print(bucket.url, bucket.stubs())
+
+pinned = workspace.add_bucket("owner/central-index", reference="v1.2.0")
+workspace.refresh_bucket(pinned.url)
 ```
 
 ### Command methods
@@ -75,7 +78,7 @@ Every Saucepan CLI read or mutation has an SDK entry point:
 | List installed entries | `workspace.list()` |
 | Resolve an installed path | `workspace.path(name)`, `sauce.path` |
 | Search registered buckets | `workspace.search(jq_filter)` |
-| Add, remove, or list buckets | `workspace.add_bucket(url)`, `workspace.remove_bucket(url)`, `workspace.list_buckets()` |
+| Add, refresh, remove, or list buckets | `workspace.add_bucket(url, reference=None)`, `workspace.refresh_bucket(url)`, `workspace.remove_bucket(url)`, `workspace.list_buckets()` |
 | Remove or inspect one bucket | `bucket.remove()`, `bucket.stubs()` |
 | Read the full index or registry | `workspace.cat_index()`, `workspace.cat_buckets()` |
 | Read one sauce or bucket document | `workspace.cat_sauce(name)`, `workspace.cat_bucket(url)` |
