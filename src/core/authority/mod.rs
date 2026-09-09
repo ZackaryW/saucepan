@@ -1,6 +1,39 @@
 //! Current application context and internal operation capabilities.
 //! No caller-supplied boolean can represent authorization.
-use super::models::{Action, Error, ErrorKind, Registration, Result};
+use super::models::{Action, Error, ErrorKind, Registration, ResolvedInputs, Result};
+
+pub(super) fn require_artifact_destination(
+    registration: &Registration,
+    inputs: &ResolvedInputs,
+    action: Action,
+    destination: &std::path::Path,
+) -> Result<()> {
+    require_destination(
+        registration,
+        &inputs.source_id,
+        &inputs.subdirectory,
+        action,
+        destination,
+    )?;
+    for dependency in &inputs.dependencies {
+        // Dependency paths are relative to the final selected artifact, including
+        // "." when selection crosses a gitlink. Apply each source's own scope.
+        super::recipes::validate_selection(&dependency.path)?;
+        let mounted = if dependency.path == "." {
+            destination.to_path_buf()
+        } else {
+            destination.join(&dependency.path)
+        };
+        require_destination(
+            registration,
+            &dependency.source_id,
+            &dependency.subdirectory,
+            action,
+            &mounted,
+        )?;
+    }
+    Ok(())
+}
 
 pub(super) fn path_contains(root: &std::path::Path, path: &std::path::Path) -> bool {
     #[cfg(windows)]

@@ -31,10 +31,9 @@ impl Session {
             Action::Mirror,
         )?;
         let destination = external_path(destination)?;
-        authority::require_destination(
+        authority::require_artifact_destination(
             &context,
-            &view.artifact.inputs.source_id,
-            &view.artifact.inputs.subdirectory,
+            &view.artifact.inputs,
             Action::Mirror,
             &destination,
         )?;
@@ -142,10 +141,9 @@ impl Session {
                 "application changed during mirror preparation",
             ));
         }
-        authority::require_destination(
+        authority::require_artifact_destination(
             &access.context,
-            &record.inputs.source_id,
-            &record.inputs.subdirectory,
+            &record.inputs,
             Action::Mirror,
             &destination,
         )?;
@@ -209,10 +207,9 @@ impl Session {
             .iter()
             .find(|mirror| Path::new(&mirror.directory.path) == destination)
             .ok_or_else(Error::not_found)?;
-        authority::require_destination(
+        authority::require_artifact_destination(
             &context,
-            &mirror.artifact.inputs.source_id,
-            &mirror.artifact.inputs.subdirectory,
+            &mirror.artifact.inputs,
             Action::Inspect,
             &destination,
         )
@@ -252,10 +249,9 @@ impl Session {
                 "application changed during mirror lookup",
             ));
         }
-        authority::require_destination(
+        authority::require_artifact_destination(
             &access.context,
-            &mirror.artifact.inputs.source_id,
-            &mirror.artifact.inputs.subdirectory,
+            &mirror.artifact.inputs,
             Action::Inspect,
             &destination,
         )?;
@@ -283,10 +279,9 @@ impl Session {
             .iter()
             .find(|mirror| Path::new(&mirror.directory.path) == destination)
             .ok_or_else(Error::not_found)?;
-        authority::require_destination(
+        authority::require_artifact_destination(
             &context,
-            &mirror.artifact.inputs.source_id,
-            &mirror.artifact.inputs.subdirectory,
+            &mirror.artifact.inputs,
             Action::Remove,
             &destination,
         )
@@ -316,10 +311,9 @@ impl Session {
                 "application changed during mirror removal",
             ));
         }
-        authority::require_destination(
+        authority::require_artifact_destination(
             &access.context,
-            &mirror.artifact.inputs.source_id,
-            &mirror.artifact.inputs.subdirectory,
+            &mirror.artifact.inputs,
             Action::Remove,
             &destination,
         )?;

@@ -295,10 +295,9 @@ impl Session {
         }
         repository.verify_origin()?;
         for mirror in &unit.mirrors {
-            authority::require_destination(
+            authority::require_artifact_destination(
                 &access.context,
-                &mirror.artifact.inputs.source_id,
-                &mirror.artifact.inputs.subdirectory,
+                &mirror.artifact.inputs,
                 Action::Remove,
                 Path::new(&mirror.directory.path),
             )?;

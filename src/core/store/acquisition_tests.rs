@@ -3,6 +3,143 @@ use crate::core::{acquisition, sources};
 use std::{collections::BTreeMap, io::Read, process::Command};
 
 #[test]
+fn dependency_mirrors_require_their_own_destinations_and_missing_commits_preserve_current() {
+    let f = Fixture::new();
+    let previous = f.acquire().unwrap();
+    let child = f._temp.path().join("mirror-child");
+    std::fs::create_dir(&child).unwrap();
+    git(&child, &["init", "--initial-branch=main", "--template="]);
+    std::fs::write(child.join("child.txt"), "child bytes").unwrap();
+    git(&child, &["add", "."]);
+    git(&child, &["commit", "-m", "child"]);
+    let child_commit = git(&child, &["rev-parse", "HEAD"]);
+    let child_id = sources::identify(&Recipe::git(child.to_str().unwrap()).source, &f.app).unwrap();
+    let mirrors = f._temp.path().join("mirrors");
+    let elsewhere = f._temp.path().join("elsewhere");
+    for path in [&mirrors, &elsewhere] {
+        std::fs::create_dir(path).unwrap();
+    }
+    let mirrors = std::fs::canonicalize(mirrors).unwrap();
+    let elsewhere = std::fs::canonicalize(elsewhere).unwrap();
+    let owner: Marker =
+        serde_json::from_slice(&std::fs::read(f.root.join("owner.saucepanhash")).unwrap()).unwrap();
+    let context = f.store.inspect_context(&f.app, None).unwrap();
+    let mut grants = context.grants.clone();
+    grants[0].actions.extend([Action::Mirror, Action::Remove]);
+    grants[0].destinations = vec![mirrors.to_str().unwrap().into()];
+    grants.push(Grant {
+        source_id: Some(child_id.id),
+        selection: ".".into(),
+        actions: [
+            Action::Setup,
+            Action::Inspect,
+            Action::Mirror,
+            Action::Remove,
+        ]
+        .into_iter()
+        .collect(),
+        destinations: vec![elsewhere.to_str().unwrap().into()],
+    });
+    let register = |grants: Vec<Grant>| {
+        f.store
+            .update_application(
+                &f.root,
+                Some(&owner),
+                &context.id,
+                Some(ApplicationRegistration {
+                    root: context.root.clone(),
+                    mode: context.mode,
+                    grants,
+                    require_verification: false,
+                }),
+            )
+            .unwrap();
+    };
+    register(grants.clone());
+    std::fs::write(
+        f.repo.join(".gitmodules"),
+        "[submodule \"child\"]\npath = pkg/dependency\nurl = ../mirror-child\n",
+    )
+    .unwrap();
+    git(&f.repo, &["add", ".gitmodules"]);
+    git(
+        &f.repo,
+        &[
+            "update-index",
+            "--add",
+            "--cacheinfo",
+            &format!("160000,{},pkg/dependency", "1".repeat(40)),
+        ],
+    );
+    git(&f.repo, &["commit", "-m", "missing exact dependency"]);
+    assert!(matches!(f.acquire(), Err(e) if e.kind == ErrorKind::Source));
+    assert_eq!(
+        f.source().current[&previous.inputs.stream_id].artifact.id,
+        previous.id
+    );
+    assert!(f.source().history.is_empty());
+    git(
+        &f.repo,
+        &[
+            "update-index",
+            "--cacheinfo",
+            &format!("160000,{child_commit},pkg/dependency"),
+        ],
+    );
+    git(&f.repo, &["commit", "-m", "available dependency"]);
+    let acquired = f.acquire().unwrap();
+    let verification = VerificationRequest {
+        content: Some(false),
+    };
+    let materialized = f
+        .store
+        .materialize(&f.app, None, &f.recipe, &acquired.id, &verification)
+        .unwrap();
+    let target = BindingTarget::Materialization {
+        id: materialized.id.clone(),
+    };
+    let destination = mirrors.join("copy");
+    assert!(
+        matches!(f.store.mirror(&f.app, None, &target, &destination, &verification), Err(e) if e.kind == ErrorKind::Authority)
+    );
+    assert!(!destination.exists());
+    grants[1].destinations = grants[0].destinations.clone();
+    register(grants.clone());
+    f.store
+        .mirror(&f.app, None, &target, &destination, &verification)
+        .unwrap();
+    assert_eq!(
+        std::fs::read_to_string(destination.join("dependency/child.txt")).unwrap(),
+        "child bytes"
+    );
+    f.store
+        .mirror_path(&f.app, None, &target, &destination, &verification)
+        .unwrap();
+    grants[1].destinations = vec![elsewhere.to_str().unwrap().into()];
+    register(grants.clone());
+    assert!(
+        matches!(f.store.mirror_path(&f.app, None, &target, &destination, &verification), Err(e) if e.kind == ErrorKind::NotFound)
+    );
+    assert!(
+        f.store
+            .remove_mirror(&f.app, None, &target, &destination)
+            .is_err()
+    );
+    assert!(
+        f.store
+            .release_materialization(&f.app, None, &materialized.id)
+            .is_err()
+    );
+    assert!(destination.join("dependency/child.txt").is_file());
+    grants[1].destinations = grants[0].destinations.clone();
+    register(grants);
+    f.store
+        .release_materialization(&f.app, None, &materialized.id)
+        .unwrap();
+    assert!(!destination.exists());
+}
+
+#[test]
 fn deep_submodules_fail_before_publication_and_release_preparation_refs() {
     let f = Fixture::new();
     let before = f.acquire().unwrap();
