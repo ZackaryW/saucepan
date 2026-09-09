@@ -1,45 +1,41 @@
-//! Stateless helpers used by the new core, independent of legacy utilities.
+//! Domain-neutral helpers. App, source, index, and policy rules belong in the core.
+//!
+//! - [`hash`] and [`json`]: streaming SHA-256 and sorted serialization.
+//! - [`crypto`]: random bytes, HKDF, HMAC, and authenticated byte encryption.
+//! - [`path`]: logical paths and host-specific filename validation.
+//! - [`lock`] and [`fs`]: bounded writer locking and staged file/directory publication.
+//! - [`tree`] and [`archive`]: filtered tree copies and ZIP stream round trips.
+//!
+//! Filters, byte/entry limits, key material, and authentication contexts are supplied
+//! by callers. Helpers do not assign source IDs, choose retention rules, access a
+//! keyring, store app settings, or define index/token formats. Use library primitives
+//! directly where an extra wrapper adds no behavior.
+//!
+//! Directory publication requires a trusted parent and cooperating writers holding
+//! the same lock. Inputs must remain stable during export/copy. These operations
+//! preserve an occupied destination and clean failed staging, but do not implement
+//! multi-file transactions or protection from a hostile process running as the user.
+//!
+//! ```
+//! use saucepan::utils::{archive, fs};
+//! # fn example(source: &std::path::Path, output: &std::path::Path) -> std::io::Result<()> {
+//! fs::atomic_write(output, |file| {
+//!     archive::write_zip(source, file, |path, _| {
+//!         !path.split('/').any(|component| component == ".git")
+//!     })?;
+//!     Ok(())
+//! })
+//! # }
+//! ```
 
-pub(crate) fn hex(bytes: &[u8]) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for b in bytes {
-        out.push(HEX[(b >> 4) as usize] as char);
-        out.push(HEX[(b & 15) as usize] as char);
-    }
-    out
-}
-
-pub(crate) fn unhex(text: &str) -> Option<Vec<u8>> {
-    if !text.len().is_multiple_of(2) {
-        return None;
-    }
-    text.as_bytes()
-        .chunks_exact(2)
-        .map(|pair| {
-            let a = (pair[0] as char).to_digit(16)?;
-            let b = (pair[1] as char).to_digit(16)?;
-            Some(((a << 4) | b) as u8)
-        })
-        .collect()
-}
-
-/// Encode an ordered tuple with explicit byte lengths rather than delimiters.
-pub(crate) fn frame(domain: &[u8], fields: &[&[u8]]) -> Vec<u8> {
-    let mut result = Vec::new();
-    for field in std::iter::once(&domain).chain(fields.iter()) {
-        result.extend_from_slice(&(field.len() as u64).to_be_bytes());
-        result.extend_from_slice(field);
-    }
-    result
-}
+pub mod archive;
+pub mod crypto;
+pub mod fs;
+pub mod hash;
+pub mod json;
+pub mod lock;
+pub mod path;
+pub mod tree;
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn component_boundaries_cannot_collide() {
-        assert_ne!(frame(b"v1", &[b"a/b", b"c"]), frame(b"v1", &[b"a", b"b/c"]));
-        assert_ne!(frame(b"source", &[b"a"]), frame(b"artifact", &[b"a"]));
-    }
-}
+mod tests;
