@@ -3,6 +3,86 @@ use crate::core::{acquisition, sources};
 use std::{collections::BTreeMap, io::Read, process::Command};
 
 #[test]
+fn submodule_links_are_checked_against_the_complete_selected_artifact() {
+    let f = Fixture::new();
+    let child = f._temp.path().join("linked-child");
+    std::fs::create_dir(&child).unwrap();
+    git(&child, &["init", "--initial-branch=main", "--template="]);
+    // Write a committed symlink through Git's index so this fixture does not
+    // depend on Windows symlink privileges or a materialized child checkout.
+    std::fs::write(child.join("link-value"), "../version.txt").unwrap();
+    let blob = git(&child, &["hash-object", "-w", "link-value"]);
+    git(
+        &child,
+        &[
+            "update-index",
+            "--add",
+            "--cacheinfo",
+            &format!("120000,{blob},parent-version"),
+        ],
+    );
+    git(&child, &["commit", "-m", "relative link into parent"]);
+    let commit = git(&child, &["rev-parse", "HEAD"]);
+    std::fs::write(
+        f.repo.join(".gitmodules"),
+        "[submodule \"child\"]\npath = pkg/dependency\nurl = ../linked-child\n",
+    )
+    .unwrap();
+    git(&f.repo, &["add", ".gitmodules"]);
+    git(
+        &f.repo,
+        &[
+            "update-index",
+            "--add",
+            "--cacheinfo",
+            &format!("160000,{commit},pkg/dependency"),
+        ],
+    );
+    git(&f.repo, &["commit", "-m", "include child"]);
+    let identity = sources::identify(&Recipe::git(child.to_str().unwrap()).source, &f.app).unwrap();
+    let owner: Marker =
+        serde_json::from_slice(&std::fs::read(f.root.join("owner.saucepanhash")).unwrap()).unwrap();
+    let context = f.store.inspect_context(&f.app, None).unwrap();
+    let mut grants = context.grants.clone();
+    grants.push(Grant {
+        source_id: Some(identity.id),
+        selection: ".".into(),
+        actions: [Action::Setup, Action::Inspect].into_iter().collect(),
+        destinations: vec![],
+    });
+    f.store
+        .update_application(
+            &f.root,
+            Some(&owner),
+            &context.id,
+            Some(ApplicationRegistration {
+                root: context.root,
+                mode: context.mode,
+                grants,
+                require_verification: false,
+            }),
+        )
+        .unwrap();
+    let artifact = f.acquire().unwrap();
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(
+        std::fs::read(f.archive(&artifact.id)).unwrap(),
+    ))
+    .unwrap();
+    let mut target = String::new();
+    let mut link = zip.by_name("dependency/parent-version").unwrap();
+    assert_eq!(link.unix_mode().unwrap() & 0o170000, 0o120000);
+    link.read_to_string(&mut target).unwrap();
+    assert_eq!(target, "../version.txt");
+    let before = serde_json::to_value(f.source()).unwrap();
+    let mut narrower = f.recipe.clone();
+    narrower.export.subdirectory = "pkg/dependency".into();
+    assert!(
+        matches!(acquisition::acquire(&f.store, &f.app, None, &narrower, &VerificationRequest { content: Some(false) }), Err(e) if e.kind == ErrorKind::Integrity)
+    );
+    assert_eq!(serde_json::to_value(f.source()).unwrap(), before);
+}
+
+#[test]
 fn ignored_submodules_need_no_dependency_access_and_missing_required_metadata_fails() {
     let f = Fixture::new();
     let commit = git(&f.repo, &["rev-parse", "HEAD"]);
