@@ -11,6 +11,9 @@ pub(in crate::core) struct SourceAccess {
     pub(super) action: Action,
     pub(super) locks: Vec<Lock>,
     pub(super) dependencies: std::collections::BTreeMap<String, SourceIndex>,
+    /// Authenticated sources locked solely to retire obsolete internal pins.
+    /// These are not acquisition capabilities and supply no caller-visible data.
+    pub(super) maintenance: std::collections::BTreeMap<String, SourceIndex>,
     pub(super) dependency_scopes: std::collections::BTreeSet<(String, String)>,
     pub(super) verification: VerificationRequest,
     pub pins: Vec<crate::core::sources::GitPin>,
@@ -148,6 +151,7 @@ impl Session {
             action,
             locks: vec![lock],
             dependencies: Default::default(),
+            maintenance: Default::default(),
             dependency_scopes: Default::default(),
             verification: verification.clone(),
             pins: vec![],
@@ -162,7 +166,7 @@ impl Session {
         // Protected returns and publication verify the complete repository set.
         // Discovery checks each repository when it is used and revalidates all
         // index generations, without repeatedly spawning Git for every ancestor.
-        for (id, source) in &access.dependencies {
+        for (id, source) in access.dependencies.iter().chain(&access.maintenance) {
             let identity = SourceIdentity {
                 schema_version: SCHEMA_VERSION,
                 backend: Backend::Git,
@@ -208,7 +212,7 @@ impl Session {
         for (id, selection) in &access.dependency_scopes {
             crate::core::authority::require_source(&current, id, selection, access.action)?;
         }
-        for (id, dependency) in &access.dependencies {
+        for (id, dependency) in access.dependencies.iter().chain(&access.maintenance) {
             let selected = snapshot.sources.get(id).ok_or_else(Error::not_found)?;
             if selected.generation != dependency.generation
                 || selected.origin != dependency.origin

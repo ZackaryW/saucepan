@@ -16,6 +16,7 @@ impl Session {
     ) -> Result<sources::GitRepository> {
         authority::require_source(&access.context, &identity.id, selection, access.action)?;
         let mut ids: BTreeSet<_> = access.dependencies.keys().cloned().collect();
+        ids.extend(access.maintenance.keys().cloned());
         ids.insert(access.source.id.clone());
         if ids.insert(identity.id.clone()) {
             drop(std::mem::take(&mut access.locks));

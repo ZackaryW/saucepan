@@ -3,6 +3,188 @@ use crate::core::{acquisition, sources};
 use std::{collections::BTreeMap, io::Read, process::Command};
 
 #[test]
+fn removed_dependencies_release_history_pins_but_preserve_live_bindings_through_gc() {
+    for keep_binding in [false, true] {
+        let f = Fixture::new();
+        let child = f._temp.path().join("retired-child");
+        std::fs::create_dir(&child).unwrap();
+        git(&child, &["init", "--initial-branch=main", "--template="]);
+        std::fs::write(child.join("child.txt"), "old child bytes").unwrap();
+        git(&child, &["add", "."]);
+        git(&child, &["commit", "-m", "child"]);
+        let commit = git(&child, &["rev-parse", "HEAD"]);
+        let child_id =
+            sources::identify(&Recipe::git(child.to_str().unwrap()).source, &f.app).unwrap();
+        std::fs::write(
+            f.repo.join(".gitmodules"),
+            "[submodule \"child\"]\npath = pkg/dependency\nurl = ../retired-child\n",
+        )
+        .unwrap();
+        git(&f.repo, &["add", ".gitmodules"]);
+        git(
+            &f.repo,
+            &[
+                "update-index",
+                "--add",
+                "--cacheinfo",
+                &format!("160000,{commit},pkg/dependency"),
+            ],
+        );
+        git(&f.repo, &["commit", "-m", "include child"]);
+        let owner: Marker =
+            serde_json::from_slice(&std::fs::read(f.root.join("owner.saucepanhash")).unwrap())
+                .unwrap();
+        let context = f.store.inspect_context(&f.app, None).unwrap();
+        let mirrors = f._temp.path().join("mirrors");
+        std::fs::create_dir(&mirrors).unwrap();
+        let mirrors = std::fs::canonicalize(mirrors).unwrap();
+        let mut grants = context.grants.clone();
+        grants[0].actions.extend([Action::Mirror, Action::Remove]);
+        grants[0].destinations = vec![mirrors.to_str().unwrap().into()];
+        grants.push(Grant {
+            source_id: Some(child_id.id.clone()),
+            selection: ".".into(),
+            actions: grants[0].actions.clone(),
+            destinations: grants[0].destinations.clone(),
+        });
+        let register = |grants: Vec<Grant>| {
+            f.store
+                .update_application(
+                    &f.root,
+                    Some(&owner),
+                    &context.id,
+                    Some(ApplicationRegistration {
+                        root: context.root.clone(),
+                        mode: context.mode,
+                        grants,
+                        require_verification: false,
+                    }),
+                )
+                .unwrap();
+        };
+        register(grants.clone());
+        let initial = f.acquire().unwrap();
+        let verification = VerificationRequest {
+            content: Some(true),
+        };
+        let binding = keep_binding.then(|| {
+            f.store
+                .materialize(&f.app, None, &f.recipe, &initial.id, &verification)
+                .unwrap()
+        });
+        git(
+            &f.repo,
+            &["update-index", "--force-remove", "pkg/dependency"],
+        );
+        git(&f.repo, &["commit", "-m", "remove dependency"]);
+        f.acquire().unwrap();
+        // Once the outgoing artifact is safely historical, no child acquisition
+        // grant is needed merely to retire the store's obsolete Git references.
+        register(vec![grants[0].clone()]);
+        for version in ["C", "D", "E", "F", "G", "H"] {
+            f.advance(version);
+            if version == "G" {
+                let cached = f.root.join("sources").join(&child_id.id).join("repo.git");
+                let before = serde_json::to_value(f.source()).unwrap();
+                git(
+                    &cached,
+                    &[
+                        "remote",
+                        "set-url",
+                        "origin",
+                        "https://example.invalid/repointed",
+                    ],
+                );
+                assert!(matches!(f.acquire(), Err(e) if e.kind == ErrorKind::Integrity));
+                assert_eq!(serde_json::to_value(f.source()).unwrap(), before);
+                assert!(f.archive(&initial.id).exists());
+                git(&cached, &["remote", "set-url", "origin", &child_id.origin]);
+            }
+            f.acquire().unwrap();
+        }
+        assert!(!f.source().history.contains_key(&initial.id));
+        assert!(!f.archive(&initial.id).exists());
+        let cached = f.root.join("sources").join(&child_id.id).join("repo.git");
+        let references = git(
+            &cached,
+            &[
+                "for-each-ref",
+                "--format=%(refname)",
+                "refs/saucepan/dependencies/",
+            ],
+        );
+        assert_eq!(!references.is_empty(), keep_binding);
+        // Remove fixture clone refs to prove reachability comes from bindings.
+        for reference in git(
+            &cached,
+            &[
+                "for-each-ref",
+                "--format=%(refname)",
+                "refs/heads/",
+                "refs/tags/",
+                "refs/saucepan/resolved",
+            ],
+        )
+        .lines()
+        {
+            git(&cached, &["update-ref", "-d", reference]);
+        }
+        let reachable = || {
+            Command::new("git")
+                .arg("-C")
+                .arg(&cached)
+                .args(["cat-file", "-e", &format!("{commit}^{{commit}}")])
+                .output()
+                .unwrap()
+                .status
+                .success()
+        };
+        git(&cached, &["reflog", "expire", "--expire=now", "--all"]);
+        git(&cached, &["gc", "--prune=now"]);
+        assert_eq!(reachable(), keep_binding);
+        if let Some(binding) = binding {
+            register(grants);
+            let destination = mirrors.join("old-copy");
+            f.store
+                .mirror(
+                    &f.app,
+                    None,
+                    &BindingTarget::Materialization {
+                        id: binding.id.clone(),
+                    },
+                    &destination,
+                    &verification,
+                )
+                .unwrap();
+            assert_eq!(
+                std::fs::read_to_string(destination.join("dependency/child.txt")).unwrap(),
+                "old child bytes"
+            );
+            f.store
+                .release_materialization(&f.app, None, &binding.id)
+                .unwrap();
+            assert!(!destination.exists());
+            assert!(
+                git(
+                    &cached,
+                    &[
+                        "for-each-ref",
+                        "--format=%(refname)",
+                        "refs/saucepan/dependencies/"
+                    ]
+                )
+                .is_empty()
+            );
+            git(&cached, &["reflog", "expire", "--expire=now", "--all"]);
+            git(&cached, &["gc", "--prune=now"]);
+            assert!(!reachable());
+        }
+        assert!(cached.is_dir());
+        assert!(child.join("child.txt").is_file());
+    }
+}
+
+#[test]
 fn installed_projections_and_tokens_follow_current_app_scope_without_global_activity() {
     let f = Fixture::new();
     let owner: Marker =

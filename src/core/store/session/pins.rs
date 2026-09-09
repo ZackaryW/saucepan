@@ -1,13 +1,81 @@
 use super::*;
 use crate::core::sources::GitRepository;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 impl Session {
+    /// Lock sources referenced by descriptors this publication retires, even
+    /// when the incoming tree no longer contains those dependencies. This only
+    /// maintains Saucepan refs; it does not grant source access or fetch bytes.
+    pub(in crate::core) fn reserve_retired_sources(
+        &self,
+        access: &mut super::access::SourceAccess,
+        next: &SourceIndex,
+    ) -> Result<()> {
+        let retained: BTreeSet<_> = artifacts(next).map(|artifact| &artifact.id).collect();
+        let mut origins = BTreeMap::new();
+        for dependency in artifacts(&access.source)
+            .filter(|artifact| !retained.contains(&artifact.id))
+            .flat_map(|artifact| &artifact.inputs.dependencies)
+        {
+            if dependency.source_id != access.source.id
+                && !access.dependencies.contains_key(&dependency.source_id)
+                && origins
+                    .insert(dependency.source_id.clone(), dependency.origin.clone())
+                    .is_some_and(|previous| previous != dependency.origin)
+            {
+                return Err(Error::new(
+                    ErrorKind::Integrity,
+                    "retired dependency origins conflict",
+                ));
+            }
+        }
+        if origins.is_empty() {
+            return Ok(());
+        }
+        let ids: BTreeSet<_> = std::iter::once(access.source.id.clone())
+            .chain(access.dependencies.keys().cloned())
+            .chain(access.maintenance.keys().cloned())
+            .chain(origins.keys().cloned())
+            .collect();
+        drop(std::mem::take(&mut access.locks));
+        let deadline = Instant::now() + Duration::from_secs(5);
+        for id in ids {
+            access.locks.push(Lock::acquire(
+                &self.layout,
+                &format!("source-{id}"),
+                deadline,
+            )?);
+        }
+        let _central = Lock::acquire(&self.layout, "central", deadline)?;
+        self.generations().recover()?;
+        let snapshot = self.generations().read()?;
+        self.revalidate_source_state(access, &snapshot)?;
+        for (id, origin) in origins {
+            let source = snapshot.sources.get(&id).ok_or_else(|| {
+                Error::new(ErrorKind::Integrity, "retired dependency source is missing")
+            })?;
+            if source.origin != origin {
+                return Err(Error::new(
+                    ErrorKind::Integrity,
+                    "retired dependency origin changed",
+                ));
+            }
+            access.maintenance.insert(id, source.clone());
+        }
+        // Verify every repository that publication will reconcile before the
+        // central index is changed, including dependencies no longer acquired.
+        self.revalidate_source(access, &snapshot)
+    }
+
     /// Caller holds this source lock and the central commit lock. Extra refs
     /// left by a crash are harmless and are retired at the next reconciliation.
     pub(super) fn reconcile_pins(&self, access: &super::access::SourceAccess) -> Result<()> {
         let snapshot = self.generations().read()?;
-        for source_id in std::iter::once(&access.source.id).chain(access.dependencies.keys()) {
+        let ids: BTreeSet<_> = std::iter::once(&access.source.id)
+            .chain(access.dependencies.keys())
+            .chain(access.maintenance.keys())
+            .collect();
+        for source_id in ids {
             let source = snapshot
                 .sources
                 .get(source_id)
@@ -52,6 +120,13 @@ impl Session {
         }
         Ok(())
     }
+}
+fn artifacts(source: &SourceIndex) -> impl Iterator<Item = &ContentArtifact> {
+    source
+        .current
+        .values()
+        .map(|current| &current.artifact)
+        .chain(source.history.values().map(|history| &history.artifact))
 }
 fn collect(
     expected: &mut BTreeMap<String, String>,

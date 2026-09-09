@@ -166,6 +166,7 @@ pub(super) fn acquire_for_action(
         policy.retain,
     )?;
     session.trim_history(&access, &mut source)?;
+    session.reserve_retired_sources(&mut access, &source)?;
     repository.verify_origin()?;
     session.commit_source(&access, source, archives)?;
     let recipe_bytes = serde_json::to_vec(recipe)
