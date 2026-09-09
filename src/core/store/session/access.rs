@@ -13,7 +13,6 @@ pub(in crate::core) struct SourceAccess {
     pub(super) dependencies: std::collections::BTreeMap<String, SourceIndex>,
     pub(super) dependency_scopes: std::collections::BTreeSet<(String, String)>,
     pub(super) verification: VerificationRequest,
-    pub(super) pending_repositories: std::collections::BTreeSet<String>,
     pub pins: Vec<crate::core::sources::GitPin>,
 }
 impl Session {
@@ -151,11 +150,40 @@ impl Session {
             dependencies: Default::default(),
             dependency_scopes: Default::default(),
             verification: verification.clone(),
-            pending_repositories: Default::default(),
             pins: vec![],
         })
     }
     pub(super) fn revalidate_source(
+        &self,
+        access: &SourceAccess,
+        snapshot: &super::super::transactions::Snapshot,
+    ) -> Result<()> {
+        self.revalidate_source_state(access, snapshot)?;
+        // Protected returns and publication verify the complete repository set.
+        // Discovery checks each repository when it is used and revalidates all
+        // index generations, without repeatedly spawning Git for every ancestor.
+        for (id, source) in &access.dependencies {
+            let identity = SourceIdentity {
+                schema_version: SCHEMA_VERSION,
+                backend: Backend::Git,
+                id: id.clone(),
+                origin: source.origin.clone(),
+                locator: source.origin.clone(),
+            };
+            let repository = self
+                .layout
+                .path(Path::new(&format!("sources/{id}/repo.git")))?;
+            if !repository.is_dir() {
+                return Err(Error::new(
+                    ErrorKind::Integrity,
+                    "recorded dependency repository is missing",
+                ));
+            }
+            crate::core::sources::GitRepository::open(&repository, &identity)?;
+        }
+        Ok(())
+    }
+    pub(super) fn revalidate_source_state(
         &self,
         access: &SourceAccess,
         snapshot: &super::super::transactions::Snapshot,
@@ -189,24 +217,6 @@ impl Session {
                 return Err(Error::new(
                     ErrorKind::Busy,
                     "dependency changed during acquisition; retry",
-                ));
-            }
-            let identity = SourceIdentity {
-                schema_version: SCHEMA_VERSION,
-                backend: Backend::Git,
-                id: id.clone(),
-                origin: selected.origin.clone(),
-                locator: selected.origin.clone(),
-            };
-            let repository = self
-                .layout
-                .path(Path::new(&format!("sources/{id}/repo.git")))?;
-            if repository.exists() {
-                crate::core::sources::GitRepository::open(&repository, &identity)?;
-            } else if !access.pending_repositories.contains(id) {
-                return Err(Error::new(
-                    ErrorKind::Integrity,
-                    "recorded dependency repository is missing",
                 ));
             }
         }

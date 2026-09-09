@@ -36,7 +36,7 @@ impl Session {
             )?;
             self.generations().recover()?;
             let snapshot = self.generations().read()?;
-            self.revalidate_source(access, &snapshot)?;
+            self.revalidate_source_state(access, &snapshot)?;
             authority::require_source(
                 &self.context_in(
                     &snapshot.central,
@@ -119,7 +119,6 @@ impl Session {
                     "recorded dependency repository is missing",
                 ));
             }
-            access.pending_repositories.insert(identity.id.clone());
             let staged = access
                 .staging
                 .path()
@@ -131,7 +130,7 @@ impl Session {
                 Instant::now() + Duration::from_secs(5),
             )?;
             self.generations().recover()?;
-            self.revalidate_source(access, &self.generations().read()?)?;
+            self.revalidate_source_state(access, &self.generations().read()?)?;
             if repository.exists() {
                 return Err(Error::new(
                     ErrorKind::Conflict,
@@ -141,7 +140,6 @@ impl Session {
             std::fs::rename(staged, &repository).map_err(|_| {
                 Error::new(ErrorKind::Internal, "cannot publish dependency repository")
             })?;
-            access.pending_repositories.remove(&identity.id);
         }
         sources::GitRepository::open(&repository, identity)
     }

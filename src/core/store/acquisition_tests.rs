@@ -3,6 +3,111 @@ use crate::core::{acquisition, sources};
 use std::{collections::BTreeMap, io::Read, process::Command};
 
 #[test]
+fn deep_submodules_fail_before_publication_and_release_preparation_refs() {
+    let f = Fixture::new();
+    let before = f.acquire().unwrap();
+    let mut child_commit: Option<String> = None;
+    let mut identities = vec![];
+    for index in (0..17).rev() {
+        let path = f._temp.path().join(format!("chain-{index}"));
+        std::fs::create_dir(&path).unwrap();
+        git(&path, &["init", "--initial-branch=main", "--template="]);
+        std::fs::write(path.join("entry.txt"), index.to_string()).unwrap();
+        git(&path, &["add", "entry.txt"]);
+        if let Some(commit) = child_commit {
+            std::fs::write(
+                path.join(".gitmodules"),
+                format!(
+                    "[submodule \"next\"]\npath = next\nurl = ../chain-{}\n",
+                    index + 1
+                ),
+            )
+            .unwrap();
+            git(&path, &["add", ".gitmodules"]);
+            git(
+                &path,
+                &[
+                    "update-index",
+                    "--add",
+                    "--cacheinfo",
+                    &format!("160000,{commit},next"),
+                ],
+            );
+        }
+        git(&path, &["commit", "-m", "chain input"]);
+        child_commit = Some(git(&path, &["rev-parse", "HEAD"]));
+        identities
+            .push(sources::identify(&Recipe::git(path.to_str().unwrap()).source, &f.app).unwrap());
+    }
+    std::fs::write(
+        f.repo.join(".gitmodules"),
+        "[submodule \"chain\"]\npath = pkg/dependency\nurl = ../chain-0\n",
+    )
+    .unwrap();
+    git(&f.repo, &["add", ".gitmodules"]);
+    git(
+        &f.repo,
+        &[
+            "update-index",
+            "--add",
+            "--cacheinfo",
+            &format!("160000,{},pkg/dependency", child_commit.unwrap()),
+        ],
+    );
+    git(&f.repo, &["commit", "-m", "deep dependency graph"]);
+    let owner: Marker =
+        serde_json::from_slice(&std::fs::read(f.root.join("owner.saucepanhash")).unwrap()).unwrap();
+    let context = f.store.inspect_context(&f.app, None).unwrap();
+    let mut grants = context.grants.clone();
+    grants.extend(identities.iter().map(|identity| Grant {
+        source_id: Some(identity.id.clone()),
+        selection: ".".into(),
+        actions: [Action::Setup, Action::Inspect].into_iter().collect(),
+        destinations: vec![],
+    }));
+    f.store
+        .update_application(
+            &f.root,
+            Some(&owner),
+            &context.id,
+            Some(ApplicationRegistration {
+                root: context.root,
+                mode: context.mode,
+                grants,
+                require_verification: false,
+            }),
+        )
+        .unwrap();
+    assert!(
+        matches!(f.acquire(), Err(e) if e.kind == ErrorKind::Source && e.message().contains("depth limit"))
+    );
+    assert_eq!(
+        f.source().current[&before.inputs.stream_id].artifact.id,
+        before.id
+    );
+    assert!(f.source().history.is_empty());
+    let source_root = f.root.join("sources");
+    // The last two origins are beyond the depth bound and must never be used.
+    for identity in &identities[..2] {
+        assert!(!source_root.join(&identity.id).exists());
+    }
+    for source in std::fs::read_dir(&source_root).unwrap() {
+        let repo = source.unwrap().path().join("repo.git");
+        assert!(
+            git(
+                &repo,
+                &[
+                    "for-each-ref",
+                    "--format=%(refname)",
+                    "refs/saucepan/preparing/"
+                ]
+            )
+            .is_empty()
+        );
+    }
+}
+
+#[test]
 fn submodule_links_are_checked_against_the_complete_selected_artifact() {
     let f = Fixture::new();
     let child = f._temp.path().join("linked-child");
@@ -314,6 +419,35 @@ fn nested_submodules_use_exact_commits_independent_grants_and_cross_boundary_sel
         &cached_child,
         &["remote", "set-url", "origin", &child_id.origin],
     );
+    std::fs::write(&lfs_object, lfs_bytes).unwrap();
+    let mut access = f
+        .store
+        .begin_source(
+            &f.app,
+            None,
+            &f.identity,
+            "pkg",
+            &VerificationRequest { content: None },
+        )
+        .unwrap();
+    let parent = sources::GitRepository::open(&access.repository, &f.identity).unwrap();
+    f.store
+        .prepare_export(&mut access, &parent, &acquired.inputs.commit, "pkg")
+        .unwrap();
+    let before_repoint = serde_json::to_value(f.source()).unwrap();
+    git(
+        &cached_child,
+        &["remote", "set-url", "origin", &nested_id.origin],
+    );
+    assert!(
+        matches!(f.store.commit_source(&access, access.source.clone(), vec![]), Err(e) if e.kind == ErrorKind::Integrity)
+    );
+    assert_eq!(serde_json::to_value(f.source()).unwrap(), before_repoint);
+    git(
+        &cached_child,
+        &["remote", "set-url", "origin", &child_id.origin],
+    );
+    drop(access);
     grants.retain(|grant| grant.source_id.as_deref() != Some(&nested_id.id));
     f.store
         .update_application(
