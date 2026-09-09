@@ -2,6 +2,38 @@ use std::{fs::File, io, path::Path};
 
 use tempfile::NamedTempFile;
 
+/// Create relative directories under a trusted root without merging different
+/// spellings that alias on this filesystem. Existing components must be directories.
+pub fn create_directories(root: impl AsRef<Path>, relative: impl AsRef<Path>) -> io::Result<()> {
+    let mut parent = root.as_ref().to_owned();
+    for component in relative.as_ref().components() {
+        let std::path::Component::Normal(name) = component else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "expected relative directory components",
+            ));
+        };
+        let next = parent.join(name);
+        match std::fs::create_dir(&next) {
+            Ok(()) => (),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                if !super::tree::metadata(&next)?.is_dir()
+                    || !std::fs::read_dir(&parent)?
+                        .any(|entry| entry.is_ok_and(|entry| entry.file_name() == name))
+                {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "colliding directory paths",
+                    ));
+                }
+            }
+            Err(error) => return Err(error),
+        }
+        parent = next;
+    }
+    Ok(())
+}
+
 /// Prepare a new directory privately, then publish it at an absent destination.
 /// The parent must exist. Callers must serialize competing publishers and trust
 /// the parent path; this helper is not a filesystem sandbox or a transaction log.

@@ -1,5 +1,9 @@
 //! ZIP stream helpers; retention, source selection policy, and provenance belong to callers.
-use super::{fs::staged_directory, path::native_relative_path, tree};
+use super::{
+    fs::{create_directories as directories, staged_directory},
+    path::native_relative_path,
+    tree,
+};
 use std::{
     collections::BTreeSet,
     fs,
@@ -23,6 +27,17 @@ pub fn write_zip<W: Write + Seek>(
     writer: W,
     include: impl FnMut(&str, bool) -> bool,
 ) -> io::Result<W> {
+    write_zip_with(root, writer, include, |_, options| options)
+}
+
+/// Export with caller-selected per-entry options, for example logical executable
+/// metadata carried by an upstream format rather than the host filesystem.
+pub fn write_zip_with<W: Write + Seek>(
+    root: impl AsRef<Path>,
+    writer: W,
+    include: impl FnMut(&str, bool) -> bool,
+    mut options_for: impl FnMut(&tree::Entry, SimpleFileOptions) -> SimpleFileOptions,
+) -> io::Result<W> {
     let root = root.as_ref();
     let mut zip = ZipWriter::new(writer);
     for entry in tree::entries(root, include)? {
@@ -36,6 +51,7 @@ pub fn write_zip<W: Write + Seek>(
         };
         #[cfg(not(unix))]
         let _ = metadata;
+        let options = options_for(&entry, options);
         if entry.directory {
             zip.add_directory(entry.path, options)?;
         } else {
@@ -184,30 +200,6 @@ fn checked_zip<R: Read + Seek>(reader: R) -> io::Result<ZipArchive<R>> {
     Ok(ZipArchive::new(reader)?)
 }
 
-// Each component is created in a private staging directory. On filesystems with
-// case/normalization folding, an existing component must have the exact spelling.
-fn directories(root: &Path, path: &Path) -> io::Result<()> {
-    let mut parent = root.to_owned();
-    for component in path.components() {
-        let next = parent.join(component);
-        match fs::create_dir(&next) {
-            Ok(()) => (),
-            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
-                if !tree::metadata(&next)?.is_dir()
-                    || !fs::read_dir(&parent)?.any(|entry| {
-                        entry.is_ok_and(|entry| entry.file_name() == component.as_os_str())
-                    })
-                {
-                    return Err(invalid("colliding ZIP directory paths"));
-                }
-            }
-            Err(error) => return Err(error),
-        }
-        parent = next;
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -243,10 +235,10 @@ mod tests {
             } else {
                 None
             };
-            if let Some(name_offset) = name_offset {
-                if bytes[name_offset] == b'b' {
-                    bytes[name_offset] = b'a';
-                }
+            if let Some(name_offset) = name_offset
+                && bytes[name_offset] == b'b'
+            {
+                bytes[name_offset] = b'a';
             }
         }
         let dir = tempfile::tempdir().unwrap();
