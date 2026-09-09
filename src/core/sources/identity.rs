@@ -3,6 +3,24 @@ use sha2::{Digest, Sha256};
 use std::path::Path;
 use url::Url;
 
+/// Restore an authenticated canonical record without interpreting it again as
+/// user transport syntax (notably github: and scp: encodings).
+pub(in crate::core) fn recorded_git(id: &str, origin: &str) -> Result<SourceIdentity> {
+    if hash(Backend::Git, origin) != id {
+        return Err(Error::new(
+            ErrorKind::Integrity,
+            "recorded source identity changed",
+        ));
+    }
+    Ok(SourceIdentity {
+        schema_version: SCHEMA_VERSION,
+        backend: Backend::Git,
+        id: id.into(),
+        origin: origin.into(),
+        locator: origin.into(),
+    })
+}
+
 /// No network, configuration lookup, or store mutation. Filesystem origins use
 /// canonical absolute paths; the coordinator authenticates context first.
 pub(in crate::core) fn identify(locator: &SourceLocator, base: &Path) -> Result<SourceIdentity> {
@@ -150,6 +168,38 @@ mod tests {
     use super::*;
     fn id(origin: &str) -> Result<SourceIdentity> {
         identify(&Recipe::git(origin).source, Path::new("."))
+    }
+    #[test]
+    fn canonical_records_are_not_reparsed_as_transport_locators() {
+        for locator in [
+            "Owner/Repo",
+            "git@example.test:Case/Repo.git",
+            "https://example.test/Case/Repo.git",
+        ] {
+            let identity = id(locator).unwrap();
+            let restored = recorded_git(&identity.id, &identity.origin).unwrap();
+            assert_eq!(restored.id, identity.id);
+            assert_eq!(restored.origin, identity.origin);
+            // Probe native Git with remote-looking identities without fetching
+            // anything. Local-file-only fixtures cannot catch this boundary.
+            let temp = tempfile::tempdir().unwrap();
+            for args in [
+                vec!["init", "--bare", "--template="],
+                vec!["remote", "add", "origin", locator],
+            ] {
+                let output = std::process::Command::new("git")
+                    .arg("-C")
+                    .arg(temp.path())
+                    .args(args)
+                    .output()
+                    .unwrap();
+                assert!(output.status.success());
+            }
+            super::super::GitRepository::open(temp.path(), &restored).unwrap();
+            assert!(
+                matches!(recorded_git(&identity.id, &format!("{}-changed", identity.origin)), Err(e) if e.kind == ErrorKind::Integrity)
+            );
+        }
     }
     #[test]
     fn github_aliases_share_identity_without_erasing_locator() {

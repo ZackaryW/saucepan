@@ -7,3 +7,4 @@ pub(super) use git::GitRepository;
 #[cfg(test)]
 pub(super) use git::tests as git_tests;
 pub(super) use identity::identify;
+pub(super) use identity::recorded_git;

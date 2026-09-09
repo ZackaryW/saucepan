@@ -88,19 +88,7 @@ impl Session {
                     "visible source is missing from the encrypted index",
                 )
             })?;
-            let identity = sources::identify(
-                &SourceLocator {
-                    backend: Backend::Git,
-                    origin: source.origin.clone(),
-                },
-                Path::new(&context.root),
-            )?;
-            if identity.id != *id {
-                return Err(Error::new(
-                    ErrorKind::Integrity,
-                    "visible source identity changed",
-                ));
-            }
+            let identity = sources::recorded_git(id, &source.origin)?;
             let repo = self
                 .layout
                 .path(&Path::new("sources").join(id).join("repo.git"))?;
