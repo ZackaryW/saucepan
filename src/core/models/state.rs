@@ -138,6 +138,35 @@ pub struct UnitBinding {
     pub mirrors: Vec<MirrorBinding>,
 }
 
+/// Opaque equality tokens for a caller's scope and binding data. Neither value
+/// exposes the central store's counters or activity in other applications.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ApplicationGeneration {
+    pub scope: String,
+    pub data: String,
+}
+
+/// Installed metadata without private storage bookkeeping or mirror locations.
+/// Resolve directories through the separately checked path APIs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UnitView {
+    pub id: String,
+    pub name: String,
+    pub recipe: super::Recipe,
+    pub artifact: ArtifactHandle,
+    pub manifest: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ApplicationView {
+    pub schema_version: u32,
+    pub generation: ApplicationGeneration,
+    pub units: Vec<UnitView>,
+}
+
 /// An explicit materialization has ownership without an installed manifest name.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

@@ -21,6 +21,15 @@ pub(super) fn json(value: &impl serde::Serialize) -> Result<()> {
     encoded.push(b'\n');
     bytes(&encoded)
 }
+pub(super) fn ndjson(values: &[impl serde::Serialize]) -> Result<()> {
+    let mut encoded = Vec::new();
+    for value in values {
+        serde_json::to_writer(&mut encoded, value)
+            .map_err(|_| Error::new(ErrorKind::Internal, "cannot encode command result"))?;
+        encoded.push(b'\n');
+    }
+    bytes(&encoded)
+}
 pub(super) fn bytes(bytes: &[u8]) -> Result<()> {
     std::io::stdout()
         .lock()

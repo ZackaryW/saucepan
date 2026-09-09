@@ -32,6 +32,18 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// List currently inspectable installations belonging to this application.
+    List {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read installed metadata without exposing central store bookkeeping.
+    Cat {
+        #[command(subcommand)]
+        target: CatTarget,
+    },
+    /// Recheck current authority and return opaque application cache tokens.
+    Context,
     /// Create or replace an independent mirror at an authorized destination.
     Mirror {
         target: String,
@@ -120,6 +132,12 @@ enum Command {
 }
 
 #[derive(Subcommand)]
+enum CatTarget {
+    Index,
+    Sauce { name: String },
+}
+
+#[derive(Subcommand)]
 enum StoreCommand {
     Init,
     Check,
@@ -163,6 +181,42 @@ pub(crate) fn run() -> Result<()> {
     }
     let service = args.service(false)?;
     match &args.command {
+        Command::List { .. } | Command::Cat { .. } | Command::Context => {
+            let root = args
+                .root
+                .as_deref()
+                .ok_or_else(|| Error::new(ErrorKind::Config, "application root is required"))?;
+            let marker = marker(root, ".saucepanhash")?;
+            service.validate_context(root, marker.as_ref())?;
+            commands::validate_preferences(root)?;
+            match &args.command {
+                Command::Context => {
+                    commands::json(&service.application_generation(root, marker.as_ref())?)
+                }
+                Command::Cat {
+                    target: CatTarget::Sauce { name },
+                } => commands::json(&service.unit_view(root, marker.as_ref(), name)?),
+                command => {
+                    let view = service.application_view(root, marker.as_ref())?;
+                    match command {
+                        Command::List { json: true } => commands::ndjson(&view.units),
+                        Command::List { json: false } => {
+                            let mut output = String::new();
+                            for unit in view.units {
+                                output.extend(
+                                    unit.name
+                                        .chars()
+                                        .map(|c| if c.is_control() { ' ' } else { c }),
+                                );
+                                output.push('\n');
+                            }
+                            commands::bytes(output.as_bytes())
+                        }
+                        _ => commands::json(&view),
+                    }
+                }
+            }
+        }
         Command::Mirror {
             target,
             destination,

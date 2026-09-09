@@ -36,6 +36,7 @@ mod installations;
 mod materializations;
 mod mirrors;
 mod pins;
+mod projections;
 
 impl Session {
     #[cfg(any(test, feature = "test-support"))]

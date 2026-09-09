@@ -3,6 +3,140 @@ use crate::core::{acquisition, sources};
 use std::{collections::BTreeMap, io::Read, process::Command};
 
 #[test]
+fn installed_projections_and_tokens_follow_current_app_scope_without_global_activity() {
+    let f = Fixture::new();
+    let owner: Marker =
+        serde_json::from_slice(&std::fs::read(f.root.join("owner.saucepanhash")).unwrap()).unwrap();
+    let context = f.store.inspect_context(&f.app, None).unwrap();
+    let second_app = f._temp.path().join("second-app");
+    std::fs::create_dir(&second_app).unwrap();
+    f.store
+        .register_application(
+            &f.root,
+            Some(&owner),
+            ApplicationRegistration {
+                root: second_app.to_str().unwrap().into(),
+                mode: ApplicationMode::Ordinary,
+                grants: context.grants.clone(),
+                require_verification: false,
+            },
+        )
+        .unwrap();
+    let empty = f.store.application_generation(&f.app, None).unwrap();
+    let other_empty = f.store.application_generation(&second_app, None).unwrap();
+    assert_ne!(empty, other_empty);
+    assert_ne!(empty.scope, empty.data);
+    assert_eq!(empty.scope.len(), 64);
+    let recipe = |name: &str, version: &str| {
+        let mut recipe = f.recipe.clone();
+        recipe.manifest = Some(ManifestInput {
+            document: serde_json::json!({"name":name,"version":version,"description":"fixture","extra":42}),
+            provenance: ManifestProvenance::LocalCatalog {
+                path: "fixture.json".into(),
+                document_digest: "fixture".into(),
+            },
+        });
+        recipe
+    };
+    let verification = VerificationRequest { content: None };
+    f.store
+        .install(&f.app, None, &recipe("visible-a", "1"), &verification)
+        .unwrap();
+    let view = f.store.application_view(&f.app, None).unwrap();
+    assert_eq!(view.units.len(), 1);
+    assert_eq!(view.units[0].name, "visible-a");
+    assert_eq!(view.units[0].manifest["extra"], 42);
+    assert_eq!(view.generation.scope, empty.scope);
+    assert_ne!(view.generation.data, empty.data);
+    let serialized = serde_json::to_value(&view).unwrap();
+    for field in [
+        "applications",
+        "sources",
+        "store_id",
+        "key_generation",
+        "materialization",
+        "mirrors",
+        "app_id",
+    ] {
+        assert!(serialized.get(field).is_none());
+        assert!(serialized["units"][0].get(field).is_none());
+    }
+    f.store
+        .install(&second_app, None, &recipe("private-b", "1"), &verification)
+        .unwrap();
+    f.store
+        .install(&second_app, None, &recipe("private-b", "2"), &verification)
+        .unwrap();
+    assert_eq!(
+        f.store.application_generation(&f.app, None).unwrap(),
+        view.generation
+    );
+    assert_eq!(
+        f.store.application_view(&f.app, None).unwrap().units.len(),
+        1
+    );
+    let absent = f.store.unit_view(&f.app, None, "absent").unwrap_err();
+    let hidden = f.store.unit_view(&f.app, None, "private-b").unwrap_err();
+    assert_eq!(absent.kind, hidden.kind);
+    assert_eq!(absent.message(), hidden.message());
+    assert_eq!(hidden.kind, ErrorKind::NotFound);
+    let cached = f.root.join("sources").join(&f.identity.id).join("repo.git");
+    git(
+        &cached,
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            "https://example.invalid/repointed",
+        ],
+    );
+    assert!(
+        matches!(f.store.application_generation(&f.app, None), Err(e) if e.kind == ErrorKind::Integrity)
+    );
+    assert!(
+        matches!(f.store.unit_view(&f.app, None, "private-b"), Err(e) if e.kind == ErrorKind::NotFound)
+    );
+    let mut grants = context.grants.clone();
+    grants[0].actions.remove(&Action::Inspect);
+    f.store
+        .update_application(
+            &f.root,
+            Some(&owner),
+            &context.id,
+            Some(ApplicationRegistration {
+                root: context.root.clone(),
+                mode: context.mode,
+                grants,
+                require_verification: false,
+            }),
+        )
+        .unwrap();
+    // A hidden unit must be filtered before touching its now-invalid repository.
+    let restricted = f.store.application_view(&f.app, None).unwrap();
+    assert!(restricted.units.is_empty());
+    assert_ne!(restricted.generation.scope, view.generation.scope);
+    assert!(
+        matches!(f.store.unit_view(&f.app, None, "visible-a"), Err(e) if e.kind == ErrorKind::NotFound)
+    );
+    git(
+        &cached,
+        &["remote", "set-url", "origin", &f.identity.origin],
+    );
+    assert_eq!(
+        f.store
+            .unit_view(&second_app, None, "private-b")
+            .unwrap()
+            .manifest["version"],
+        "2"
+    );
+    f.store
+        .update_application(&f.root, Some(&owner), &context.id, None)
+        .unwrap();
+    assert!(f.store.application_generation(&f.app, None).is_err());
+    assert!(f.store.application_view(&f.app, None).is_err());
+}
+
+#[test]
 fn dependency_mirrors_require_their_own_destinations_and_missing_commits_preserve_current() {
     let f = Fixture::new();
     let previous = f.acquire().unwrap();

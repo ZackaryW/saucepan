@@ -16,6 +16,34 @@ pub struct Service {
 }
 
 impl Service {
+    /// Read only this application's currently inspectable installed metadata.
+    pub fn application_view(
+        &self,
+        root: &std::path::Path,
+        marker: Option<&models::Marker>,
+    ) -> models::Result<models::ApplicationView> {
+        self.session.application_view(root, marker)
+    }
+
+    /// Recheck current scope and origins before reusing cached installed data.
+    pub fn application_generation(
+        &self,
+        root: &std::path::Path,
+        marker: Option<&models::Marker>,
+    ) -> models::Result<models::ApplicationGeneration> {
+        self.session.application_generation(root, marker)
+    }
+
+    /// Hidden installed names have the same response as absent names.
+    pub fn unit_view(
+        &self,
+        root: &std::path::Path,
+        marker: Option<&models::Marker>,
+        name: &str,
+    ) -> models::Result<models::UnitView> {
+        self.session.unit_view(root, marker, name)
+    }
+
     /// Make an independent mirror of a named unit or explicit materialization.
     pub fn mirror(
         &self,

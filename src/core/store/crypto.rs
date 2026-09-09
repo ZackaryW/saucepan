@@ -22,6 +22,31 @@ pub(super) struct Keys {
 }
 
 impl Keys {
+    pub(super) fn application_generation(
+        &self,
+        registration: &crate::core::models::Registration,
+        key_generation: u64,
+    ) -> Result<crate::core::models::ApplicationGeneration> {
+        let token = |kind: &[u8], counter: u64| -> Result<String> {
+            let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(&self.authentication)
+                .map_err(|_| Error::new(ErrorKind::Internal, "invalid MAC key"))?;
+            mac.update(&frame(
+                b"saucepan/application-generation/v1",
+                &[
+                    kind,
+                    registration.id.as_bytes(),
+                    &key_generation.to_be_bytes(),
+                    &counter.to_be_bytes(),
+                ],
+            ));
+            Ok(crate::utils::hex(&mac.finalize().into_bytes()))
+        };
+        Ok(crate::core::models::ApplicationGeneration {
+            scope: token(b"scope", registration.revision)?,
+            data: token(b"data", registration.data_generation)?,
+        })
+    }
+
     pub(super) fn derive(master: &[u8; 32], store_id: &str) -> Result<Self> {
         let hkdf = Hkdf::<Sha256>::new(Some(store_id.as_bytes()), master);
         let mut keys = Self {
