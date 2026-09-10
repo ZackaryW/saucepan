@@ -67,4 +67,4 @@ cargo clippy --locked --all-targets -- -D warnings
 cargo build --locked
 ```
 
-Fresh tests live beside the implementation under `src/`. Old root integration tests and local `src2`/`src3` references are excluded from targets and packages. Native keyring tests are explicitly selected because they need an available user credential service. Platform results are recorded in the guide.
+Unit tests live beside the implementation under `src/`; public API and real-binary integration tests live under `tests/` and run with `cargo test`. The root suite has been updated to the central-store API. Local `src2`/`src3` references remain excluded from targets and packages. Native keyring tests are explicitly selected because they need an available user credential service. Platform results are recorded in the guide.

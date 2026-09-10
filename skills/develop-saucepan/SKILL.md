@@ -23,7 +23,7 @@ Read [references/component-contracts.md](references/component-contracts.md) befo
 3. Reuse an already installed CLI when appropriate; do not add a source submodule merely to execute it.
 4. Select an explicit Saucepan tag or commit. Never infer or download `latest`.
 5. Add canonical specs only when modifying Saucepan contracts:
-   - CLI development: `src openspec/specs`
+   - CLI development: `src tests openspec/specs`
    - SDK development: `sdk/<language> openspec/specs/<language>-sdk`
 
 Do not create an OpenSpec change unless the user asks or the active repository's governance explicitly requires one. Existing canonical specs remain authoritative.
@@ -47,7 +47,7 @@ Examples:
 git -C vendor/saucepan sparse-checkout set sdk/typescript
 
 # Rust CLI development; cone mode keeps root Cargo files visible
-git -C vendor/saucepan sparse-checkout set src openspec/specs
+git -C vendor/saucepan sparse-checkout set src tests openspec/specs
 ```
 
 The parent repository records the submodule commit but not its local sparse-checkout settings. Add or update the consumer's bootstrap instructions so every fresh clone runs:
