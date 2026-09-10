@@ -6,13 +6,24 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-test('POSIX shell SDK forwards literal arguments, JSON, proof and failure status', () => {
+for (const provider of ['local', 'git']) test(`POSIX shell SDK forwards ${provider} content, JSON, proof and failure status`, () => {
   const root = mkdtempSync(join(tmpdir(), 'ss-'));
   try {
     const input = join(root, 'input with spaces');
     mkdirSync(input);
     writeFileSync(join(input, 'asset.txt'), 'hello');
-    writeFileSync(join(root, 'recipe.json'), JSON.stringify({ source: { provider: 'local', path: input } }));
+    let source = { provider: 'local', path: input };
+    if (provider === 'git') {
+      mkdirSync(join(input, 'shared'));
+      writeFileSync(join(input, 'shared/asset.txt'), 'hello');
+      const git = (...args) => execFileSync('git', ['-C', input, '-c', 'user.name=Shell SDK tests', '-c', 'user.email=sdk@example.invalid', '-c', 'core.hooksPath=/dev/null', ...args], { stdio: 'pipe' });
+      git('init', '-b', 'main'); git('add', '.');
+      const oid = execFileSync('git', ['-C', input, 'hash-object', '-w', '--stdin'], { input: 'shared/asset.txt', encoding: 'utf8' }).trim();
+      git('update-index', '--add', '--cacheinfo', `120000,${oid},asset.txt`);
+      git('commit', '-m', 'symlink fixture');
+      source = { provider: 'git', origin: input, reference: 'main' };
+    }
+    writeFileSync(join(root, 'recipe.json'), JSON.stringify({ source }));
     writeFileSync(join(root, 'settings.json'), JSON.stringify({ retain_snapshots: true, verify_content: true, allow_local_fallback: false }));
     const binary = process.env.SAUCEPAN_TEST_BINARY || fileURLToPath(new URL('../../../target/debug/' + (process.platform === 'win32' ? 'saucepan.exe' : 'saucepan'), import.meta.url));
     execFileSync(process.env.SAUCEPAN_TEST_SHELL || 'sh', [

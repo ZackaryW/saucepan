@@ -66,6 +66,8 @@ For isolated tests, supply `testStore: { root: '/short/test-root', key: '64 hex 
 
 The client invokes the executable directly with argument arrays and no shell. Per-call request files are removed after success, failure, or timeout. Each call reads current CLI state; there is no SDK index cache, policy engine, permission administration, or token-refresh protocol.
 
+With safe Git symlink export in the supplied CLI, relative committed links are returned as independent ordinary content. Targets resolve within the complete source tree before `folder` selection; no extra SDK option is needed. Unsafe, broken, cyclic, or excessive expansions fail even with repeated verification off. Local filesystem links and URL ZIP symlink entries remain unsupported.
+
 `SaucepanError` preserves `exitCode` (null for launch/transport failures), `stdout`, `stderr`, `code`, `signal`, and `killed`. It does not apply the old Python SDK's exit-code categories or include the command/test key in its generated error message. JSON output errors use `INVALID_JSON`; unsupported versioned responses use `PROTOCOL_VERSION`. Nonzero exits reject; missing entries remain `null`. A timeout does not guarantee that the core made no changes before termination.
 
 Validation, after building the Rust executable at the repository root:

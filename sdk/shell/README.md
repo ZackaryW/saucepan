@@ -51,6 +51,8 @@ An incomplete test configuration fails with status 64 instead of using the real 
 
 The caller creates and owns all recipe, settings, view, and marker files. No JSON parser, implicit registration, token refresh, cache, or permission controller is added. Core behavior and platform limitations are documented in the repository's `docs/central-source-store.md`.
 
+With safe Git symlink export in the supplied CLI, committed relative links become ordinary copied content before folder selection. Targets can be elsewhere in the same complete source tree. Unsafe/broken/cyclic links fail through the normal CLI status; no shell option or symlink privilege is required. Local filesystem links and URL ZIP symlink entries remain unsupported.
+
 To validate from the repository root (Node.js is used only by the test harness):
 
 ```sh

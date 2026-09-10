@@ -1,8 +1,9 @@
 use super::{Prepared, RemoteUnavailable};
 use crate::{
     core::{content, models::Source},
-    utils::{fs::staged_directory, hash::sha256, path::native_relative_path, tree},
+    utils::{fs::staged_directory, hash::sha256, links, path::native_relative_path, tree},
 };
+mod export;
 use anyhow::{Context, Result, bail, ensure};
 use std::{
     collections::BTreeMap,
@@ -143,7 +144,7 @@ pub(crate) fn prepare(source: &Source, work: &Path, pin: Option<&str>) -> Result
     repository(source, &repo)?;
     let revision = resolve(&repo, pin.unwrap_or(reference), pin.is_some())?;
     let directory = tempfile::tempdir_in(work)?;
-    let root = directory.path().join("tree");
+    let root = directory.path().join("input");
     fs::create_dir(&root)?;
     let mut exported = Exported::default();
     export(
@@ -156,6 +157,13 @@ pub(crate) fn prepare(source: &Source, work: &Path, pin: Option<&str>) -> Result
         0,
     )
     .map_err(|error| anyhow::anyhow!("required Git content could not be exported: {error:#}"))?;
+    exported.executables = export::materialize(
+        &root,
+        &directory.path().join("tree"),
+        &exported.entries,
+        &exported.executables,
+    )
+    .context("required Git links could not be resolved")?;
     Ok(Prepared {
         directory,
         revision,
@@ -189,6 +197,8 @@ fn resolve(repo: &Path, requested: &str, pinned: bool) -> Result<String> {
 struct Exported {
     dependencies: BTreeMap<String, String>,
     executables: std::collections::BTreeSet<String>,
+    entries: BTreeMap<String, links::Entry>,
+    bytes: u64,
 }
 
 fn export(
@@ -202,7 +212,7 @@ fn export(
 ) -> Result<()> {
     let (source, repo) = input;
     ensure!(depth <= 32, "submodule nesting limit exceeded");
-    let listing = run(repo, &["ls-tree", "-rz", "--full-tree", revision])?;
+    let listing = run(repo, &["ls-tree", "-rtzl", "--full-tree", revision])?;
     for entry in listing.split(|&b| b == 0).filter(|e| !e.is_empty()) {
         let (header, name) = entry.split_at(
             entry
@@ -221,13 +231,30 @@ fn export(
         let header = std::str::from_utf8(header)?
             .split_whitespace()
             .collect::<Vec<_>>();
-        ensure!(header.len() == 3, "invalid Git tree entry");
+        ensure!(header.len() == 4, "invalid Git tree entry");
         let destination = root.join(&relative);
         let logical = if prefix.is_empty() {
             path.to_owned()
         } else {
             format!("{prefix}/{path}")
         };
+        ensure!(
+            exported.entries.len() < super::ZIP_LIMITS.entries,
+            "Git export entry limit exceeded"
+        );
+        ensure!(
+            !exported.entries.contains_key(&logical),
+            "duplicate Git export path"
+        );
+        if matches!(header[0], "040000" | "160000") {
+            exported
+                .entries
+                .insert(logical.clone(), links::Entry::Directory);
+            crate::utils::fs::create_directories(root, &relative)?;
+            if header[0] == "040000" {
+                continue;
+            }
+        }
         if header[0] == "160000" {
             let child_origin = submodule_origin(source, repo, revision, path, work)?;
             let child = Source::Git {
@@ -258,9 +285,22 @@ fn export(
             continue;
         }
         ensure!(
-            matches!(header[0], "100644" | "100755"),
-            "Git links and special files are unsupported"
+            matches!(header[0], "100644" | "100755" | "120000"),
+            "Git special files are unsupported"
         );
+        let size: u64 = header[3].parse().context("invalid Git blob size")?;
+        exported.bytes = exported
+            .bytes
+            .checked_add(size)
+            .filter(|n| *n <= super::MAX_BYTES)
+            .context("Git export byte limit exceeded")?;
+        if header[0] == "120000" {
+            exported.entries.insert(
+                logical,
+                links::Entry::Link(run(repo, &["cat-file", "blob", header[2]])?),
+            );
+            continue;
+        }
         if header[0] == "100755" {
             exported.executables.insert(logical.clone());
         }
@@ -281,6 +321,16 @@ fn export(
         if let Some(oid) = expand_lfs(repo, revision, &destination)? {
             exported.dependencies.insert(format!("lfs:{logical}"), oid);
         }
+        let resolved_size = fs::metadata(&destination)?.len();
+        exported.bytes = exported
+            .bytes
+            .checked_sub(size)
+            .and_then(|n| n.checked_add(resolved_size))
+            .filter(|n| *n <= super::MAX_BYTES)
+            .context("Git export byte limit exceeded")?;
+        exported
+            .entries
+            .insert(logical, links::Entry::File(resolved_size));
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;

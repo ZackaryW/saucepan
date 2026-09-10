@@ -1,5 +1,6 @@
 use super::*;
 use std::process::Command;
+mod symlinks;
 
 fn git(root: &Path, args: &[&str]) -> String {
     let output = Command::new("git")

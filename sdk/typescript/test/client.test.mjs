@@ -107,7 +107,12 @@ test('Git folders share one source and retain the requested ref', async t => {
   await writeFile(join(repo, 'a/file'), 'A');
   await writeFile(join(repo, 'b/file'), 'B');
   const git = (...args) => execFileSync('git', ['-C', repo, '-c', 'user.name=SDK tests', '-c', 'user.email=sdk@example.invalid', '-c', 'core.hooksPath=/dev/null', ...args], { stdio: 'pipe' });
-  git('init', '-b', 'main'); git('add', '.'); git('commit', '-m', 'fixture');
+  git('init', '-b', 'main'); git('add', '.');
+  for (const [name, target] of [['a/linked', '../b/file'], ['alias', 'b']]) {
+    const oid = execFileSync('git', ['-C', repo, 'hash-object', '-w', '--stdin'], { input: target, encoding: 'utf8' }).trim();
+    git('update-index', '--add', '--cacheinfo', `120000,${oid},${name}`);
+  }
+  git('commit', '-m', 'fixture');
   const app = store.forApp(await store.register('git-app'));
   const source = { provider: 'git', origin: repo, reference: 'main' };
   const a = await app.acquire({ source, folder: 'a' });
@@ -115,7 +120,12 @@ test('Git folders share one source and retain the requested ref', async t => {
   assert.equal(a.artifact.source_id, b.artifact.source_id);
   assert.equal(a.artifact.snapshot_id, b.artifact.snapshot_id);
   assert.equal(await readFile(join(a.directory, 'file'), 'utf8'), 'A');
+  assert.equal(await readFile(join(a.directory, 'linked'), 'utf8'), 'B');
   assert.equal(await readFile(join(b.directory, 'file'), 'utf8'), 'B');
+  const alias = await app.acquire({ source, folder: 'alias' });
+  assert.equal(alias.artifact.snapshot_id, b.artifact.snapshot_id);
+  assert.equal(await readFile(join(alias.directory, 'file'), 'utf8'), 'B');
+  await app.verify(await app.view());
   const historical = await app.snapshot(a.artifact.source_id, a.artifact.snapshot_id, 'b');
   assert.equal(historical.artifact.id, b.artifact.id);
 });
