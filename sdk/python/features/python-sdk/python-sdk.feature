@@ -1,17 +1,12 @@
-Feature: Python SDK command and entity contract
+Feature: Python SDK central-store contract
 
-  Scenario: Bucket pin is exposed by the SDK
-    Given an SDK workspace and a repository-target index tagged v1
-    When I add the index through the SDK at ref v1
-    Then the SDK bucket collection records ref v1 and its resolved commit
+  Scenario: Acquired entries belong to the calling app view
+    Given two registered apps and a local source
+    When the first app acquires the source through the Python SDK
+    Then only the first app sees the acquired entry
+    And its current view verifies through the Python SDK
 
-  Scenario: Bucket refresh is exposed by the SDK
-    Given an SDK workspace with an unpinned registered repository-target index
-    When the index advances and I refresh it through the SDK
-    Then the SDK bucket collection records the refreshed commit
-
-  Scenario: SDK entities expose central-index additions
-    Given CLI state containing an index-sourced sauce and a bucket stub with extra fields
-    When I read sauces and bucket stubs through the SDK
-    Then the sauce exposes its index manifest source
-    And the bucket stub exposes its extra fields
+  Scenario: Settings changes keep the caller token stable
+    Given two registered apps and a local source
+    When the first app changes its settings through the Python SDK
+    Then its original caller token reads the new settings

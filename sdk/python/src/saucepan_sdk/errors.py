@@ -1,32 +1,14 @@
-"""Exceptions raised for saucepan command failures."""
-
+"""Failures from the current CLI and its process boundary."""
 from typing import Optional
 
 
 class SaucepanError(RuntimeError):
-    """Base error carrying the CLI exit code and captured standard error."""
+    """Preserve diagnostics without assigning obsolete workspace error categories."""
 
-    def __init__(self, exit_code: Optional[int], stderr: str) -> None:
+    def __init__(self, message: str, exit_code: Optional[int] = None,
+                 stdout: str = "", stderr: str = "", code: Optional[str] = None):
+        super().__init__(message)
         self.exit_code = exit_code
+        self.stdout = stdout
         self.stderr = stderr
-        super().__init__(stderr.strip())
-
-
-class NotFound(SaucepanError):
-    """The requested object does not exist (exit code 1)."""
-
-
-class SourceError(SaucepanError):
-    """A configured source failed (exit code 2)."""
-
-
-class ConfigError(SaucepanError):
-    """The workspace configuration is invalid (exit code 3)."""
-
-
-class Conflict(SaucepanError):
-    """The requested mutation conflicts with existing state (exit code 4)."""
-
-
-class InternalError(SaucepanError):
-    """Saucepan failed outside the public error categories (exit code 5)."""
+        self.code = code

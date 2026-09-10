@@ -1,197 +1,102 @@
 # Saucepan Python SDK
 
-**Compatibility: this SDK targets the legacy workspace CLI and is not compatible with Saucepan 0.5.x's central-store API.** Migration of the Python `Workspace` runtime is still pending. The examples below require a compatible legacy executable; updated CLI test fixtures do not establish compatibility for this SDK.
+A synchronous, standard-library-only Python 3.9+ client for the Saucepan 0.5.x central-store CLI. It uses an independently installed executable, defaulting to `~/.saucepan/bin/saucepan` (`saucepan.exe` on Windows). It never downloads or builds the executable at runtime.
 
-For the current API, use the [TypeScript SDK](../typescript/README.md), [shell SDK](../shell/README.md), or [CLI directly](../../docs/central-source-store.md).
+## Install and acquire
 
-The SDK is a standard-library-only Python client for the Saucepan command-line
-interface. It requires Python 3.9 or newer and an independently acquired
-`saucepan` executable; it never downloads or builds the executable itself.
+Install from this checkout, or from a pinned copy of `sdk/python/`:
 
-## Construct a workspace
-
-`Workspace` is the entry point. Its first argument is the directory containing
-the workspace's `saucepan.toml`. By default, construction resolves an executable
-named `saucepan` through `PATH`:
-
-```python
-from saucepan_sdk import Workspace
-
-workspace = Workspace("/path/to/workspace")
+```sh
+pip install ./sdk/python
 ```
-
-Pass `binary=` to use a particular executable path verbatim instead:
 
 ```python
 from pathlib import Path
+from saucepan_sdk import Saucepan
 
-workspace = Workspace(
-    Path("/path/to/workspace"),
-    binary=Path("/path/to/bin/saucepan"),
+store = Saucepan()  # Or Saucepan(binary=Path("/path/to/saucepan"))
+store.init()       # First initialization only; fails if the store already exists.
+token = store.register("example-app")  # Register once, then save/reuse the token.
+app = store.for_app(token)
+result = app.acquire({
+    "source": {"provider": "git", "origin": "https://github.com/github/gitignore.git", "reference": "main"},
+    "folder": "Global",
+})
+print(Path(result["directory"]))
+app.verify(app.view())
+```
+
+The CLI owns native-keyring access, encrypted app settings, source reuse, filtering, and snapshot retention. Recipes and responses are ordinary JSON-compatible Python dictionaries. The SDK does not cache settings or views. See the [central-store guide](../../docs/central-source-store.md) for source formats and policy behavior.
+
+## Caller context
+
+`store.for_app("example-app")` selects an ordinary app context. `store.for_app(token)` selects the authenticated context returned by registration. A new client can use `Saucepan(token=token)` or `Saucepan(marker=Path(".saucepanhash"))`; marker and token are alternatives. The caller owns any persisted token file, and the SDK never rewrites it. A token stays valid as the app's settings and entries change.
+
+`authoritative=True` requires a valid token/marker at the CLI boundary. Filters select touched entries in the app view; they are not acquisition permissions. `for_app()` keeps the executable, timeout, and test-store options while replacing the caller context.
+
+```python
+app.configure(
+    settings={"retain_snapshots": True, "verify_content": True, "allow_local_fallback": False},
+    filters={"source_ids": [], "providers": ["git", "url", "local"]},
 )
 ```
 
-A missing default or explicit executable raises `SaucepanError` with a message
-that names the executable. Binary acquisition remains the caller's
-responsibility.
+Both `register()` and `configure()` accept optional `settings=` and `filters=` dictionaries. When supplying settings, include all three fields. The CLI persists them centrally; no workspace TOML is read.
 
-## Workspace, Sauce, and Bucket
+## Methods and results
 
-The public model is rooted at a `Workspace`:
+| Method | Parsed CLI result |
+| --- | --- |
+| `init()` | `{"created": True}` |
+| `register(app, settings=..., filters=...)` | Stable app token |
+| `configure(settings=..., filters=...)` | `{"configured": True}` |
+| `acquire(recipe)` | Artifact, central directory, and verification/fallback status |
+| `view()` | Current app settings, filters, and touched entries |
+| `verify(view)` | `{"verified": True}`; raises on stale or altered views |
+| `path(artifact_id)` | Central directory string or `None` |
+| `mirror(artifact_id, destination)` | `{"directory": ...}`; destination may be a `Path` |
+| `history(source_id)` | Current/history metadata or `None` |
+| `snapshot(source_id, snapshot_id, folder=None)` | Exact retained acquisition, without advancing current |
+| `shared_executable()` | Shared executable path reported by the CLI |
 
-- `workspace.sauces` yields `Sauce` snapshots. Each exposes `name`, `version`,
-  `description`, optional `reference` and `resolved_commit` values, and
-  `manifest_source` — a mapping reporting where the entry's manifest came
-  from: `{"kind": "repository"}` or `{"kind": "index", "index": "<registered
-  index target>"}`. An entry written before this field existed has no
-  `manifest_source` key at all; the SDK treats that the same as an explicit
-  `{"kind": "repository"}`. A sauce can `update()` or `uninstall()` itself,
-  and its `path` property returns a `pathlib.Path`.
-- `workspace.buckets` yields `Bucket` entities. Each exposes its `url`, can
-  return parsed stubs with `stubs()`, and can `remove()` itself. Each stub is
-  a `BucketStub` — a dict of the raw parsed entry that also exposes `name`,
-  `version`, and `url` as attributes, plus `extra`: a mapping of every field
-  beyond those three, empty (never missing) when the entry carries none.
-- `workspace.install(target, reference=None)` installs a target and returns the
-  resulting `Sauce` entity.
+`shared_executable_path()` is also exported for computing the default executable location without invoking the CLI. Returned content paths always come from the CLI.
 
-For example:
+Git folder selections share source snapshots. Safe committed Git symlinks resolve to ordinary files/directories against the complete source before selection. Local filesystem links and downloaded ZIP symlink entries remain rejected.
 
-```python
-installed = workspace.install("owner/my-tool", reference="v1.2.0")
-print(installed.name, installed.version, installed.path)
+## Errors and request handling
 
-installed.update()     # refreshes this same object in place
-installed.uninstall()
-
-for bucket in workspace.buckets:
-    print(bucket.url, bucket.stubs())
-
-pinned = workspace.add_bucket("owner/central-index", reference="v1.2.0")
-workspace.refresh_bucket(pinned.url)
-```
-
-### Command methods
-
-The legacy workspace CLI operations have these SDK entry points:
-
-| Operation | SDK API |
-|---|---|
-| Install | `workspace.install(target, reference=None)` |
-| Update or uninstall | `sauce.update()`, `sauce.uninstall()` |
-| List installed entries | `workspace.list()` |
-| Resolve an installed path | `workspace.path(name)`, `sauce.path` |
-| Search registered buckets | `workspace.search(jq_filter)` |
-| Add, refresh, remove, or list buckets | `workspace.add_bucket(url, reference=None)`, `workspace.refresh_bucket(url)`, `workspace.remove_bucket(url)`, `workspace.list_buckets()` |
-| Remove or inspect one bucket | `bucket.remove()`, `bucket.stubs()` |
-| Read the full index or registry | `workspace.cat_index()`, `workspace.cat_buckets()` |
-| Read one sauce or bucket document | `workspace.cat_sauce(name)`, `workspace.cat_bucket(url)` |
-
-Read methods return parsed JSON values rather than command output text.
-`search()` returns a list of the raw parsed values emitted for the caller's jq
-filter and requires the CLI's configured `jq` executable to be available.
-
-`Sauce.path` deliberately delegates to the CLI `path` command. The SDK does not
-encode or reconstruct Saucepan's on-disk repository layout.
-
-## Exceptions and diagnostics
-
-All command failures derive from `SaucepanError`. The documented CLI exit codes
-map to distinct subclasses:
-
-| Exit code | Exception |
-|---:|---|
-| 1 | `NotFound` |
-| 2 | `SourceError` |
-| 3 | `ConfigError` |
-| 4 | `Conflict` |
-| 5 | `InternalError` |
-
-Each raised command exception exposes its integer `exit_code` and the complete
-captured standard-error text as `stderr`. Catch the base class for common
-handling or a subclass for a particular category:
+`SaucepanError` carries `exit_code`, `stdout`, `stderr`, and an optional `code`. Core failures currently exit 1 and CLI usage errors exit 2. Missing paths returned as JSON `null` become `None`. Process launch failures and timeouts have no exit code; invalid JSON and unsupported token/view format versions fail explicitly.
 
 ```python
-from saucepan_sdk import NotFound, SaucepanError
+from saucepan_sdk import SaucepanError
 
 try:
-    path = workspace.path("missing-tool")
-except NotFound as error:
-    print(error.exit_code)  # 1
-    print(error.stderr)
+    app.acquire({"source": {"provider": "local", "path": "./assets"}})
 except SaucepanError as error:
     print(error.exit_code, error.stderr)
 ```
 
-Executable-resolution failures occur before a command runs, so their
-`SaucepanError.exit_code` is `None`.
+Set `timeout=30` for a 30-second per-command timeout; the default `None` waits without a deadline. Calls use argument arrays without a shell. Concurrent calls own separate temporary JSON files, removed after success or failure. Supplied tokens are copied into the client context; request files use private creation permissions. Process-error messages do not reproduce command arguments containing test keys.
 
-## Caching and refresh
-
-`Workspace` lazily caches the parsed sauce index and bucket registry
-independently. Consecutive reads of `workspace.sauces` reuse one `cat index`
-result, while consecutive reads of `workspace.buckets` reuse one `cat buckets`
-result.
-
-Every SDK mutation invalidates both caches: install, update, uninstall, bucket
-add, bucket refresh, and bucket remove (including their entity-level forms). The
-next collection read therefore observes the mutated state. In addition,
-`sauce.update()` reads
-that sauce's new entry and replaces the fields on the same `Sauce` object, so
-the caller does not need to reacquire it or refresh explicitly:
+## Isolated testing
 
 ```python
-sauce = workspace.sauces[0]
-old_version = sauce.version
-sauce.update()
-print(old_version, "->", sauce.version)  # refreshed on this same object
+store = Saucepan(binary="/path/to/saucepan", test_root="/tmp/my-test-store", test_key="12" * 32)
+store.init()
 ```
 
-Changes made outside this SDK are not detected automatically. Call
-`workspace.refresh()` to discard both caches and immediately reread the complete
-sauce index; the bucket registry is reread on its next access.
-
-## Runtime dependency boundary
-
-The runtime package must remain independently vendorable. It imports only the
-Python standard library and its own modules; `pyproject.toml` declares no runtime
-dependencies. Binary acquisition is managed outside this repository. Supply the
-SDK with an independently acquired, compatible CLI executable.
-
-The import constraint was reviewed on 2026-07-28 with an executable AST walk of
-every `src/saucepan_sdk/*.py` module. Relative imports were classified as local
-package imports; every absolute top-level import was checked against
-`sys.stdlib_module_names`. All five modules passed. The reviewed standard-library
-imports are `json`, `os`, `pathlib`, `shutil`, `subprocess`, and `typing`; all
-other imports are relative within `saucepan_sdk`. Reviewers should repeat this
-check whenever a runtime import is added.
-
-The walk was repeated on 2026-07-28 after adding `Sauce.manifest_source` and
-`BucketStub` (with its `extra` mapping): the same five modules were walked, no
-new absolute import appeared, and the reviewed standard-library set is
-unchanged (`json`, `os`, `pathlib`, `shutil`, `subprocess`, `typing`); the two
-new attributes are built entirely from data already carried on parsed
-entries.
-
-## Vendor only the Python SDK
-
-Git submodules point to whole repositories, not individual directories. Add the
-Saucepan repository as a submodule, then use cone-mode sparse-checkout inside
-that submodule to materialize only `sdk/python/`:
+Both test options are required together; the key must contain exactly 64 hexadecimal characters. Use disposable test keys and a short root on Windows. Explicit test mode never becomes an automatic production fallback.
 
 ```sh
-git submodule add --name saucepan https://github.com/ZackaryW/saucepan.git vendor/saucepan
-git -C vendor/saucepan sparse-checkout init --cone
-git -C vendor/saucepan sparse-checkout set sdk/python
+uv run --project sdk/python pytest sdk/python/tests
+uv run --project sdk/python behave sdk/python/features/python-sdk
+uv build --project sdk/python
 ```
 
-The vendored SDK is then available at `vendor/saucepan/sdk/python/`.
+The tests build the actual CLI or use `SAUCEPAN_TEST_BINARY`. They run isolated stores without accessing the user's keyring. Vendoring checks import and invoke the SDK with site packages disabled. SDK CI runs on Windows, Linux, and macOS.
 
-The sparse-checkout configuration is local and uncommitted. It is not recorded
-in `.gitmodules`, and a fresh `git clone --recursive` does not carry it over.
-After a fresh recursive clone, each consumer must reapply the sparse checkout:
+## Migration from the old Python SDK
 
-```sh
-git -C vendor/saucepan sparse-checkout init --cone
-git -C vendor/saucepan sparse-checkout set sdk/python
-```
+Version 0.5.0 replaces the old `Workspace`, `Sauce`, and `Bucket` API. Existing callers must migrate; these names and the old five-category exception mapping are removed. Register an app, supply a recipe to `acquire()`, and consume the returned artifact/directory. Replace local TOML settings with `register()` or `configure()`, and index reads with `view()`. There are no bucket, install, update, or uninstall wrappers for commands the current CLI does not provide.
+
+Only `sdk/python/` is needed to vendor this package. Supply a compatible CLI independently; SDK tests additionally need that executable or a full source checkout to build it.

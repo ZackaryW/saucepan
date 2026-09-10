@@ -1,25 +1,5 @@
-"""Python SDK for driving the saucepan CLI."""
+"""Standard-library Python client for the Saucepan 0.5 central-store CLI."""
+from .client import Saucepan, shared_executable_path
+from .errors import SaucepanError
 
-from .errors import (
-    ConfigError,
-    Conflict,
-    InternalError,
-    NotFound,
-    SaucepanError,
-    SourceError,
-)
-from .entities import Bucket, BucketStub, Sauce
-from .workspace import Workspace
-
-__all__ = [
-    "Bucket",
-    "BucketStub",
-    "ConfigError",
-    "Conflict",
-    "InternalError",
-    "NotFound",
-    "SaucepanError",
-    "Sauce",
-    "SourceError",
-    "Workspace",
-]
+__all__ = ["Saucepan", "SaucepanError", "shared_executable_path"]

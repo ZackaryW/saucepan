@@ -1,67 +1,40 @@
 from behave import given, then, when
 
-from saucepan_sdk import Workspace
-from support import advance_index, make_index_repository, write_sdk_state_fixture
+
+@given("two registered apps and a local source")
+def registered(context):
+    context.token = context.store.register("first")
+    context.first = context.store.for_app(context.token)
+    context.second = context.store.for_app(context.store.register("second"))
+    source = context.test_root / "assets"
+    source.mkdir()
+    (source / "data.txt").write_text("data", encoding="utf-8")
+    context.recipe = {"source": {"provider": "local", "path": str(source)}}
 
 
-@given("an SDK workspace and a repository-target index tagged v1")
-def given_sdk_tagged_index(context):
-    context.index_repository = make_index_repository(context, "v1")
-    context.workspace = Workspace(context.workspace_root, binary=context.saucepan_binary)
+@when("the first app acquires the source through the Python SDK")
+def acquire(context):
+    context.result = context.first.acquire(context.recipe)
 
 
-@when("I add the index through the SDK at ref v1")
-def when_sdk_add_pinned(context):
-    context.bucket = context.workspace.add_bucket(
-        str(context.index_repository), reference="v1"
-    )
+@then("only the first app sees the acquired entry")
+def entries(context):
+    assert set(context.first.view()["entries"]) == {context.result["artifact"]["id"]}
+    assert context.second.view()["entries"] == {}
 
 
-@then("the SDK bucket collection records ref v1 and its resolved commit")
-def then_sdk_pin(context):
-    entry = context.workspace.cat_buckets()[0]
-    assert entry["reference"] == "v1"
-    assert entry["resolved_commit"] == context.index_commit
-    assert context.bucket.url == str(context.index_repository)
+@then("its current view verifies through the Python SDK")
+def verify(context):
+    assert context.first.verify(context.first.view()) == {"verified": True}
 
 
-@given("an SDK workspace with an unpinned registered repository-target index")
-def given_sdk_unpinned_index(context):
-    context.index_repository = make_index_repository(context, "v1")
-    context.workspace = Workspace(context.workspace_root, binary=context.saucepan_binary)
-    context.workspace.add_bucket(str(context.index_repository))
+@when("the first app changes its settings through the Python SDK")
+def configure(context):
+    context.settings = {"retain_snapshots": False, "verify_content": True, "allow_local_fallback": False}
+    context.first.configure(settings=context.settings)
 
 
-@when("the index advances and I refresh it through the SDK")
-def when_sdk_refresh(context):
-    context.refreshed_commit = advance_index(context.index_repository)
-    context.bucket = context.workspace.refresh_bucket(str(context.index_repository))
-
-
-@then("the SDK bucket collection records the refreshed commit")
-def then_sdk_refresh(context):
-    entry = context.workspace.cat_buckets()[0]
-    assert entry["resolved_commit"] == context.refreshed_commit
-    assert context.bucket.url == str(context.index_repository)
-
-
-@given("CLI state containing an index-sourced sauce and a bucket stub with extra fields")
-def given_sdk_state(context):
-    write_sdk_state_fixture(context)
-    context.workspace = Workspace(context.workspace_root, binary=context.saucepan_binary)
-
-
-@when("I read sauces and bucket stubs through the SDK")
-def when_read_entities(context):
-    context.sauce = context.workspace.sauces[0]
-    context.stub = context.workspace.buckets[0].stubs()[0]
-
-
-@then("the sauce exposes its index manifest source")
-def then_manifest_source(context):
-    assert context.sauce.manifest_source["kind"] == "index"
-
-
-@then("the bucket stub exposes its extra fields")
-def then_stub_extra(context):
-    assert context.stub.extra == {"commands": {"run": "bin/run"}}
+@then("its original caller token reads the new settings")
+def stable_token(context):
+    assert context.store.for_app(context.token).view()["settings"] == context.settings
+    assert context.second.view()["settings"]["retain_snapshots"] is True

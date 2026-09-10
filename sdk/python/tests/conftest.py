@@ -35,22 +35,3 @@ def central_store(saucepan_test_binary: Path):
     # Leave room for source/snapshot IDs under Windows filesystem path limits.
     with tempfile.TemporaryDirectory(prefix="sauce-") as temporary:
         yield CentralTestStore.create(saucepan_test_binary, Path(temporary) / "central")
-
-
-@pytest.fixture(scope="session")
-def saucepan_binary() -> Path:
-    subprocess.run(
-        ["cargo", "build", "--bin", "saucepan"],
-        cwd=REPOSITORY_ROOT,
-        check=True,
-    )
-    executable = "saucepan.exe" if os.name == "nt" else "saucepan"
-    return REPOSITORY_ROOT / "target" / "debug" / executable
-
-
-@pytest.fixture
-def workspace(tmp_path: Path) -> Path:
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
-    (workspace / "saucepan.toml").write_text("[local]\n", encoding="utf-8")
-    return workspace
