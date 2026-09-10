@@ -50,6 +50,8 @@ Acquisition returns JSON with an artifact record and its central directory. The 
 
 Snapshots default on, repeated content verification defaults off, and remote-failure cache fallback defaults off. Each source/ref keeps one current snapshot and up to five historical ZIPs. Git folders share the same source history, and Git exports exclude `.git` at every depth.
 
+Safe relative symlinks committed in Git are copied as ordinary files or directories. Targets resolve within the complete source tree before folder selection, so a selected folder can include a link to a sibling elsewhere in the repository. Unsafe or broken links, cycles, and excessive expansion fail before publication. Local filesystem links and downloaded ZIP symlink entries remain unsupported.
+
 See the [central-store guide](docs/central-source-store.md) for recipes, app settings, mirrors, verification, the Rust API, and isolated test mode.
 
 ## SDKs

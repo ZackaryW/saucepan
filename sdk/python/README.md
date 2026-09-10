@@ -1,5 +1,9 @@
 # Saucepan Python SDK
 
+**Compatibility: this SDK targets the legacy workspace CLI and is not compatible with Saucepan 0.5.x's central-store API.** Migration of the Python `Workspace` runtime is still pending. The examples below require a compatible legacy executable; updated CLI test fixtures do not establish compatibility for this SDK.
+
+For the current API, use the [TypeScript SDK](../typescript/README.md), [shell SDK](../shell/README.md), or [CLI directly](../../docs/central-source-store.md).
+
 The SDK is a standard-library-only Python client for the Saucepan command-line
 interface. It requires Python 3.9 or newer and an independently acquired
 `saucepan` executable; it never downloads or builds the executable itself.
@@ -69,7 +73,7 @@ workspace.refresh_bucket(pinned.url)
 
 ### Command methods
 
-Every Saucepan CLI read or mutation has an SDK entry point:
+The legacy workspace CLI operations have these SDK entry points:
 
 | Operation | SDK API |
 |---|---|
