@@ -1,29 +1,27 @@
 ---
 name: develop-saucepan
-description: Integrate, use, or extend Saucepan as a composable artifact resolver. Use when an agent must add Saucepan to another repository, vendor only its Python SDK or binary resolver through a pinned git submodule and sparse checkout, acquire or invoke the CLI, create Saucepan workspaces and manifests, or develop and test the Rust CLI, resolver, or SDK without pulling unrelated components.
+description: Integrate, use, or extend Saucepan as a composable artifact resolver. Use when an agent must add Saucepan to another repository, vendor its Python SDK through a pinned git submodule and sparse checkout, build or invoke the CLI, or develop and test the Rust CLI or SDK without pulling unrelated components.
 ---
 
 # Develop with Saucepan
 
-Treat Saucepan as three independently consumable, composable components:
+Treat Saucepan as two independently consumable components. Binary acquisition logic is maintained outside this repository.
 
 | Component | Sparse path | Purpose |
 |---|---|---|
 | Rust CLI | `src/` plus root `Cargo.toml` and `Cargo.lock` | Install, update, query, and locate artifacts |
-| Python resolver | `resolvers/python/` | Download an explicitly versioned prebuilt CLI binary |
 | Python SDK | `sdk/python/` | Drive an independently acquired CLI through an object API |
 
-Read [references/component-contracts.md](references/component-contracts.md) before changing a public contract or implementing an integration. Keep the SDK and resolver independent: neither acquires nor imports the other.
+Read [references/component-contracts.md](references/component-contracts.md) before changing a public contract or implementing an integration. The SDK uses a supplied CLI and does not acquire binaries.
 
 ## Choose the smallest component set
 
 1. Inspect the consumer repository, its `AGENTS.md`, package manager, existing `.gitmodules`, and vendor conventions.
-2. Identify whether the caller needs the CLI, resolver, SDK, or a union of them.
+2. Identify whether the caller needs the CLI, SDK, or both.
 3. Reuse an already installed CLI when appropriate; do not add a source submodule merely to execute it.
 4. Select an explicit Saucepan tag or commit. Never infer or download `latest`.
 5. Add canonical specs only when modifying Saucepan contracts:
    - CLI development: `src tests features openspec/specs`
-   - resolver development: `resolvers/python openspec/specs/python-platform-resolver`
    - SDK development: `sdk/python openspec/specs/python-sdk`
 
 Do not create an OpenSpec change unless the user asks or the active repository's governance explicitly requires one. Existing canonical specs remain authoritative.
@@ -43,11 +41,8 @@ git -C vendor/saucepan sparse-checkout set <required-path> [<required-path> ...]
 Examples:
 
 ```sh
-# Standalone binary acquisition
-git -C vendor/saucepan sparse-checkout set resolvers/python
-
-# Python SDK with its matching binary resolver
-git -C vendor/saucepan sparse-checkout set sdk/python resolvers/python
+# Python SDK with a separately supplied binary
+git -C vendor/saucepan sparse-checkout set sdk/python
 
 # Rust CLI development; cone mode keeps root Cargo files visible
 git -C vendor/saucepan sparse-checkout set src tests features openspec/specs
@@ -73,13 +68,7 @@ Preserve existing paths when expanding the sparse set; `sparse-checkout set` rep
 
 ## Acquire and connect the binary
 
-For a released version, run the vendored standard-library-only resolver with an explicit tag:
-
-```sh
-python vendor/saucepan/resolvers/python/saucepan_resolver.py v0.2.0 .tools/saucepan
-```
-
-Use an `.exe` destination on Windows. The resolver downloads directly from GitHub Releases and makes POSIX downloads executable. If the submodule points to an unreleased commit, build that commit instead of pairing it with an unrelated release:
+Use the consumer's externally maintained binary acquisition logic, or build the selected Saucepan revision. This repository no longer ships a binary downloader. If the submodule points to an unreleased commit, build that commit instead of pairing it with an unrelated release:
 
 ```sh
 cargo build --release --manifest-path vendor/saucepan/Cargo.toml
@@ -133,9 +122,6 @@ Run checks in proportion to the selected components:
 ```sh
 # Rust CLI
 cargo test --manifest-path vendor/saucepan/Cargo.toml
-
-# Python resolver
-python -m py_compile vendor/saucepan/resolvers/python/saucepan_resolver.py
 
 # Python SDK
 cd vendor/saucepan/sdk/python

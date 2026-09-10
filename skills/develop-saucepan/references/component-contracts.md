@@ -64,19 +64,11 @@ A `bucket.json` is an array of searchable stubs:
 
 Treat a manifest's `name` as the installed identity; it may differ from the repository target.
 
-## Python resolver contract
+## Binary acquisition boundary
 
-`resolvers/python/saucepan_resolver.py`:
-
-- uses only the Python standard library;
-- requires an explicit release tag such as `v0.2.0`;
-- never resolves `latest`;
-- maps the current OS and architecture to a known release asset;
-- downloads from a direct GitHub Releases URL without the REST API or a token;
-- makes POSIX downloads executable;
-- works as a script and as `resolve(version, dest=None)`.
-
-Reject unknown platforms clearly rather than guessing. Keep this component independent of the SDK.
+Binary acquisition logic has moved outside this repository. Saucepan no longer
+ships a Python binary resolver. Consumers supply a compatible executable through
+their external acquisition mechanism or build the selected Rust revision.
 
 ## Python SDK contract
 
@@ -110,4 +102,4 @@ Important behavior:
 
 ## Source boundaries
 
-Keep the resolver and SDK excluded from the published Rust crate. Keep SDK development governance scoped by `sdk/python/zpp.toml`; do not impose Python BDD/TDD settings on the Rust repository root.
+Keep the SDK excluded from the published Rust crate. Keep SDK development governance scoped by `sdk/python/zpp.toml`; do not impose Python BDD/TDD settings on the Rust repository root.

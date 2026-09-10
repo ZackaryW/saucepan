@@ -12,7 +12,6 @@ exclude = [
     "playground/",
     ".cc-history/",
     "features/",
-    "resolvers/python/",
     "sdk/",
 ]
 

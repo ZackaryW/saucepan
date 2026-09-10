@@ -149,10 +149,10 @@ sauce index; the bucket registry is reread on its next access.
 
 ## Runtime dependency boundary
 
-The runtime package must remain independently vendorable. It imports neither
-the Python resolver in `resolvers/python/` nor any third-party package, and
-`pyproject.toml` declares no runtime dependencies. The resolver and SDK can be
-materialized and used independently.
+The runtime package must remain independently vendorable. It imports only the
+Python standard library and its own modules; `pyproject.toml` declares no runtime
+dependencies. Binary acquisition is managed outside this repository. Supply the
+SDK with an independently acquired, compatible CLI executable.
 
 The import constraint was reviewed on 2026-07-28 with an executable AST walk of
 every `src/saucepan_sdk/*.py` module. Relative imports were classified as local
