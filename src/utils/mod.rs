@@ -5,6 +5,7 @@
 //! - [`path`]: logical paths and host-specific filename validation.
 //! - [`lock`] and [`fs`]: bounded writer locking and staged file/directory publication.
 //! - [`tree`] and [`archive`]: filtered tree copies and ZIP stream round trips.
+//! - [`links`]: bounded alias resolution over a caller-supplied logical tree.
 //!
 //! Filters, byte/entry limits, key material, and authentication contexts are supplied
 //! by callers. Helpers do not assign source IDs, choose retention rules, access a
@@ -33,6 +34,7 @@ pub mod crypto;
 pub mod fs;
 pub mod hash;
 pub mod json;
+pub mod links;
 pub mod lock;
 pub mod path;
 pub mod tree;
