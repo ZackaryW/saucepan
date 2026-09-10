@@ -1,28 +1,52 @@
 [package]
+autobins = false
+autotests = false
 name = "saucepan"
-version = "0.3.0"
+version = "0.5.0"
 edition = "2024"
-description = "Composable multi-source artifact resolver — install sauce manifests from local, GitHub, or custom Git sources"
+description = "Shared Git, URL, and local artifact acquisition with encrypted app indexes"
 license = "MIT"
 repository = "https://github.com/ZackaryW/saucepan"
 keywords = ["artifact", "package-manager", "git", "middleware", "cli"]
 categories = ["command-line-utilities", "development-tools"]
 readme = "README.md"
 exclude = [
+    "src2/",
+    "src3/",
+    "tests/",
     "playground/",
     ".cc-history/",
     "features/",
     "sdk/",
+    "openspec/",
+    "skills/",
+    "src-struct/",
+    ".codegraph/",
+    ".github/",
 ]
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "saucepan"
+path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-toml = "0.8"
 anyhow = "1"
-
-[dev-dependencies]
-assert_cmd = "2"
-predicates = "3"
+sha2 = "0.11"
+hkdf = "0.13"
+hmac = "0.13"
+chacha20poly1305 = { version = "0.11", features = ["zeroize"] }
+getrandom = "0.4"
+zeroize = { version = "1.8", features = ["derive"] }
+keyring = "4.2"
+url = "2.5"
+fs2 = "0.4.3"
+dirs = "7"
 tempfile = "3"
+zip = { version = "8.6", default-features = false, features = ["deflate"] }
+ureq = { version = "3", default-features = false, features = ["rustls"] }

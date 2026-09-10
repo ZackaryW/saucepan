@@ -23,7 +23,11 @@ target/
 /playground
 /.codex
 
-# Python (resolvers/python/)
+# Local-only implementation references; never commit or force-add these directories.
+/src2/
+/src3/
+
+# Python
 __pycache__/
 *.pyc
 .venv/

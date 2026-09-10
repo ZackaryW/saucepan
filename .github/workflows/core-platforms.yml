@@ -1,0 +1,45 @@
+name: Core platform checks
+
+on:
+  pull_request:
+    paths: ['src/**', 'Cargo.toml', 'Cargo.lock', '.github/workflows/core-platforms.yml']
+  push:
+    branches: [main]
+    paths: ['src/**', 'Cargo.toml', 'Cargo.lock', '.github/workflows/core-platforms.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: Install Linux credential service and Git LFS
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y gnome-keyring dbus-x11 git-lfs
+      - name: Verify Git LFS prerequisite
+        run: git lfs version
+      - run: cargo fmt -- --check
+      - run: cargo test --locked
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo build --locked
+      - name: Windows or macOS native credential check
+        if: runner.os != 'Linux'
+        run: cargo test --locked --lib native_credential_round_trip -- --ignored
+      - name: Linux native credential check in an isolated bus
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          dbus-run-session -- bash -euo pipefail -c '
+            printf "%s" "saucepan-ci-only" | gnome-keyring-daemon --unlock --components=secrets
+            cargo test --locked --lib native_credential_round_trip -- --ignored
+          '
