@@ -1,8 +1,22 @@
-## Purpose
+## REMOVED Requirements
 
-Define the behavior-preserving reuse boundaries for source identity, Git checkout control flow, runtime naming, and integration-test fixtures, so implementation structure stays maintainable without changing Saucepan's observable behavior.
+### Requirement: Native source-variant comparison
+**Reason**: The rewrite defines canonical provider/source identity rather than prescribing the legacy enum-comparison implementation.
+**Migration**: Compare the canonical source identity used by the new acquisition model.
 
-## Requirements
+### Requirement: Single fresh-clone lifecycle
+**Reason**: Workspace checkout replacement is superseded by central source reuse; unrecognized directories must not be silently removed to satisfy a clone request.
+**Migration**: Use the central acquisition flow and stage owned source preparation.
+
+### Requirement: Shared runtime naming rule
+**Reason**: Source and content paths are derived from canonical identities, not a shared legacy terminal-component naming helper.
+**Migration**: Resolve content through the core's recorded artifact paths.
+
+### Requirement: Context-named integration-test utilities
+**Reason**: Prescribed legacy helper paths are not product behavior and do not justify maintaining a second implementation's test layout.
+**Migration**: Keep reusable fixtures appropriate to the new core and verify its observable contracts.
+
+## ADDED Requirements
 
 ### Requirement: Rejected designs remain excluded under every name
 Planning, implementation, tests, and completion claims SHALL preserve the rejected designs and exclusions recorded in proposal.md. A renamed helper, safety feature, dependency, compatibility requirement, or new task SHALL NOT reintroduce the same excluded behavior. Historical source, tests, schemas, canonical legacy specs, commits, memory entries, and assistant claims SHALL NOT override a user correction. Reopening a rejected boundary SHALL require an explicit user decision changing that boundary; generic continuation instructions SHALL retain the accepted scope. Unresolved design questions SHALL remain identified as unresolved rather than silently becoming requirements. These rules SHALL NOT add permission steps to routine work within the accepted scope.

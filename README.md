@@ -1,110 +1,64 @@
-# saucepan
+# Saucepan
 
-Saucepan is a command-line artifact resolver for versioned `sauce.json`
-manifests. Give it a workspace and a target; it finds the target through local,
-GitHub, or custom-Git sources, records the installed manifest, and exposes
-stable JSON and exit-code contracts for other tools.
+Saucepan acquires content from Git repositories, HTTP(S) downloads, and local paths into one user-level store. Applications share source content while keeping their settings and touched-entry views in a central encrypted index.
 
-## Install
+This checkout implements the new central-store API. The older workspace/TOML commands and Python integrations are not compatible with this API.
 
-```sh
-cargo install saucepan
-```
+## Build and place the executable
 
-Saucepan requires `git` (or `gh`) for remote sources. The `search` command also
-requires `jq`. See [Configuration](docs/configuration.md) for authentication and
-executable overrides.
-
-## Quick start
-
-Create a workspace with at least one enabled source:
+Build from this checkout with a current Rust toolchain:
 
 ```sh
-mkdir my-workspace
-cd my-workspace
-
-cat > saucepan.toml <<'EOF'
-[github]
-EOF
-
-saucepan . install owner/my-tool
-saucepan . list
-saucepan . path my-tool
+cargo build --release --locked
+mkdir -p "$HOME/.saucepan/bin"
+cp target/release/saucepan "$HOME/.saucepan/bin/saucepan"
 ```
 
-Commands identify an installed sauce by the `name` inside its manifest, which
-can differ from the repository target used during installation.
+PowerShell:
 
-## How resolution works
-
-An installation has two distinct phases:
-
-```text
-enabled source finds target        fetched target supplies manifest
-───────────────────────────        ─────────────────────────────────
-local installed entry              1. repository-root sauce.json
-        ↓                           2. registered central indexes
-GitHub repository          ──────▶  3. not found (exit 1)
-        ↓
-custom-Git repository
+```powershell
+cargo build --release --locked
+New-Item -ItemType Directory -Force "$HOME/.saucepan/bin"
+Copy-Item target/release/saucepan.exe "$HOME/.saucepan/bin/saucepan.exe"
 ```
 
-The repository's own manifest always wins. A central index can supply a
-manifest and Git ref only when the repository has no root manifest. Installed
-entries retain both repository provenance and the source of their manifest.
+Add that `bin` directory to PATH. One active executable serves all apps. Git acquisitions require Git; repositories using Git LFS also require Git LFS.
 
-Read [Central indexes](docs/central-indexes.md) for registration, pinning,
-target matching, precedence, and update behavior.
+## First acquisition
 
-## Common commands
+Initialize the encrypted store once, then register an app:
 
 ```sh
-# Install a default branch, tag, branch, or commit
-saucepan . install owner/my-tool
-saucepan . install owner/my-tool --ref v1.2.0
-
-# Inspect and update installed state
-saucepan . list --json
-saucepan . update my-tool
-saucepan . cat sauce my-tool
-saucepan . uninstall my-tool
-
-# Register and query a central index
-saucepan . bucket add owner/central-index --ref v1.0.0
-saucepan . bucket refresh owner/central-index
-saucepan . search '.name | startswith("my-")'
+saucepan init
+saucepan register example-app > .saucepanhash
 ```
 
-The complete command contract is in the [CLI reference](docs/cli-reference.md).
+The key lives in Windows Credential Store, macOS Keychain, or Linux Secret Service. An unavailable native service is an error. Settings live in the encrypted index; no `saucepan.toml` is read.
 
-## Automation and SDK use
+Save this as `recipe.json` (replace the path with a directory you own):
 
-`list --json` and `bucket list --json` emit newline-delimited JSON. The `cat`
-family emits complete JSON documents, `search` emits raw jq-selected JSON, and
-`path` emits a bare filesystem path. Saucepan uses stable exit categories:
+```json
+{"source":{"provider":"local","path":"./assets"}}
+```
 
-| Code | Meaning |
-|---:|---|
-| 0 | Success |
-| 1 | Not found |
-| 2 | Git/gh source failure |
-| 3 | Missing or invalid configuration |
-| 4 | Installed-name conflict with another origin |
-| 5 | Unexpected internal failure |
+```sh
+saucepan --marker .saucepanhash acquire recipe.json
+saucepan --marker .saucepanhash view
+```
 
-Python callers can use the standard-library-only
-[Saucepan SDK](sdk/python/README.md), which drives an independently installed
-Saucepan executable and maps these exits to typed exceptions.
+Acquisition returns JSON with an artifact record and its central directory. The marker is a stable caller token; it does not need rewriting when settings or acquired entries change.
 
-## Documentation
+Snapshots default on, repeated content verification defaults off, and remote-failure cache fallback defaults off. Each source/ref keeps one current snapshot and up to five historical ZIPs. Git folders share the same source history, and Git exports exclude `.git` at every depth.
 
-- [Getting started](docs/getting-started.md)
-- [Configuration](docs/configuration.md)
-- [CLI reference](docs/cli-reference.md)
-- [Central indexes](docs/central-indexes.md)
-- [Artifact formats and workspace layout](docs/artifact-formats.md)
-- [Central-index example](docs/examples/central-index/README.md)
+See the [central-store guide](docs/central-source-store.md) for recipes, app settings, mirrors, verification, the Rust API, and isolated test mode.
 
-## License
+## Development
 
-MIT
+```sh
+cargo test --locked
+cargo fmt -- --check
+cargo clippy --locked --all-targets -- -D warnings
+cargo build --locked
+```
+
+Fresh tests live beside the implementation under `src/`. Old root integration tests and local `src2`/`src3` references are excluded from targets and packages. Native keyring tests are explicitly selected because they need an available user credential service. Platform results are recorded in the guide.
