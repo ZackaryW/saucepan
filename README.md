@@ -2,7 +2,7 @@
 
 Saucepan acquires content from Git repositories, HTTP(S) downloads, and local paths into one user-level store. Applications share source content while keeping their settings and touched-entry views in a central encrypted index.
 
-This checkout implements the new central-store API. The older workspace/TOML commands and Python integrations are not compatible with this API.
+This checkout implements the new central-store API. The older workspace/TOML commands are replaced by app registration and declarative acquisition recipes.
 
 ## Build and place the executable
 
@@ -56,9 +56,9 @@ See the [central-store guide](docs/central-source-store.md) for recipes, app set
 
 ## SDKs
 
-Use the [TypeScript SDK](sdk/typescript/README.md) from Node.js or the [shell SDK](sdk/shell/README.md) from POSIX shells. Both cover the current central-store commands and use an independently installed executable, defaulting to `~/.saucepan/bin/saucepan[.exe]`. App settings remain in the encrypted index.
+Use the [Python SDK](sdk/python/README.md), [TypeScript SDK](sdk/typescript/README.md) from Node.js, or [shell SDK](sdk/shell/README.md) from POSIX shells. All three cover the current central-store commands and use an independently installed executable, defaulting to `~/.saucepan/bin/saucepan[.exe]`. App settings remain in the encrypted index.
 
-The [SDK overview](sdk/README.md) records compatibility and installation options. The legacy Python `Workspace` API still requires migration.
+The [SDK overview](sdk/README.md) records compatibility and installation options. Python callers using the former `Workspace` API must migrate to `Saucepan`; see the Python SDK migration notes.
 
 ## Development
 

@@ -1,10 +1,10 @@
-name: TypeScript and shell SDKs
+name: Python, TypeScript and shell SDKs
 on:
   pull_request:
-    paths: ['sdk/typescript/**', 'sdk/shell/**', 'src/**', 'Cargo.toml', 'Cargo.lock', '.github/workflows/sdks.yml']
+    paths: ['sdk/python/**', 'sdk/typescript/**', 'sdk/shell/**', 'src/**', 'Cargo.toml', 'Cargo.lock', '.github/workflows/sdks.yml']
   push:
     branches: [main]
-    paths: ['sdk/typescript/**', 'sdk/shell/**', 'src/**', 'Cargo.toml', 'Cargo.lock', '.github/workflows/sdks.yml']
+    paths: ['sdk/python/**', 'sdk/typescript/**', 'sdk/shell/**', 'src/**', 'Cargo.toml', 'Cargo.lock', '.github/workflows/sdks.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -23,7 +23,14 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: sdk/typescript/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+      - run: python -m pip install uv
       - run: cargo build --locked
+      - run: uv run --locked --project sdk/python --python 3.9 pytest sdk/python/tests
+      - run: uv run --locked --project sdk/python --python 3.9 behave sdk/python/features/python-sdk
+      - run: uv build --project sdk/python
       - run: npm ci --ignore-scripts
         working-directory: sdk/typescript
       - run: npm test

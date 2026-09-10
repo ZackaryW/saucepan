@@ -26,8 +26,8 @@ The caller owns JSON files and parsing. No Node.js, Python, or jq is required at
 
 ## Binary and legacy boundaries
 
-Both new adapters default to the user-level `.saucepan/bin` executable and allow an explicit path. Binary acquisition is external; no adapter downloads or builds it during runtime. Explicit test root/key pairs never become production fallbacks. Native keyring behavior belongs to the core.
+All three adapters default to the user-level `.saucepan/bin` executable and allow an explicit path. Binary acquisition is external; no adapter downloads or builds it during runtime. Explicit test root/key pairs never become production fallbacks. Native keyring behavior belongs to the core.
 
-The Python `Workspace` runtime still targets the former workspace/TOML protocol. It is retained as legacy code and is not compatible with 0.5.x. Its revised real-CLI fixtures do not establish runtime compatibility. Do not copy its commands, caching behavior, or error categories into current integrations.
+Python 0.5.0 exposes a synchronous `Saucepan` client with the same central-store operations. It requires Python 3.9+, uses only the standard library, and accepts app, token/marker, timeout, and explicit test root/key options. It parses one JSON result, checks token/view versions, preserves nullable results and process diagnostics, and cleans up private request files. The old `Workspace`/entity API and workspace error categories are removed; callers must migrate. See the [Python README](../../../sdk/python/README.md).
 
 SDK packages remain outside the published Rust crate. Source references under `src2` and `src3` are local-only and are never integration targets.

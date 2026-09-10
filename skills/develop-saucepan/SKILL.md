@@ -1,6 +1,6 @@
 ---
 name: develop-saucepan
-description: Integrate, use, or extend Saucepan as a composable artifact source store. Use when adding Saucepan to another repository, vendoring an SDK through a pinned sparse submodule, invoking the CLI, or developing and testing the Rust CLI and TypeScript or shell SDKs.
+description: Integrate, use, or extend Saucepan as a composable artifact source store. Use when adding Saucepan to another repository, vendoring an SDK through a pinned sparse submodule, invoking the CLI, or developing and testing the Rust CLI and Python, TypeScript, or shell SDKs.
 ---
 
 # Develop with Saucepan
@@ -12,7 +12,7 @@ Select the independently consumable components needed by the caller. Binary acqu
 | Rust CLI | `src/` plus root `Cargo.toml` and `Cargo.lock` | Install, update, query, and locate artifacts |
 | TypeScript SDK | `sdk/typescript/` | Typed Node.js client for the current central-store CLI |
 | Shell SDK | `sdk/shell/` | POSIX functions forwarding the current CLI's JSON and exit status |
-| Python SDK | `sdk/python/` | Legacy workspace API; not compatible with the current central-store CLI |
+| Python SDK | `sdk/python/` | Synchronous Python client for the current central-store CLI |
 
 Read [references/component-contracts.md](references/component-contracts.md) before changing a public contract or implementing an integration. The SDK uses a supplied CLI and does not acquire binaries.
 
@@ -140,7 +140,7 @@ npm pack --dry-run
 node --test sdk/shell/tests/run.mjs
 ```
 
-The TypeScript runtime uses only Node.js built-ins; the POSIX library requires only the shell and executable. Both integration suites use explicit test roots and keys. Set `SAUCEPAN_TEST_BINARY` to test another build and `SAUCEPAN_TEST_SHELL` for a specific POSIX shell (for example Git Bash on Windows). Legacy Python tests are not proof of current API compatibility. For consumer work, also run the consumer's relevant tests against the pinned binary and submodule commit.
+The TypeScript runtime uses only Node.js built-ins; the POSIX library requires only the shell and executable. Both integration suites use explicit test roots and keys. Set `SAUCEPAN_TEST_BINARY` to test another build and `SAUCEPAN_TEST_SHELL` for a specific POSIX shell (for example Git Bash on Windows). Run the Python client suite with `uv run --project sdk/python pytest sdk/python/tests` and its behavior scenarios with `uv run --project sdk/python behave sdk/python/features/python-sdk`. For consumer work, also run the consumer's relevant tests against the pinned binary and submodule commit.
 
 ## Hand off
 
