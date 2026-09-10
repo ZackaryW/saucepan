@@ -1,0 +1,41 @@
+name: TypeScript and shell SDKs
+on:
+  pull_request:
+    paths: ['sdk/typescript/**', 'sdk/shell/**', 'src/**', 'Cargo.toml', 'Cargo.lock', '.github/workflows/sdks.yml']
+  push:
+    branches: [main]
+    paths: ['sdk/typescript/**', 'sdk/shell/**', 'src/**', 'Cargo.toml', 'Cargo.lock', '.github/workflows/sdks.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  sdk:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: sdk/typescript/package-lock.json
+      - run: cargo build --locked
+      - run: npm ci --ignore-scripts
+        working-directory: sdk/typescript
+      - run: npm test
+        working-directory: sdk/typescript
+      - run: npm pack --dry-run
+        working-directory: sdk/typescript
+      - name: POSIX shell contract
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then
+            export SAUCEPAN_TEST_SHELL="$(cygpath -m "$(command -v sh)")"
+          else
+            export SAUCEPAN_TEST_SHELL="$(command -v sh)"
+          fi
+          node --test sdk/shell/tests/run.mjs

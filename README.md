@@ -52,6 +52,12 @@ Snapshots default on, repeated content verification defaults off, and remote-fai
 
 See the [central-store guide](docs/central-source-store.md) for recipes, app settings, mirrors, verification, the Rust API, and isolated test mode.
 
+## SDKs
+
+Use the [TypeScript SDK](sdk/typescript/README.md) from Node.js or the [shell SDK](sdk/shell/README.md) from POSIX shells. Both cover the current central-store commands and use an independently installed executable, defaulting to `~/.saucepan/bin/saucepan[.exe]`. App settings remain in the encrypted index.
+
+The [SDK overview](sdk/README.md) records compatibility and installation options. The legacy Python `Workspace` API still requires migration.
+
 ## Development
 
 ```sh

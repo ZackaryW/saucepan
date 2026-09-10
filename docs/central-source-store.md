@@ -135,6 +135,8 @@ Saucepan verifies the supplied view against the current HMAC stored in its encry
 
 ## Native API and explicit test mode
 
+The [TypeScript](../sdk/typescript/README.md) and [POSIX shell](../sdk/shell/README.md) SDKs expose the same central-store operations through the CLI. They use the shared executable or an explicit binary path, support stable markers and isolated test stores, and leave settings and policy in the core. The legacy Python `Workspace` API has not yet been migrated.
+
 The CLI translates calls into the public Rust API:
 
 ```rust,no_run
@@ -171,3 +173,5 @@ Windows: 69 tests passed, one native test excluded from the default suite; that 
 macOS Keychain support is implemented through the native keyring backend, but no macOS execution result is available from this environment. A focused three-OS workflow is prepared; this is not a claim that its macOS job has run. The earlier root integration tests, SDK fixtures, and reference builds are not evidence for this rewrite.
 
 On 2026-09-10 the two Python central-store CLI fixtures were revised to the current protocol and passed alongside the SDK vendoring test (three tests total). They exercise explicit test keys, Git acquisition, stable markers, and scoped views. This fixture update does not migrate the legacy Python `Workspace` runtime API or establish compatibility for its full test suite.
+
+Also on 2026-09-10, the new TypeScript SDK passed five real-CLI integration tests and declaration checks on Windows (Node.js 20) and Linux (Node.js 22). These cover all SDK operations, Git/URL/local input, shared Git folder identity, scoped views, proof failures, literal arguments, concurrent request files, and timeout handling. The shell suite exercised every wrapper on Windows Git Bash and Linux dash. Test roots and keys were explicitly isolated from production keyrings. The packed npm artifact passed installation, ESM import, declaration compilation, and an actual CLI call in a separate Windows consumer project. A three-OS SDK workflow is configured; macOS execution remains unverified here.

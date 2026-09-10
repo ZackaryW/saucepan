@@ -1,16 +1,18 @@
 ---
 name: develop-saucepan
-description: Integrate, use, or extend Saucepan as a composable artifact resolver. Use when an agent must add Saucepan to another repository, vendor its Python SDK through a pinned git submodule and sparse checkout, build or invoke the CLI, or develop and test the Rust CLI or SDK without pulling unrelated components.
+description: Integrate, use, or extend Saucepan as a composable artifact source store. Use when adding Saucepan to another repository, vendoring an SDK through a pinned sparse submodule, invoking the CLI, or developing and testing the Rust CLI and TypeScript or shell SDKs.
 ---
 
 # Develop with Saucepan
 
-Treat Saucepan as two independently consumable components. Binary acquisition logic is maintained outside this repository.
+Select the independently consumable components needed by the caller. Binary acquisition logic is maintained outside this repository.
 
 | Component | Sparse path | Purpose |
 |---|---|---|
 | Rust CLI | `src/` plus root `Cargo.toml` and `Cargo.lock` | Install, update, query, and locate artifacts |
-| Python SDK | `sdk/python/` | Drive an independently acquired CLI through an object API |
+| TypeScript SDK | `sdk/typescript/` | Typed Node.js client for the current central-store CLI |
+| Shell SDK | `sdk/shell/` | POSIX functions forwarding the current CLI's JSON and exit status |
+| Python SDK | `sdk/python/` | Legacy workspace API; not compatible with the current central-store CLI |
 
 Read [references/component-contracts.md](references/component-contracts.md) before changing a public contract or implementing an integration. The SDK uses a supplied CLI and does not acquire binaries.
 
@@ -21,8 +23,8 @@ Read [references/component-contracts.md](references/component-contracts.md) befo
 3. Reuse an already installed CLI when appropriate; do not add a source submodule merely to execute it.
 4. Select an explicit Saucepan tag or commit. Never infer or download `latest`.
 5. Add canonical specs only when modifying Saucepan contracts:
-   - CLI development: `src tests features openspec/specs`
-   - SDK development: `sdk/python openspec/specs/python-sdk`
+   - CLI development: `src openspec/specs`
+   - SDK development: `sdk/<language> openspec/specs/<language>-sdk`
 
 Do not create an OpenSpec change unless the user asks or the active repository's governance explicitly requires one. Existing canonical specs remain authoritative.
 
@@ -41,11 +43,11 @@ git -C vendor/saucepan sparse-checkout set <required-path> [<required-path> ...]
 Examples:
 
 ```sh
-# Python SDK with a separately supplied binary
-git -C vendor/saucepan sparse-checkout set sdk/python
+# TypeScript SDK with a separately supplied binary
+git -C vendor/saucepan sparse-checkout set sdk/typescript
 
 # Rust CLI development; cone mode keeps root Cargo files visible
-git -C vendor/saucepan sparse-checkout set src tests features openspec/specs
+git -C vendor/saucepan sparse-checkout set src openspec/specs
 ```
 
 The parent repository records the submodule commit but not its local sparse-checkout settings. Add or update the consumer's bootstrap instructions so every fresh clone runs:
@@ -78,29 +80,31 @@ Pass the resulting path explicitly to integrations when reproducibility matters.
 
 ## Use the CLI or SDK
 
-Create a workspace containing `saucepan.toml`, then invoke:
+Register the app with the central store. Its settings and initial filters are saved in the encrypted index; no local TOML settings are read.
 
 ```sh
-<saucepan-binary> <workspace-root> list --json
-<saucepan-binary> <workspace-root> install owner/repo --ref <tag-branch-or-sha>
-<saucepan-binary> <workspace-root> path <manifest-name>
+<saucepan-binary> init
+<saucepan-binary> register example-app > .saucepanhash
+<saucepan-binary> --marker .saucepanhash acquire recipe.json
+<saucepan-binary> --marker .saucepanhash view
 ```
 
-Install the vendored SDK as a local path dependency using the consumer's Python package manager. For an editable development environment:
+Build the TypeScript package before consuming it from a local path:
 
 ```sh
-python -m pip install -e vendor/saucepan/sdk/python
+cd vendor/saucepan/sdk/typescript
+npm ci --ignore-scripts
+npm run build
 ```
 
-```python
-from saucepan_sdk import Workspace
-
-workspace = Workspace("path/to/workspace", binary=".tools/saucepan")
-sauce = workspace.install("owner/repo", reference="v1.2.0")
-artifact_root = sauce.path
+```typescript
+import { Saucepan } from 'saucepan-sdk';
+const app = new Saucepan({ binary: '.tools/saucepan', marker: '.saucepanhash' });
+const acquired = await app.acquire({ source: { provider: 'local', path: './assets' } });
+console.log(acquired.directory);
 ```
 
-Use `Sauce.path` or `Workspace.path()` rather than reconstructing Saucepan's storage layout. Catch `SaucepanError` or its exit-code-specific subclasses for diagnostics.
+Alternatively source `sdk/shell/saucepan.sh` and call `saucepan_acquire recipe.json`. Follow each SDK's README for installation and options. Use returned paths rather than reconstructing storage layout. Keep recipes, caching, authority, and view filtering in the core. Do not introduce a binary downloader, TOML configuration, or legacy exit-code mapping into the new adapters.
 
 ## Develop through the submodule
 
@@ -123,15 +127,20 @@ Run checks in proportion to the selected components:
 # Rust CLI
 cargo test --manifest-path vendor/saucepan/Cargo.toml
 
-# Python SDK
-cd vendor/saucepan/sdk/python
-uv sync --group dev
-uv run pytest -q
-uv run behave
-uv run behave --dry-run
+# Build the real executable before adapter integration tests
+cargo build --locked --manifest-path vendor/saucepan/Cargo.toml
+
+# TypeScript SDK (from its package directory)
+cd vendor/saucepan/sdk/typescript
+npm ci --ignore-scripts
+npm test
+npm pack --dry-run
+
+# Shell SDK (from the Saucepan repository root)
+node --test sdk/shell/tests/run.mjs
 ```
 
-For SDK runtime changes, verify `src/saucepan_sdk` still imports only the Python standard library and its own package. For consumer work, also run the consumer's relevant tests against the pinned binary and submodule commit.
+The TypeScript runtime uses only Node.js built-ins; the POSIX library requires only the shell and executable. Both integration suites use explicit test roots and keys. Set `SAUCEPAN_TEST_BINARY` to test another build and `SAUCEPAN_TEST_SHELL` for a specific POSIX shell (for example Git Bash on Windows). Legacy Python tests are not proof of current API compatibility. For consumer work, also run the consumer's relevant tests against the pinned binary and submodule commit.
 
 ## Hand off
 

@@ -1,105 +1,33 @@
 # Saucepan component contracts
 
-Use this reference when integrating Saucepan or changing its public behavior. Verify every detail against the checked-out revision when working with a commit newer than this skill.
+This reference describes the 0.5.x central-store API. Verify it against the checked-out revision before changing a public contract.
 
-## CLI contract
+## Core and CLI
 
-Invoke the CLI as:
+One user-level store owns encrypted settings, source records, and app-specific touched-entry views. An ordinary caller supplies `--app`; an authoritative caller supplies a stable registration token through `--marker`. Filters select the app's subindex; they are not acquisition permissions. Settings are centrally registered/configured, with no workspace TOML.
 
-```text
-saucepan <workspace-root> [--json] <command>
-```
+Operational commands emit one JSON value on success: `init`, `register`, `configure`, `acquire`, `view`, `verify`, `path`, `mirror`, `history`, `snapshot`, and `shared-executable`. Core failures currently exit 1; command-line usage failures exit 2. Do not apply the former workspace API's error-code categories or NDJSON parser.
 
-The workspace root contains `saucepan.toml`. A minimal local-only configuration is:
+Recipes describe Git origins and refs, HTTP(S) file/ZIP downloads, or local paths. Folder selection does not split source identity. Paths and history come from the core. See [the central-store guide](../../../docs/central-source-store.md) for exact JSON examples and behavior.
 
-```toml
-[local]
-```
+## TypeScript SDK
 
-Primary commands:
+`sdk/typescript` is an ESM package for Node.js 20+, with emitted TypeScript declarations and no runtime dependencies. `Saucepan` accepts an optional executable, app or marker/token context, timeout, output buffer limit, and explicit test root/key pair. It launches the CLI with argument arrays and no shell.
 
-| Command | Result |
-|---|---|
-| `install <target> [--ref <ref>]` | Install a sauce and record requested/resolved refs |
-| `update <name>` | Refresh a non-local sauce |
-| `uninstall <name>` | Remove a sauce safely |
-| `list [--json]` | List installed sauces; JSON mode is NDJSON |
-| `path <name>` | Print the bare installed repository root |
-| `search <jq-filter>` | Emit each raw parsed jq result |
-| `bucket add\|remove\|list` | Manage bucket documents |
-| `cat index\|buckets\|sauce\|bucket` | Emit raw JSON state |
+Each request owns its temporary JSON input files and removes them after success or failure. Registration tokens stay stable; neither settings nor scoped views are cached in the adapter. `SaucepanError` retains exit status, process diagnostics, and captured output without copying Node's command-bearing error message. `path()` and `history()` preserve nullable CLI results. Token and view format versions are checked.
 
-Stable exit codes:
+See [the TypeScript README](../../../sdk/typescript/README.md) for the complete API and package installation.
 
-| Code | Meaning | SDK exception |
-|---:|---|---|
-| 0 | Success | — |
-| 1 | Not found | `NotFound` |
-| 2 | Source failure | `SourceError` |
-| 3 | Invalid or missing configuration | `ConfigError` |
-| 4 | Installation conflict | `Conflict` |
-| 5 | Unexpected internal error | `InternalError` |
+## Shell SDK
 
-Preserve machine-readable output, NDJSON boundaries, stderr diagnostics, and exit meanings. Middleware callers rely on them.
+`sdk/shell/saucepan.sh` is sourced into a POSIX shell. Named functions and `saucepan_call` forward quoted arguments to the executable. Environment variables select the executable and caller/test context. The library preserves raw JSON stdout, stderr, and core exit status; wrapper configuration errors exit 64. Per-call subshells keep variables and shell state out of the caller.
 
-## Artifact documents
+The caller owns JSON files and parsing. No Node.js, Python, or jq is required at runtime. Windows execution requires a POSIX shell such as Git Bash or an independently configured WSL environment. See [the shell README](../../../sdk/shell/README.md).
 
-Every installed repository exposes `sauce.json` with required fields and arbitrary preserved extension fields:
+## Binary and legacy boundaries
 
-```json
-{
-  "name": "my-tool",
-  "version": "1.2.0",
-  "description": "A short description"
-}
-```
+Both new adapters default to the user-level `.saucepan/bin` executable and allow an explicit path. Binary acquisition is external; no adapter downloads or builds it during runtime. Explicit test root/key pairs never become production fallbacks. Native keyring behavior belongs to the core.
 
-A `bucket.json` is an array of searchable stubs:
+The Python `Workspace` runtime still targets the former workspace/TOML protocol. It is retained as legacy code and is not compatible with 0.5.x. Its revised real-CLI fixtures do not establish runtime compatibility. Do not copy its commands, caching behavior, or error categories into current integrations.
 
-```json
-[
-  {"name": "my-tool", "version": "1.2.0", "url": "https://github.com/owner/my-tool"}
-]
-```
-
-Treat a manifest's `name` as the installed identity; it may differ from the repository target.
-
-## Binary acquisition boundary
-
-Binary acquisition logic has moved outside this repository. Saucepan no longer
-ships a Python binary resolver. Consumers supply a compatible executable through
-their external acquisition mechanism or build the selected Rust revision.
-
-## Python SDK contract
-
-`sdk/python` requires Python 3.9 or newer, has no runtime dependencies, and never downloads or builds the CLI. Its public exports are:
-
-```python
-from saucepan_sdk import (
-    Bucket,
-    ConfigError,
-    Conflict,
-    InternalError,
-    NotFound,
-    Sauce,
-    SaucepanError,
-    SourceError,
-    Workspace,
-)
-```
-
-`Workspace(root, binary=None)` resolves `saucepan` from `PATH` unless `binary` is supplied. Command failures retain `exit_code` and full `stderr`.
-
-Important behavior:
-
-- `workspace.sauces` and `workspace.buckets` are independently lazy-cached snapshots.
-- Every mutation invalidates both caches.
-- `Sauce.update()` refreshes that same object in place.
-- `workspace.refresh()` discards both caches and immediately reloads the sauce index.
-- `search()` returns raw parsed JSON values without coercion.
-- `Sauce.path` delegates to the CLI `path` command; never duplicate layout logic in the SDK.
-- Runtime modules may import only the standard library and relative `saucepan_sdk` modules.
-
-## Source boundaries
-
-Keep the SDK excluded from the published Rust crate. Keep SDK development governance scoped by `sdk/python/zpp.toml`; do not impose Python BDD/TDD settings on the Rust repository root.
+SDK packages remain outside the published Rust crate. Source references under `src2` and `src3` are local-only and are never integration targets.
