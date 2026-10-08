@@ -8,16 +8,20 @@ if os.name != "nt":
 info = subprocess.STARTUPINFO()
 info.dwFlags = subprocess.STARTF_USESHOWWINDOW
 info.wShowWindow = 0
-result = subprocess.run(
-    ["cargo", "test", "--test", "managed", "active_switch", "--", "--nocapture"],
-    cwd=Path(__file__).resolve().parents[1],
-    startupinfo=info,
-    creationflags=subprocess.CREATE_NEW_CONSOLE,
-    capture_output=True,
-    text=True,
-)
-print(result.stdout)
-print(result.stderr)
-if result.returncode == 0:
-    assert "Windows console CTRL_BREAK forwarding verified" in result.stderr
-raise SystemExit(result.returncode)
+for suite, test, evidence in [
+    ("managed", "active_switch", "Windows console CTRL_BREAK forwarding verified"),
+    ("run", "consumer_console", "Leased run console/signal interruption verified"),
+]:
+    result = subprocess.run(
+        ["cargo", "test", "--test", suite, test, "--", "--nocapture"],
+        cwd=Path(__file__).resolve().parents[1],
+        startupinfo=info,
+        creationflags=subprocess.CREATE_NEW_CONSOLE,
+        capture_output=True,
+        text=True,
+    )
+    print(result.stdout)
+    print(result.stderr)
+    if result.returncode:
+        raise SystemExit(result.returncode)
+    assert evidence in result.stderr

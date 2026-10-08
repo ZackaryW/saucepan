@@ -10,22 +10,8 @@ use uuid::Uuid;
 impl Store {
     /// Launch committed binding with inherited streams and literal arguments.
     pub fn launch(&self, app: Uuid, args: &[std::ffi::OsString], saucepan: bool) -> Result<i32> {
-        let (mut command, lease) = self.prepare_launch(app, args, saucepan)?;
-        lease.inherit()?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::CommandExt;
-            // exec retains the marker's native shared lock and preserves signals.
-            Err(command.exec().into())
-        }
-        #[cfg(windows)]
-        {
-            // Keep the console group so Ctrl-C reaches the target. The shim's
-            // default handler may exit; the inherited marker still protects it.
-            let status = command.spawn()?.wait()?;
-            drop(lease);
-            Ok(status.code().unwrap_or(1))
-        }
+        let (command, lease) = self.prepare_launch(app, args, saucepan)?;
+        launch_leased(command, lease)
     }
     pub(crate) fn prepare_launch(
         &self,
@@ -80,6 +66,28 @@ impl Store {
         }
         command.args(args);
         Ok((command, lease))
+    }
+}
+
+/// Only the dedicated CLI/shim processes call this boundary. Never use it for
+/// in-process resource access: Unix replaces the caller's process with the tool.
+pub(crate) fn launch_leased(
+    mut command: std::process::Command,
+    lease: ResourceLease,
+) -> Result<i32> {
+    lease.inherit()?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        Err(command.exec().into())
+    }
+    #[cfg(windows)]
+    {
+        // Remain in the console group. Inherited native ownership survives
+        // wrapper termination until the target closes its handle or exits.
+        let status = command.spawn()?.wait()?;
+        drop(lease);
+        Ok(status.code().unwrap_or(1))
     }
 }
 

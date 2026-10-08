@@ -74,6 +74,14 @@ enum Commands {
     Verify {
         uuid: uuid::Uuid,
     },
+    /// Run a consumer with SAUCEPAN_RESOURCE_DIR and a native lifetime lease.
+    Run {
+        uuid: uuid::Uuid,
+        #[arg(long, value_enum, default_value = "metadata")]
+        verification: VerificationMode,
+        #[arg(last = true, required = true, num_args = 1..)]
+        command: Vec<std::ffi::OsString>,
+    },
     Reclaim,
     Reacquire {
         uuid: uuid::Uuid,
@@ -160,6 +168,19 @@ pub fn run() -> Result<()> {
                     serde_json::to_value(store.resolve(uuid, verification)?)?
                 }
                 Commands::Verify { uuid } => serde_json::to_value(store.verify(uuid)?)?,
+                Commands::Run {
+                    uuid,
+                    verification,
+                    command,
+                } => {
+                    let lease = store.lease(uuid, verification)?;
+                    let mut process = std::process::Command::new(&command[0]);
+                    process
+                        .args(&command[1..])
+                        .env("SAUCEPAN_RESOURCE_DIR", lease.directory());
+                    let code = crate::core::launch::launch_leased(process, lease)?;
+                    std::process::exit(code);
+                }
                 Commands::Reclaim => serde_json::to_value(store.reclaim()?)?,
                 Commands::Reacquire { uuid } => {
                     serde_json::to_value(store.reacquire(uuid, &options)?)?

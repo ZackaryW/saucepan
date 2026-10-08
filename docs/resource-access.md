@@ -57,3 +57,31 @@ A copied path carries no protection. Neither an ordinary claim nor a bare
 `path` result pins content. Guards protect against Saucepan reclaim, not local
 external edits. Native guards are non-inheritable; managed process launch opts
 into handle inheritance only at its dedicated launch boundary.
+
+For external tools, use `run ENTRY_UUID [--verification metadata|full] -- PROGRAM
+ARG...`. Saucepan sets `SAUCEPAN_RESOURCE_DIR` in the child's environment,
+overriding an inherited value without changing the parent environment. Arguments
+remain literal, the working directory is inherited, and child streams and exit
+status pass through without wrapper JSON. No shell or placeholder expansion is
+performed. `--force-refresh` and `--allow-stale` have no effect on access.
+
+The included example reads a `data` file from that environment directory:
+
+```powershell
+cargo build --example read-resource
+target/debug/saucepan --root ROOT run OUTPUT_UUID -- target/debug/examples/read-resource.exe
+```
+
+On Unix omit `.exe`. The native example above and this process workflow both
+remain protected after claim release and outside the retention window.
+The example's optional `CONSUMER_READY` and `CONSUMER_RELEASE` file handshake
+lets acceptance hold it open while exercising reclaim. Ordinary exit makes its
+output eligible for reclaim again.
+
+`run` and shims share native inherited ownership: Windows spawns/waits, while
+Unix replaces the wrapper via `exec`. Killing the Windows wrapper alone does not
+release a handle still retained by the child. Targets that deliberately close
+inherited handles or daemonize outside this contract are unsupported. Descendants
+that retain handles can extend protection. Ordinary native guards do not pass
+ownership to unrelated child processes; use the dedicated CLI boundary when
+that lifetime is needed. Failed validation or process creation releases ownership.
