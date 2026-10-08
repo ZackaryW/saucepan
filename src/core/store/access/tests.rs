@@ -89,3 +89,71 @@ fn observed_io_and_paused_scan_do_not_serialize_unrelated_operations() {
             .contains(&first.entry.uuid)
     );
 }
+
+#[test]
+fn managed_launch_boundary_checks_target_without_payload_io() {
+    use crate::models::index::{Binding, Record};
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("tool");
+    fs::write(&input, b"not executed at this boundary").unwrap();
+    let mut store = Store::create(&tmp.path().join("root")).unwrap();
+    let source = store
+        .register_source(Source::Local { path: input })
+        .unwrap();
+    let mut request = Request {
+        source_uuid: source.uuid,
+        selector: Selector::Local,
+        selection: Default::default(),
+        policies: Default::default(),
+    };
+    request.selection.bin.push("tool".into());
+    let output = store.acquire(&request).unwrap();
+    let mut app = store.register_app("binding".into()).unwrap();
+    app.active = Some(Binding {
+        entry_uuid: output.entry.uuid,
+        executable: "tool".into(),
+    });
+    store
+        .save_record(&Record::Application(app.clone()))
+        .unwrap();
+    store.access_observer = Some(Arc::new(|_| panic!("managed launch scanned payload")));
+    let (command, lease) = store
+        .prepare_launch(app.uuid, &["literal $value".into()], true)
+        .unwrap();
+    assert_eq!(lease.resource().verification, VerificationMode::Metadata);
+    assert_eq!(command.get_program(), output.directory.join("tool"));
+    assert_eq!(
+        command.get_args().collect::<Vec<_>>(),
+        vec![
+            std::ffi::OsStr::new("--root"),
+            store.root().as_os_str(),
+            std::ffi::OsStr::new("literal $value")
+        ]
+    );
+    assert!(
+        store
+            .prepare_launch(
+                app.uuid,
+                &["--root".into(), tmp.path().as_os_str().into()],
+                true
+            )
+            .is_err()
+    );
+    drop(lease);
+    for bad in ["../outside", "undeclared"] {
+        app.active.as_mut().unwrap().executable = bad.into();
+        store
+            .save_record(&Record::Application(app.clone()))
+            .unwrap();
+        assert!(store.prepare_launch(app.uuid, &[], false).is_err());
+    }
+    app.active.as_mut().unwrap().executable = "tool".into();
+    store
+        .save_record(&Record::Application(app.clone()))
+        .unwrap();
+    fs::remove_file(output.directory.join("tool")).unwrap();
+    assert!(store.prepare_launch(app.uuid, &[], false).is_err());
+    fs::create_dir(output.directory.join("tool")).unwrap();
+    assert!(store.prepare_launch(app.uuid, &[], false).is_err());
+    eprintln!("managed launch boundary payload IO: 0 directories/0 opens/0 bytes");
+}

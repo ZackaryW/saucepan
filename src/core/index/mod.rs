@@ -170,7 +170,7 @@ mod tests {
     use crate::models::store::{Request, Selector};
     #[test]
     fn interrupted_publication_recovers_before_and_after_rename() {
-        for renamed in [false, true] {
+        for (renamed, corrupt) in [(false, false), (true, false), (false, true), (true, true)] {
             let tmp = tempfile::tempdir().unwrap();
             let input = tmp.path().join("file");
             fs::write(&input, "complete").unwrap();
@@ -231,6 +231,21 @@ mod tests {
                     store.root.join("store").join(entry.uuid.to_string()),
                 )
                 .unwrap();
+            }
+            if corrupt {
+                let content = if renamed {
+                    store.root.join("store").join(entry.uuid.to_string())
+                } else {
+                    stage.path().join("content")
+                };
+                fs::write(content.join("file"), b"tampered").unwrap();
+                assert!(Store::open(&store.root).is_err());
+                assert_eq!(
+                    store.application(app.uuid).unwrap().claims[&claim_id].entry_uuid,
+                    old_entry
+                );
+                assert!(store.output(entry.uuid).is_err());
+                continue;
             }
             let reopened = Store::open(&store.root).unwrap();
             assert_eq!(

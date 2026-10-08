@@ -17,6 +17,91 @@ fn fixture_probe() {
     println!("FIXTURE-HEALTHY");
 }
 #[test]
+fn fixture_mutating_probe() {
+    let path = std::env::current_exe()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("probe-data");
+    if path.exists() {
+        fs::write(path, b"changed").unwrap();
+    }
+    println!("FIXTURE-HEALTHY");
+}
+
+#[test]
+fn probe_mutation_preserves_binding_and_corrupted_reuse_is_rejected() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("input");
+    fs::create_dir(&input).unwrap();
+    let exe = std::env::current_exe().unwrap();
+    let name = exe.file_name().unwrap().to_str().unwrap();
+    fs::copy(&exe, input.join(name)).unwrap();
+    fs::write(input.join("probe-data"), b"initial").unwrap();
+    let store = Store::create(&tmp.path().join("root")).unwrap();
+    let source = store
+        .register_source(Source::Local { path: input })
+        .unwrap();
+    let mut request = Request {
+        source_uuid: source.uuid,
+        selector: Selector::Local,
+        selection: Default::default(),
+        policies: Default::default(),
+    };
+    request.selection.bin.push(name.into());
+    request.policies.protection = Some(Protection::UseableApp);
+    let app = store.register_app("probe mutation".into()).unwrap();
+    let first = store.acquire(&request).unwrap();
+    let probe = Probe {
+        args: vec![
+            "--exact".into(),
+            "fixture_probe".into(),
+            "--nocapture".into(),
+        ],
+        stdout_contains: "FIXTURE-HEALTHY".into(),
+        timeout_seconds: 10,
+    };
+    let active = store
+        .activate(app.uuid, first.entry.uuid, name, &probe)
+        .unwrap();
+    request.policies.identical = Identical::NewEntry;
+    let next = store.acquire(&request).unwrap();
+    let mutating = Probe {
+        args: vec![
+            "--exact".into(),
+            "fixture_mutating_probe".into(),
+            "--nocapture".into(),
+        ],
+        ..probe.clone()
+    };
+    let error = store
+        .activate(app.uuid, next.entry.uuid, name, &mutating)
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("integrity mismatch"),
+        "{error:#}"
+    );
+    assert_eq!(
+        store
+            .application(app.uuid)
+            .unwrap()
+            .active
+            .unwrap()
+            .entry_uuid,
+        active.entry_uuid
+    );
+    assert!(
+        store
+            .activate(app.uuid, next.entry.uuid, name, &probe)
+            .is_err()
+    );
+    // Force the only compatible reuse candidate to be corrupt as well.
+    fs::write(first.directory.join("probe-data"), b"changed").unwrap();
+    assert!(store.path(first.entry.uuid).is_ok());
+    request.policies.identical = Identical::Reuse;
+    assert!(store.acquire(&request).is_err());
+}
+#[test]
 fn fixture_streams() {
     if std::env::var_os("SAUCEPAN_MANAGED_FIXTURE").is_none() {
         return;

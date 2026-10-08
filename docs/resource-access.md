@@ -1,5 +1,14 @@
 # Resource access
 
+Routine managed launch selects the committed active binding, obtains one
+metadata lease, and checks that its declared executable is a regular contained
+file. It does not hash the payload. Activation and rollback still scan the full
+candidate before probing and again after probing; a probe that modifies content
+cannot publish a new binding. Both scans retain the entry lease without holding
+the global mutation lock. Publication, recovery, and compatible-output reuse
+keep their full integrity checks. Existing installed shims retain their old
+behavior until separately rebuilt and installed.
+
 `path ENTRY_UUID` now defaults to `metadata`: it checks identity, ready state,
 and a real contained output directory, without walking or hashing its contents.
 This changes the earlier full-check default. Use `path ENTRY_UUID --verification

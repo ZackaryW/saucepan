@@ -39,7 +39,7 @@ impl Store {
             "probe response contract is required"
         );
         relative_path(executable)?;
-        let (path, _lease) = {
+        let (path, mut lease, output) = {
             let _lock = self.lock()?;
             self.application(app)?;
             let output = self.output(entry)?;
@@ -60,14 +60,15 @@ impl Store {
                 output.request.selection.bin.iter().any(|b| b == executable),
                 "executable was not declared"
             );
-            let root = self.verified_path(&output)?;
-            let path = beneath(&root, executable)?;
+            let lease = self.metadata_lease_locked(&output)?;
+            let path = beneath(lease.directory(), executable)?;
             ensure!(
                 plain_metadata(&path)?.is_file(),
                 "candidate is not a regular file"
             );
-            (path, self.lease_locked(entry)?)
+            (path, lease, output)
         };
+        lease.verify(self, &output)?;
         let mut command = Command::new(&path);
         command.args(&probe.args);
         let result = process::run(command, Duration::from_secs(probe.timeout_seconds), 65536)?;
@@ -78,8 +79,10 @@ impl Store {
             "usability probe failed: {}",
             String::from_utf8_lossy(&result.stderr)
         );
+        // A probe can modify its candidate. This distinct second scan is required.
+        lease.verify(self, &output)?;
         let _lock = self.lock()?;
-        self.verified_path(&self.output(entry)?)?;
+        self.metadata_path(&self.output(entry)?)?;
         let mut application = self.application(app)?;
         let binding = Binding {
             entry_uuid: entry,

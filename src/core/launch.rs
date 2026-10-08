@@ -1,12 +1,38 @@
 //! Dedicated managed process boundary. Resource lifetime ownership lives in store access.
 pub use crate::core::store::access::ResourceLease as ExecutionLease;
-use crate::{core::Store, utils::path::beneath};
+use crate::{
+    core::{Store, store::ResourceLease},
+    utils::path::{beneath, plain_metadata},
+};
 use anyhow::Result;
 use std::{fs, path::Path};
 use uuid::Uuid;
 impl Store {
     /// Launch committed binding with inherited streams and literal arguments.
     pub fn launch(&self, app: Uuid, args: &[std::ffi::OsString], saucepan: bool) -> Result<i32> {
+        let (mut command, lease) = self.prepare_launch(app, args, saucepan)?;
+        lease.inherit()?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            // exec retains the marker's native shared lock and preserves signals.
+            Err(command.exec().into())
+        }
+        #[cfg(windows)]
+        {
+            // Keep the console group so Ctrl-C reaches the target. The shim's
+            // default handler may exit; the inherited marker still protects it.
+            let status = command.spawn()?.wait()?;
+            drop(lease);
+            Ok(status.code().unwrap_or(1))
+        }
+    }
+    pub(crate) fn prepare_launch(
+        &self,
+        app: Uuid,
+        args: &[std::ffi::OsString],
+        saucepan: bool,
+    ) -> Result<(std::process::Command, ResourceLease)> {
         use anyhow::{Context, ensure};
         let (path, lease) = {
             let _lock = self.lock()?;
@@ -14,10 +40,18 @@ impl Store {
                 .application(app)?
                 .active
                 .context("application has no active binding")?;
-            let root = self.verified_path(&self.output(binding.entry_uuid)?)?;
-            let path = beneath(&root, &binding.executable)?;
+            let output = self.output(binding.entry_uuid)?;
+            ensure!(
+                output.request.selection.bin.contains(&binding.executable),
+                "executable was not declared"
+            );
+            let lease = self.metadata_lease_locked(&output)?;
+            let path = beneath(lease.directory(), &binding.executable)?;
+            ensure!(
+                plain_metadata(&path)?.is_file(),
+                "target is not a regular file"
+            );
             ensure!(path != std::env::current_exe()?, "recursive shim target");
-            let lease = self.lease_locked(binding.entry_uuid)?;
             (path, lease)
         };
         let mut command = std::process::Command::new(path);
@@ -45,21 +79,7 @@ impl Store {
             }
         }
         command.args(args);
-        lease.inherit()?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::CommandExt;
-            // exec retains the marker's native shared lock and preserves signals.
-            Err(command.exec().into())
-        }
-        #[cfg(windows)]
-        {
-            // Keep the console group so Ctrl-C reaches the target. The shim's
-            // default handler may exit; the inherited marker still protects it.
-            let status = command.spawn()?.wait()?;
-            drop(lease);
-            Ok(status.code().unwrap_or(1))
-        }
+        Ok((command, lease))
     }
 }
 

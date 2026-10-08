@@ -117,12 +117,6 @@ impl Store {
     pub fn execution_lease(&self, entry: Uuid) -> Result<ResourceLease> {
         self.lease(entry, VerificationMode::Full)
     }
-    pub(crate) fn lease_locked(&self, entry: Uuid) -> Result<ResourceLease> {
-        let output = self.output(entry)?;
-        let mut lease = self.metadata_lease_locked(&output)?;
-        lease.verify(self, &output)?;
-        Ok(lease)
-    }
     /// Caller holds mutation coordination until selection and native ownership complete.
     pub(crate) fn metadata_lease_locked(&self, output: &OutputEntry) -> Result<ResourceLease> {
         let entry = output.uuid;

@@ -300,6 +300,10 @@ fn zip_integrity_tag_and_shared_platform_discovery() {
     let second = store.acquire_with(&request, &opts).unwrap();
     assert_ne!(first.entry.uuid, second.entry.uuid);
     assert_eq!(hits.load(Ordering::SeqCst), 1);
+    // Fresh discovery is no substitute for checking cached payload bytes.
+    std::fs::write(second.directory.join("index.json"), b"tampered content").unwrap();
+    assert!(store.path(second.entry.uuid).is_ok());
+    assert!(store.acquire_with(&request, &opts).is_err());
     request.selection.sha256 = Some("0".repeat(64));
     assert!(store.acquire_with(&request, &opts).is_err());
     request.selection.format = Format::Natural;
