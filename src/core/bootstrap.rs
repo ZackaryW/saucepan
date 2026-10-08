@@ -1,23 +1,17 @@
 use crate::{
     core::{Store, activation::Probe, source::AcquireOptions},
     models::{
-        index::{Binding, Claimed},
+        index::lifecycle::{Installation, Operation},
         policy::Protection,
         source::Source,
         store::Request,
     },
 };
 use anyhow::{Result, ensure};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use uuid::Uuid;
 
-#[derive(serde::Serialize)]
-pub struct Bootstrap {
-    pub app: Uuid,
-    pub claimed: Claimed,
-    pub binding: Binding,
-    pub shim: PathBuf,
-}
+pub type Bootstrap = Operation;
 pub fn saucepan_probe() -> Probe {
     Probe {
         args: vec!["--version".into()],
@@ -26,7 +20,7 @@ pub fn saucepan_probe() -> Probe {
     }
 }
 impl Store {
-    fn self_request(&self, request: &Request) -> Result<String> {
+    fn self_request(&self, request: &Request) -> Result<()> {
         ensure!(
             matches!(
                 self.source(request.source_uuid)?.source,
@@ -42,7 +36,7 @@ impl Store {
             request.selection.bin.len() == 1,
             "self-management requires one declared executable"
         );
-        Ok(request.selection.bin[0].clone())
+        Ok(())
     }
     pub fn bootstrap(
         &self,
@@ -50,31 +44,33 @@ impl Store {
         built_shim: &Path,
         options: &AcquireOptions,
     ) -> Result<Bootstrap> {
-        let executable = self.self_request(request)?;
-        let name = if cfg!(windows) {
-            "saucepan.exe"
-        } else {
-            "saucepan"
-        };
-        ensure!(
-            !self.root.join("bin").join(name).exists(),
-            "already bootstrapped; use self-update"
-        );
-        let app = self.register_app("saucepan".into())?;
-        let claimed = self.acquire_for(app.uuid, request, options)?;
-        let binding = self.activate(
-            app.uuid,
-            claimed.claim.entry_uuid,
-            &executable,
-            &saucepan_probe(),
-        )?;
-        let shim = self.install_shim(app.uuid, name, built_shim, true)?;
-        Ok(Bootstrap {
-            app: app.uuid,
-            claimed,
-            binding,
-            shim,
-        })
+        self.bootstrap_with_operation(request, built_shim, options, None)
+    }
+    pub fn bootstrap_with_operation(
+        &self,
+        request: &Request,
+        built_shim: &Path,
+        options: &AcquireOptions,
+        operation: Option<Uuid>,
+    ) -> Result<Operation> {
+        self.self_request(request)?;
+        self.install_application(
+            &Installation {
+                name: "saucepan".into(),
+                request: request.clone(),
+                probe: saucepan_probe(),
+                shim: if cfg!(windows) {
+                    "saucepan.exe"
+                } else {
+                    "saucepan"
+                }
+                .into(),
+                saucepan: true,
+            },
+            built_shim,
+            options,
+            operation,
+        )
     }
     pub fn self_update(
         &self,
@@ -82,29 +78,28 @@ impl Store {
         claim: Uuid,
         options: &AcquireOptions,
     ) -> Result<Bootstrap> {
+        self.self_update_with_operation(app, claim, options, None)
+    }
+    pub fn self_update_with_operation(
+        &self,
+        app: Uuid,
+        claim: Uuid,
+        options: &AcquireOptions,
+        operation: Option<Uuid>,
+    ) -> Result<Operation> {
+        // A terminal retry remains inspectable even after the application is removed.
+        if let Some(id) = operation
+            && self.operation_dir(id)?.join("index.json").exists()
+        {
+            return self.update_application(app, claim, &saucepan_probe(), None, options, Some(id));
+        }
         let application = self.application(app)?;
         let request = &application
             .claims
             .get(&claim)
             .ok_or_else(|| anyhow::anyhow!("claim missing"))?
             .request;
-        let executable = self.self_request(request)?;
-        let claimed = self.update_claim(app, claim, options)?;
-        let binding = self.activate(
-            app,
-            claimed.claim.entry_uuid,
-            &executable,
-            &saucepan_probe(),
-        )?;
-        Ok(Bootstrap {
-            app,
-            claimed,
-            binding,
-            shim: self.root.join("bin").join(if cfg!(windows) {
-                "saucepan.exe"
-            } else {
-                "saucepan"
-            }),
-        })
+        self.self_request(request)?;
+        self.update_application(app, claim, &saucepan_probe(), None, options, operation)
     }
 }

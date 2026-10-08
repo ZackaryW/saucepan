@@ -29,6 +29,16 @@ pub struct Probe {
     pub timeout_seconds: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Installation {
+    pub name: String,
+    pub request: Request,
+    pub probe: Probe,
+    pub shim: String,
+    pub saucepan: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ShimAction {

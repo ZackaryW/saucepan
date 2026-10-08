@@ -104,6 +104,23 @@ impl Store {
         options: &super::source::AcquireOptions,
         claim: Option<super::index::claims::ClaimTarget>,
     ) -> Result<Acquired> {
+        Ok(self.acquire_protected(request, options, claim, false)?.0)
+    }
+    pub(crate) fn acquire_candidate(
+        &self,
+        request: &Request,
+        options: &super::source::AcquireOptions,
+    ) -> Result<(Acquired, ResourceLease)> {
+        let (acquired, lease) = self.acquire_protected(request, options, None, true)?;
+        Ok((acquired, lease.expect("requested candidate lease")))
+    }
+    fn acquire_protected(
+        &self,
+        request: &Request,
+        options: &super::source::AcquireOptions,
+        claim: Option<super::index::claims::ClaimTarget>,
+        retain: bool,
+    ) -> Result<(Acquired, Option<ResourceLease>)> {
         policy::validate(request)?;
         let prepared = self.prepare(request, options)?;
         let content = prepared.temp.path().join("content");
@@ -149,14 +166,20 @@ impl Store {
                     ..Default::default()
                 })?;
             }
-            return Ok(Acquired {
-                entry: (**entry).clone(),
-                directory,
-                reused: true,
-                update_checked: prepared.update_checked,
-                stale: prepared.stale,
-                reclaim: self.reclaim_locked()?,
-            });
+            let lease = retain
+                .then(|| self.metadata_lease_locked(entry))
+                .transpose()?;
+            return Ok((
+                Acquired {
+                    entry: (**entry).clone(),
+                    directory,
+                    reused: true,
+                    update_checked: prepared.update_checked,
+                    stale: prepared.stale,
+                    reclaim: self.reclaim_locked()?,
+                },
+                lease,
+            ));
         }
         let sequence = outputs
             .iter()
@@ -195,14 +218,20 @@ impl Store {
             ..Default::default()
         })?;
         let directory = self.root.join("store").join(entry.uuid.to_string());
-        Ok(Acquired {
-            entry,
-            directory,
-            reused: false,
-            update_checked: prepared.update_checked,
-            stale: prepared.stale,
-            reclaim: self.reclaim_locked()?,
-        })
+        let lease = retain
+            .then(|| self.metadata_lease_locked(&entry))
+            .transpose()?;
+        Ok((
+            Acquired {
+                entry,
+                directory,
+                reused: false,
+                update_checked: prepared.update_checked,
+                stale: prepared.stale,
+                reclaim: self.reclaim_locked()?,
+            },
+            lease,
+        ))
     }
 }
 

@@ -144,7 +144,8 @@ try:
         call("activate", app, claimed["claim"]["entry_uuid"], NAME, probe)
         boot = {"app": app, "claimed": claimed}
     else:
-        boot = call("bootstrap", request_path, built_shim)
+        operation = call("bootstrap", request_path, built_shim)
+        boot = {"app": operation["app"], "claimed": {"claim": {"uuid": operation["claim"], "entry_uuid": operation["candidate"]}}}
     app, claim = boot["app"], boot["claimed"]["claim"]["uuid"]
     a = boot["claimed"]["claim"]["entry_uuid"]
     assert digest(ROOT / "store" / a / NAME) == digest(exe_a)
@@ -161,7 +162,7 @@ try:
     assert ready.read_text() == "acceptance-a"
     now = 86500
     update = call("self-update", app, claim)
-    b = update["claimed"]["claim"]["entry_uuid"]
+    b = update["candidate"]
     assert a != b and state["checks"] == initial_checks + 1
     assert digest(ROOT / "store" / b / NAME) == digest(exe_b)
     version_b = call("--version", executable=shim, raw=True)

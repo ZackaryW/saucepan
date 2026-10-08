@@ -41,6 +41,30 @@ impl Store {
         executable: &str,
         probe: &Probe,
     ) -> Result<Binding> {
+        self.application(app)?;
+        let _lease = self.validate_candidate(entry, executable, probe)?;
+        let _lock = self.lock()?;
+        self.metadata_path(&self.output(entry)?)?;
+        let mut application = self.application(app)?;
+        let binding = Binding {
+            entry_uuid: entry,
+            executable: executable.into(),
+        };
+        application.active = Some(binding.clone());
+        application.bump()?;
+        self.commit(Journal {
+            records: vec![Record::Application(application)],
+            stage: None,
+            ..Default::default()
+        })?;
+        Ok(binding)
+    }
+    pub(crate) fn validate_candidate(
+        &self,
+        entry: Uuid,
+        executable: &str,
+        probe: &Probe,
+    ) -> Result<super::store::ResourceLease> {
         ensure!(
             probe.timeout_seconds > 0 && probe.timeout_seconds <= 120,
             "probe timeout must be 1..120 seconds"
@@ -52,7 +76,6 @@ impl Store {
         relative_path(executable)?;
         let (path, mut lease, output) = {
             let _lock = self.lock()?;
-            self.application(app)?;
             let output = self.output(entry)?;
             ensure!(
                 output.request.policies.protection == Some(Protection::UseableApp),
@@ -92,21 +115,7 @@ impl Store {
         );
         // A probe can modify its candidate. This distinct second scan is required.
         lease.verify(self, &output)?;
-        let _lock = self.lock()?;
-        self.metadata_path(&self.output(entry)?)?;
-        let mut application = self.application(app)?;
-        let binding = Binding {
-            entry_uuid: entry,
-            executable: executable.into(),
-        };
-        application.active = Some(binding.clone());
-        application.bump()?;
-        self.commit(Journal {
-            records: vec![Record::Application(application)],
-            stage: None,
-            ..Default::default()
-        })?;
-        Ok(binding)
+        Ok(lease)
     }
 }
 

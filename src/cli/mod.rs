@@ -25,10 +25,39 @@ enum Commands {
     Bootstrap {
         request: PathBuf,
         built_shim: PathBuf,
+        #[arg(long)]
+        operation: Option<uuid::Uuid>,
     },
     SelfUpdate {
         app: uuid::Uuid,
         claim: uuid::Uuid,
+        #[arg(long)]
+        operation: Option<uuid::Uuid>,
+    },
+    Install {
+        name: String,
+        request: PathBuf,
+        probe: PathBuf,
+        built_shim: PathBuf,
+        #[arg(long)]
+        shim: String,
+        #[arg(long)]
+        operation: Option<uuid::Uuid>,
+    },
+    UpdateApp {
+        app: uuid::Uuid,
+        claim: uuid::Uuid,
+        probe: PathBuf,
+        #[arg(long)]
+        operation: Option<uuid::Uuid>,
+    },
+    Rollback {
+        app: uuid::Uuid,
+        claim: uuid::Uuid,
+        entry: uuid::Uuid,
+        probe: PathBuf,
+        #[arg(long)]
+        operation: Option<uuid::Uuid>,
     },
     /// Deterministic acceptance fixture: keep this actual build executing.
     #[command(hide = true)]
@@ -167,14 +196,79 @@ pub fn run() -> Result<()> {
                 Commands::Bootstrap {
                     request,
                     built_shim,
-                } => serde_json::to_value(store.bootstrap(
-                    &serde_json::from_slice(&std::fs::read(request)?)?,
-                    &built_shim,
-                    &options,
-                )?)?,
-                Commands::SelfUpdate { app, claim } => {
-                    serde_json::to_value(store.self_update(app, claim, &options)?)?
-                }
+                    operation,
+                } => operation_value(
+                    store.bootstrap_with_operation(
+                        &serde_json::from_slice(&std::fs::read(request)?)?,
+                        &built_shim,
+                        &options,
+                        operation,
+                    )?,
+                    &mut exit_code,
+                )?,
+                Commands::SelfUpdate {
+                    app,
+                    claim,
+                    operation,
+                } => operation_value(
+                    store.self_update_with_operation(app, claim, &options, operation)?,
+                    &mut exit_code,
+                )?,
+                Commands::Install {
+                    name,
+                    request,
+                    probe,
+                    built_shim,
+                    shim,
+                    operation,
+                } => operation_value(
+                    store.install_application(
+                        &crate::models::index::lifecycle::Installation {
+                            name,
+                            request: serde_json::from_slice(&std::fs::read(request)?)?,
+                            probe: serde_json::from_slice(&std::fs::read(probe)?)?,
+                            shim,
+                            saucepan: false,
+                        },
+                        &built_shim,
+                        &options,
+                        operation,
+                    )?,
+                    &mut exit_code,
+                )?,
+                Commands::UpdateApp {
+                    app,
+                    claim,
+                    probe,
+                    operation,
+                } => operation_value(
+                    store.update_application(
+                        app,
+                        claim,
+                        &serde_json::from_slice(&std::fs::read(probe)?)?,
+                        None,
+                        &options,
+                        operation,
+                    )?,
+                    &mut exit_code,
+                )?,
+                Commands::Rollback {
+                    app,
+                    claim,
+                    entry,
+                    probe,
+                    operation,
+                } => operation_value(
+                    store.update_application(
+                        app,
+                        claim,
+                        &serde_json::from_slice(&std::fs::read(probe)?)?,
+                        Some(entry),
+                        &options,
+                        operation,
+                    )?,
+                    &mut exit_code,
+                )?,
                 Commands::TestHold { ready, release } => {
                     std::fs::write(&ready, env!("SAUCEPAN_BUILD_ID"))?;
                     let start = std::time::Instant::now();

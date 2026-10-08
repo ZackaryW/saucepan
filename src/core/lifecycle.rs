@@ -89,6 +89,10 @@ impl Store {
         let revision = app
             .map(|id| self.application(id).map(|app| app.revision))
             .transpose()?;
+        let claim = match &action {
+            Action::Update { claim, .. } => *claim,
+            _ => Uuid::new_v4(),
+        };
         let op = Operation {
             operation: id,
             app: app.unwrap_or_else(Uuid::new_v4),
@@ -97,7 +101,7 @@ impl Store {
             status: Phase::Preparing,
             changed: false,
             expected_revision: revision,
-            claim: Uuid::new_v4(),
+            claim,
             candidate: None,
             desired: None,
             shims: Vec::new(),
@@ -163,6 +167,10 @@ impl Store {
                 if !op.status.terminal() {
                     if matches!(op.action, Action::Shim { .. }) && op.status != Phase::Preparing {
                         self.resume_shim(&mut op)?;
+                    } else if matches!(op.action, Action::Install { .. } | Action::Update { .. })
+                        && op.status != Phase::Preparing
+                    {
+                        self.resume_application(&mut op)?;
                     } else {
                         let _lock = self.lock()?;
                         op.pending =
@@ -176,5 +184,6 @@ impl Store {
     }
 }
 
+mod managed;
 #[cfg(test)]
 mod tests;

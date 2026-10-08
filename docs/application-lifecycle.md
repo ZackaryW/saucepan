@@ -59,3 +59,32 @@ report `commit_intent` with exit 2 until it exits. Use the returned operation ID
 with `reconcile` afterward. The original program remains usable; target output
 leases are separate from launcher maintenance. Existing installed launchers gain
 this extra coordination only after explicit replacement with the new build.
+
+Managed application commands share candidate validation and operation reporting:
+
+```powershell
+saucepan --root ROOT install example request.json probe.json BUILT_SHIM --shim example.exe
+saucepan --root ROOT update-app APP_UUID CLAIM_UUID probe.json
+saucepan --root ROOT rollback APP_UUID CLAIM_UUID RETAINED_ENTRY_UUID probe.json
+```
+
+Install registers the app only after a usable candidate and complete shim pair
+are ready. Update and rollback commit the selected claim and active binding
+together; failed probes preserve both. Rollback requires the same item and
+keeps the claim's original request, including its tracked selector. It performs
+no remote discovery. Candidates remain leased through preparation, and durable
+commit intent protects them from reclaim after the preparing process exits.
+Reconciliation verifies their integrity before finishing a committed intent.
+
+`bootstrap` and `self-update` use these same operations with the Saucepan release
+request and version probe. Their JSON results now use the lifecycle operation
+shape: `app`, `claim`, `candidate`, `status`, `operation` and `desired` (the
+committed application snapshot on success), rather than `claimed`/`binding`.
+The shim commands likewise return operation records. `--operation UUID` is
+optional on every multi-step command; retain it to retry a lost response.
+
+An intervening app mutation makes a managed update or rollback conflict instead
+of replacing newer intent. Retry with a new operation ID. The lower-level
+`activate` still changes only a binding and may commit after deactivation;
+`update-claim` still changes only a resource claim. Neither silently acquires
+the other operation's meaning. Uninstall fences both kinds of later commit.

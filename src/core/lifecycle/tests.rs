@@ -1,6 +1,92 @@
 use super::*;
 
 #[test]
+fn durable_candidate_survives_reclaim_and_invalid_candidate_releases_protection() {
+    use crate::models::{
+        index::lifecycle::{Installation, Probe},
+        policy::{Eviction, Identical, Protection},
+        source::Source,
+        store::{Availability, Request, Selector},
+    };
+    for corrupt in [false, true] {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Store::create(&tmp.path().join("root")).unwrap();
+        let exe = std::env::current_exe().unwrap();
+        let name = exe.file_name().unwrap().to_string_lossy().into_owned();
+        let source = store
+            .register_source(Source::Local { path: exe.clone() })
+            .unwrap();
+        let mut request = Request {
+            source_uuid: source.uuid,
+            selector: Selector::Local,
+            selection: Default::default(),
+            policies: Default::default(),
+        };
+        request.selection.bin = vec![name.clone()];
+        request.policies.protection = Some(Protection::UseableApp);
+        request.policies.identical = Identical::NewEntry;
+        request.policies.eviction = Eviction::Latest { keep: 1 };
+        let input = Installation {
+            name: "recovery".into(),
+            request,
+            probe: Probe {
+                args: vec!["--list".into()],
+                stdout_contains: "test".into(),
+                timeout_seconds: 10,
+            },
+            shim: "tool.exe".into(),
+            saucepan: false,
+        };
+        let held =
+            crate::core::shims::shim_lock(store.root(), &input.shim, LockMode::Shared).unwrap();
+        let op = store
+            .install_application(&input, &exe, &Default::default(), None)
+            .unwrap();
+        assert_eq!(op.status, Phase::CommitIntent, "{:?}", op.pending);
+        let entry = op.candidate.unwrap();
+        let next = store.acquire(&input.request).unwrap();
+        assert_eq!(
+            next.reclaim.deferred.get(&entry).map(String::as_str),
+            Some("pending lifecycle commit intent")
+        );
+        drop(held);
+        if corrupt {
+            fs::write(store.path(entry).unwrap().join(&name), b"corrupt").unwrap();
+        }
+        let reopened = Store::open(store.root()).unwrap();
+        let result = reopened.reconcile(Some(op.operation)).unwrap().remove(0);
+        assert_eq!(
+            result.status,
+            if corrupt {
+                Phase::Failed
+            } else {
+                Phase::Complete
+            },
+            "{:?}",
+            result.pending
+        );
+        if corrupt {
+            assert!(reopened.application(op.app).is_err());
+            reopened.reclaim().unwrap();
+            assert_eq!(
+                reopened.output(entry).unwrap().state,
+                Availability::Reclaimed
+            );
+        } else {
+            assert_eq!(
+                reopened
+                    .application(op.app)
+                    .unwrap()
+                    .active
+                    .unwrap()
+                    .entry_uuid,
+                entry
+            );
+        }
+    }
+}
+
+#[test]
 fn operation_identity_and_pending_work_are_isolated() {
     let tmp = tempfile::tempdir().unwrap();
     let store = Store::create(&tmp.path().join("root")).unwrap();

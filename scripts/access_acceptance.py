@@ -66,7 +66,7 @@ lookup_markers = len(list((ROOT / ".locks").glob("live-*")))
 assert lookup_markers == 0
 probe = save("probe.json", {"args": ["--version"], "stdout_contains": "saucepan 0.1.0+efficient-access", "timeout_seconds": 10})
 call("activate", app, entry, BINARY.name, probe)
-installed = Path(call("install-shim", app, BINARY.name, SHIM, "--saucepan")["shim"])
+installed = ROOT / "bin" / call("install-shim", app, BINARY.name, SHIM, "--saucepan")["shims"][0]["desired"]["name"]
 version = execute([installed, "--version"]).stdout.strip()
 assert version == "saucepan 0.1.0+efficient-access"
 assert digest(installed) == digest(SHIM)
@@ -87,7 +87,15 @@ finally:
 old_shim = REPO / "mock" / "bin" / ("saucepan" + SUFFIX)
 old_marker_verified = False
 if os.name == "nt" and old_shim.exists():
-    legacy = Path(call("install-shim", app, "previous-launcher" + SUFFIX, old_shim, "--saucepan")["shim"])
+    legacy = ROOT / "bin" / call("install-shim", app, "previous-launcher" + SUFFIX, old_shim, "--saucepan")["shims"][0]["desired"]["name"]
+    # Start the legacy reader against its original record shape, then upgrade
+    # metadata after its lease exists. Old writers against new records are unsupported.
+    app_record = ROOT / "index" / app / "index.json"
+    current_record = app_record.read_bytes()
+    legacy_record = json.loads(current_record)
+    for field in ("revision", "state", "shims"):
+        legacy_record.pop(field, None)
+    app_record.write_text(json.dumps(legacy_record), encoding="utf-8")
     ready_old, release_old = RUN / "old-ready", RUN / "old-release"
     running = subprocess.Popen([str(legacy), "test-hold", str(ready_old), str(release_old)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     try:
@@ -95,6 +103,7 @@ if os.name == "nt" and old_shim.exists():
         while not ready_old.exists():
             assert time.monotonic() < deadline and running.poll() is None
             time.sleep(.01)
+        app_record.write_bytes(current_record)
         replacement = call("acquire", request, "--app", app)["claim"]["entry_uuid"]
         call("activate", app, replacement, BINARY.name, probe)
         running.kill()
@@ -102,6 +111,8 @@ if os.name == "nt" and old_shim.exists():
         assert call("reclaim")["deferred"][entry] == "inherited execution lifetime"
         old_marker_verified = True
     finally:
+        if app_record.read_bytes() != current_record and "revision" not in json.loads(app_record.read_bytes()):
+            app_record.write_bytes(current_record)
         release_old.write_text("release", encoding="utf-8")
         running.communicate(timeout=10)
     deadline = time.monotonic() + 10

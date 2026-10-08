@@ -29,6 +29,12 @@ impl Store {
         let mut groups: BTreeMap<String, Vec<_>> = BTreeMap::new();
         let mut active = BTreeSet::new();
         let mut claimed_keep: BTreeMap<String, usize> = BTreeMap::new();
+        let pending_candidates: BTreeSet<_> = self
+            .operations_locked()?
+            .into_iter()
+            .filter(|op| op.status == crate::models::index::lifecycle::Phase::CommitIntent)
+            .filter_map(|op| op.candidate)
+            .collect();
         for record in records {
             match record {
                 Record::Output(e) => {
@@ -78,6 +84,12 @@ impl Store {
                     report
                         .deferred
                         .insert(entry.uuid, "active useable_app binding".into());
+                    continue;
+                }
+                if pending_candidates.contains(&entry.uuid) {
+                    report
+                        .deferred
+                        .insert(entry.uuid, "pending lifecycle commit intent".into());
                     continue;
                 }
                 let lease = LockGuard::acquire(

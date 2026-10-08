@@ -46,7 +46,7 @@ pub(crate) fn shim_lock(root: &Path, name: &str, mode: LockMode) -> Result<LockG
         Duration::ZERO,
     )?)
 }
-fn digest(path: &Path) -> Result<String> {
+pub(crate) fn digest(path: &Path) -> Result<String> {
     ensure!(
         plain_metadata(path)?.is_file(),
         "not a regular file: {}",
@@ -54,7 +54,7 @@ fn digest(path: &Path) -> Result<String> {
     );
     Ok(tree::digest(fs::File::open(path)?)?)
 }
-fn config_bytes(app: Uuid, saucepan: bool) -> Result<Vec<u8>> {
+pub(crate) fn config_bytes(app: Uuid, saucepan: bool) -> Result<Vec<u8>> {
     Ok(serde_json::to_vec_pretty(&ShimConfig { app, saucepan })?)
 }
 fn names(shim: &OwnedShim) -> [String; 2] {
@@ -62,6 +62,24 @@ fn names(shim: &OwnedShim) -> [String; 2] {
 }
 
 impl Store {
+    pub(crate) fn remove_owned_shim_locked(&self, owned: &OwnedShim) -> Result<()> {
+        for (name, expected) in [
+            (&owned.name, &owned.digest),
+            (&owned.sidecar, &owned.config_digest),
+        ] {
+            let path = beneath(&self.root, &format!("bin/{name}"))?;
+            if path.exists() {
+                ensure!(&digest(&path)? == expected, "owned file changed: {name}");
+            }
+        }
+        for name in [&owned.name, &owned.sidecar] {
+            let path = beneath(&self.root, &format!("bin/{name}"))?;
+            if path.exists() {
+                fs::remove_file(path)?;
+            }
+        }
+        Ok(())
+    }
     pub(crate) fn reserve_shim_locked(
         &self,
         op: &Operation,
