@@ -176,6 +176,18 @@ fn metadata_and_full_access_native_and_cli_preserve_identity() {
         before
     );
     let payload = old.directory.join("data");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let original = fs::metadata(&payload).unwrap().permissions();
+        fs::set_permissions(
+            &payload,
+            fs::Permissions::from_mode(original.mode() ^ 0o100),
+        )
+        .unwrap();
+        assert!(store.verify(old.entry.uuid).is_err());
+        fs::set_permissions(&payload, original).unwrap();
+    }
     let invalid = std::process::Command::new(env!("CARGO_BIN_EXE_saucepan"))
         .arg("--root")
         .arg(store.root())

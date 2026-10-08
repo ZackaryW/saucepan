@@ -43,3 +43,26 @@ The final command is rollback through the same validation/probe path. A reclaime
 Native process checks run with `cargo test --test managed`. On Windows use `uv run --no-project python scripts/verify_windows_console.py` for an attached but hidden console: this checks Ctrl-Break forwarding in addition to launcher death, inherited lease lifetime, arguments, streams, exit status, failed activation, and rollback.
 
 Windows x86_64 execution is verified. Linux and macOS code paths have not been executed in this environment. The native lease contract requires targets to preserve the inherited lifetime handle. This implementation has no legacy encrypted-index/token/HMAC compatibility, migration decoder, schema-version inheritance, installation scripts, or background refresh daemon. Atomic file replacement is not a guarantee of whole-filesystem power-loss durability.
+
+## Isolated resource-access acceptance
+
+Run `uv run --no-project python scripts/access_acceptance.py`. This builds a
+fresh application, shim, and external consumer, then installs under a unique
+`target/access-acceptance/<uuid>/root`. It does not change the existing mock
+installation. The report records binary digests, a fresh shim launch, lightweight
+lookup, explicit corruption detection, native claim access, leased consumption
+after claim release and retention, and subsequent reclaim. Per-test payload IO
+observations are saved alongside the report; these measure the shared native
+lookup and pre-spawn boundary, not a system-wide trace of the release binary.
+
+The latest result is `target/access-acceptance/latest.json`. Use
+`uv run --no-project python scripts/verify_windows_console.py` on Windows to
+exercise hidden-console interruption for both shims and leased `run` consumers.
+Linux/macOS process behavior requires execution on those hosts; compilation is
+not evidence of runtime parity.
+
+When a previous Windows shim exists in `mock/bin`, the access recipe copies it
+into the isolated installation to verify inherited-marker compatibility after
+wrapper death. It never replaces the original shim. See
+[verification evidence](resource-access-verification.md) for scenario coverage
+and the latest recorded build identities.

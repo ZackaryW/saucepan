@@ -157,3 +157,68 @@ fn managed_launch_boundary_checks_target_without_payload_io() {
     assert!(store.prepare_launch(app.uuid, &[], false).is_err());
     eprintln!("managed launch boundary payload IO: 0 directories/0 opens/0 bytes");
 }
+
+#[test]
+fn activation_scans_once_per_phase_outside_mutation_lock() {
+    use crate::{core::activation::Probe, models::policy::Protection};
+    let tmp = tempfile::tempdir().unwrap();
+    let exe = std::env::current_exe().unwrap();
+    let name = exe.file_name().unwrap().to_str().unwrap().to_owned();
+    let mut store = Store::create(&tmp.path().join("root")).unwrap();
+    let source = store
+        .register_source(Source::Local { path: exe.clone() })
+        .unwrap();
+    let mut request = Request {
+        source_uuid: source.uuid,
+        selector: Selector::Local,
+        selection: Default::default(),
+        policies: Default::default(),
+    };
+    request.selection.bin.push(name.clone());
+    request.policies.protection = Some(Protection::UseableApp);
+    let acquired = store.acquire(&request).unwrap();
+    let app = store.register_app("observed activation".into()).unwrap();
+    let counts = Arc::new(Mutex::new((0, 0, 0)));
+    let seen = counts.clone();
+    let root = store.root().to_path_buf();
+    store.access_observer = Some(Arc::new(move |event| {
+        let mut c = seen.lock().unwrap();
+        match event {
+            IoEvent::Directory => {
+                c.0 += 1;
+                let _mutation = LockGuard::acquire(
+                    &root.join(".locks/mutation"),
+                    LockMode::Exclusive,
+                    Duration::ZERO,
+                )
+                .expect("activation scan held mutation lock");
+                assert!(
+                    LockGuard::acquire(
+                        &root.join(format!(".locks/use-{}", acquired.entry.uuid)),
+                        LockMode::Exclusive,
+                        Duration::ZERO
+                    )
+                    .is_err()
+                );
+            }
+            IoEvent::Open => c.1 += 1,
+            IoEvent::Bytes(n) => c.2 += n,
+        }
+    }));
+    store
+        .activate(
+            app.uuid,
+            acquired.entry.uuid,
+            &name,
+            &Probe {
+                args: vec!["--list".into()],
+                stdout_contains: "core::store".into(),
+                timeout_seconds: 10,
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        *counts.lock().unwrap(),
+        (2, 2, 2 * fs::metadata(exe).unwrap().len() as usize)
+    );
+}
