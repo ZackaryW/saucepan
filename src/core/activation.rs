@@ -1,18 +1,17 @@
 use crate::{
-    core::{Store, index::Journal, launch::ShimConfig},
+    core::{Store, index::Journal},
     models::{
         index::{Binding, Record},
         policy::Protection,
         store::Platform,
     },
     utils::{
-        fs::atomic_write,
         path::{beneath, plain_metadata, relative_path},
         process,
     },
 };
-use anyhow::{Context, Result, ensure};
-use std::{fs, path::Path, process::Command, time::Duration};
+use anyhow::{Result, ensure};
+use std::{process::Command, time::Duration};
 use uuid::Uuid;
 
 pub use crate::models::index::lifecycle::Probe;
@@ -109,40 +108,6 @@ impl Store {
         })?;
         Ok(binding)
     }
-    pub fn install_shim(
-        &self,
-        app: Uuid,
-        name: &str,
-        built_shim: &Path,
-        saucepan: bool,
-    ) -> Result<std::path::PathBuf> {
-        relative_path(name)?;
-        ensure!(!name.contains('/'), "shim name must be one component");
-        ensure!(plain_metadata(built_shim)?.is_file(), "built shim missing");
-        let _lock = self.lock()?;
-        self.application(app)?
-            .active
-            .context("activate before installing a shim")?;
-        let dest = beneath(&self.root, &format!("bin/{name}"))?;
-        ensure!(
-            !dest.exists(),
-            "shim already installed; replacement is a separate maintenance operation"
-        );
-        super::index::write(
-            &dest.with_extension("shim.json"),
-            &ShimConfig { app, saucepan },
-        )?;
-        atomic_write(&dest, |file| {
-            std::io::copy(&mut fs::File::open(built_shim)?, file)?;
-            Ok(())
-        })?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&dest, fs::Permissions::from_mode(0o755))?;
-        }
-        Ok(dest)
-    }
 }
 
 #[cfg(test)]
@@ -153,6 +118,7 @@ mod tests {
         source::Source,
         store::{Request, Selector},
     };
+    use std::fs;
 
     #[test]
     fn deactivate_missing_payload_preserves_concurrent_app_edits_and_is_idempotent() {

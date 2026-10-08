@@ -37,3 +37,25 @@ scans and probes run outside store mutation while retaining output protection.
 File cleanup belongs to explicit reconciliation, not global store recovery.
 Current and older writers must not mutate the same root concurrently. Reading
 old records does not promise that old binaries can write the new metadata.
+
+Owned launcher maintenance uses these commands:
+
+```powershell
+saucepan --root ROOT install-shim APP_UUID tool.exe BUILT_SHIM --operation OPERATION_UUID
+saucepan --root ROOT replace-shim APP_UUID tool.exe BUILT_SHIM
+saucepan --root ROOT adopt-shim APP_UUID tool.exe MATCHING_BUILT_SHIM
+```
+
+Use `--saucepan` consistently for Saucepan's root-forwarding launcher. Replacement
+cannot change the owner or root-forwarding mode. Both the executable and its
+derived `.shim.json` name are reserved, including case aliases. Adoption verifies
+the existing build and configuration before registering ownership; it replaces
+neither file. Replacement can restore missing owned files but will not overwrite
+unexpected contents. Unknown files and filesystem links are conflicts.
+
+Multi-step commands return the operation record, including status and pending
+reasons. A running Windows launcher holds a maintenance lock: replacement can
+report `commit_intent` with exit 2 until it exits. Use the returned operation ID
+with `reconcile` afterward. The original program remains usable; target output
+leases are separate from launcher maintenance. Existing installed launchers gain
+this extra coordination only after explicit replacement with the new build.

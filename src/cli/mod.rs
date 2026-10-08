@@ -112,6 +112,26 @@ enum Commands {
         built_shim: PathBuf,
         #[arg(long)]
         saucepan: bool,
+        #[arg(long)]
+        operation: Option<uuid::Uuid>,
+    },
+    ReplaceShim {
+        app: uuid::Uuid,
+        name: String,
+        built_shim: PathBuf,
+        #[arg(long)]
+        saucepan: bool,
+        #[arg(long)]
+        operation: Option<uuid::Uuid>,
+    },
+    AdoptShim {
+        app: uuid::Uuid,
+        name: String,
+        built_shim: PathBuf,
+        #[arg(long)]
+        saucepan: bool,
+        #[arg(long)]
+        operation: Option<uuid::Uuid>,
     },
 }
 pub fn run() -> Result<()> {
@@ -235,9 +255,52 @@ pub fn run() -> Result<()> {
                     name,
                     built_shim,
                     saucepan,
-                } => {
-                    serde_json::json!({"shim":store.install_shim(app,&name,&built_shim,saucepan)?})
-                }
+                    operation,
+                } => operation_value(
+                    store.maintain_shim(
+                        app,
+                        &name,
+                        &built_shim,
+                        crate::models::index::lifecycle::ShimAction::Install,
+                        saucepan,
+                        operation,
+                    )?,
+                    &mut exit_code,
+                )?,
+                Commands::ReplaceShim {
+                    app,
+                    name,
+                    built_shim,
+                    saucepan,
+                    operation,
+                } => operation_value(
+                    store.maintain_shim(
+                        app,
+                        &name,
+                        &built_shim,
+                        crate::models::index::lifecycle::ShimAction::Replace,
+                        saucepan,
+                        operation,
+                    )?,
+                    &mut exit_code,
+                )?,
+                Commands::AdoptShim {
+                    app,
+                    name,
+                    built_shim,
+                    saucepan,
+                    operation,
+                } => operation_value(
+                    store.maintain_shim(
+                        app,
+                        &name,
+                        &built_shim,
+                        crate::models::index::lifecycle::ShimAction::Adopt,
+                        saucepan,
+                        operation,
+                    )?,
+                    &mut exit_code,
+                )?,
                 Commands::Init => unreachable!(),
             }
         }
@@ -247,4 +310,14 @@ pub fn run() -> Result<()> {
         std::process::exit(exit_code);
     }
     Ok(())
+}
+
+fn operation_value(
+    op: crate::models::index::lifecycle::Operation,
+    exit_code: &mut i32,
+) -> Result<serde_json::Value> {
+    if op.status != crate::models::index::lifecycle::Phase::Complete {
+        *exit_code = 2;
+    }
+    Ok(serde_json::to_value(op)?)
 }

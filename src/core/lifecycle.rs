@@ -156,11 +156,19 @@ impl Store {
         ids.into_iter()
             .map(|id| {
                 let _guard = self.operation_lock(id)?;
-                let _lock = self.lock()?;
-                let mut op = self.operation(id)?;
+                let mut op = {
+                    let _lock = self.lock()?;
+                    self.operation(id)?
+                };
                 if !op.status.terminal() {
-                    op.pending = vec!["retry the original command to finish preparation".into()];
-                    self.save_operation(&op)?;
+                    if matches!(op.action, Action::Shim { .. }) && op.status != Phase::Preparing {
+                        self.resume_shim(&mut op)?;
+                    } else {
+                        let _lock = self.lock()?;
+                        op.pending =
+                            vec!["retry the original command to finish preparation".into()];
+                        self.save_operation(&op)?;
+                    }
                 }
                 Ok(op)
             })

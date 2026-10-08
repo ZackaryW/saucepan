@@ -199,6 +199,27 @@ fn deactivation_preserves_live_targets_claims_and_other_bindings() {
         .unwrap();
     until(&tmp.path().join("ready"));
 
+    let maintenance_id = uuid::Uuid::new_v4();
+    let maintenance = Command::new(env!("CARGO_BIN_EXE_saucepan"))
+        .arg("--root")
+        .arg(store.root())
+        .arg("replace-shim")
+        .arg(app.uuid.to_string())
+        .arg(shim.file_name().unwrap())
+        .arg(env!("CARGO_BIN_EXE_saucepan-shim"))
+        .arg("--operation")
+        .arg(maintenance_id.to_string())
+        .output()
+        .unwrap();
+    let maintenance_result: serde_json::Value =
+        serde_json::from_slice(&maintenance.stdout).unwrap();
+    if cfg!(windows) {
+        assert_eq!(maintenance.status.code(), Some(2));
+        assert_eq!(maintenance_result["status"], "commit_intent");
+    } else {
+        assert!(maintenance.status.success());
+        before = store.application(app.uuid).unwrap();
+    }
     let deactivate = |id: uuid::Uuid| {
         Command::new(env!("CARGO_BIN_EXE_saucepan"))
             .arg("--root")
@@ -256,6 +277,18 @@ fn deactivation_preserves_live_targets_claims_and_other_bindings() {
     fs::write(tmp.path().join("release"), b"stop").unwrap();
     assert!(launcher.wait().unwrap().success());
     assert!(tmp.path().join("done").exists());
+    let maintained = Command::new(env!("CARGO_BIN_EXE_saucepan"))
+        .arg("--root")
+        .arg(store.root())
+        .args(["reconcile", "--operation"])
+        .arg(maintenance_id.to_string())
+        .output()
+        .unwrap();
+    assert!(
+        maintained.status.success(),
+        "{}",
+        String::from_utf8_lossy(&maintained.stdout)
+    );
     assert!(store.reclaim().unwrap().deferred.contains_key(&entry));
     store.deactivate(other.uuid).unwrap();
     // Deactivation itself does not reclaim even an eligible output.

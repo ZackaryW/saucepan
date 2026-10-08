@@ -105,6 +105,14 @@ pub fn shim_main() -> Result<i32> {
         .parent()
         .and_then(Path::parent)
         .context("shim must live in root/bin")?;
+    let _shim = super::shims::shim_lock(
+        root,
+        exe.file_name()
+            .context("shim filename missing")?
+            .to_str()
+            .context("non-UTF8 shim name")?,
+        crate::utils::lock::LockMode::Shared,
+    )?;
     let config: ShimConfig = serde_json::from_slice(&fs::read(exe.with_extension("shim.json"))?)?;
     let store = Store::open(root)?;
     store.launch(
