@@ -3,10 +3,10 @@ use crate::{
     models::{
         index::Record,
         policy::Identical,
-        store::{Acquired, Availability, FileEntry, OutputEntry, Request},
+        store::{Acquired, Availability, FileEntry, OutputEntry, Request, VerificationMode},
     },
     utils::{
-        path::beneath,
+        path::{beneath, plain_metadata},
         tree::{self, TreeLimits},
     },
 };
@@ -40,11 +40,9 @@ impl Store {
         }
     }
     pub fn path(&self, id: Uuid) -> Result<PathBuf> {
-        let _lock = self.lock()?;
-        let entry = self.output(id)?;
-        self.verified_path(&entry)
+        Ok(self.resolve(id, VerificationMode::Metadata)?.directory)
     }
-    pub(crate) fn verified_path(&self, entry: &OutputEntry) -> Result<PathBuf> {
+    pub(crate) fn metadata_path(&self, entry: &OutputEntry) -> Result<PathBuf> {
         ensure!(
             entry.state == Availability::Ready,
             "entry is unavailable: {:?}",
@@ -52,10 +50,43 @@ impl Store {
         );
         let path = beneath(&self.root, &format!("store/{}", entry.uuid))?;
         ensure!(
-            manifest(&path)? == entry.files,
-            "stored output integrity mismatch"
+            plain_metadata(&path)?.is_dir(),
+            "output root is not a directory"
         );
         Ok(path)
+    }
+    /// Full integrity boundary. Caller must retain mutation coordination or an entry lease.
+    pub(crate) fn verified_path(&self, entry: &OutputEntry) -> Result<PathBuf> {
+        let path = self.metadata_path(entry)?;
+        self.check_manifest(&path, entry)?;
+        Ok(path)
+    }
+    pub(crate) fn check_manifest(&self, path: &std::path::Path, entry: &OutputEntry) -> Result<()> {
+        ensure!(
+            self.access_manifest(path)? == entry.files,
+            "stored output integrity mismatch"
+        );
+        Ok(())
+    }
+    fn access_manifest(&self, path: &std::path::Path) -> Result<BTreeMap<String, FileEntry>> {
+        #[cfg(test)]
+        if let Some(observer) = &self.access_observer {
+            return Ok(
+                tree::inspect_observed(path, TreeLimits::default(), &mut |event| observer(event))?
+                    .into_iter()
+                    .map(|(k, v)| {
+                        (
+                            k,
+                            FileEntry {
+                                digest: v.digest,
+                                executable: v.executable,
+                            },
+                        )
+                    })
+                    .collect(),
+            );
+        }
+        manifest(path)
     }
     pub fn acquire(&self, request: &Request) -> Result<Acquired> {
         self.acquire_with(request, &Default::default())

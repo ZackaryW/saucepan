@@ -27,6 +27,15 @@ pub struct Entry {
 }
 pub type TreeSummary = BTreeMap<String, Entry>;
 
+/// Local observation seam for inspection tests; contains no store identities.
+#[derive(Debug, Clone, Copy)]
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) enum IoEvent {
+    Directory,
+    Open,
+    Bytes(usize),
+}
+
 pub fn digest(reader: impl Read) -> io::Result<String> {
     let mut hash = Sha256::new();
     let mut reader = reader;
@@ -69,18 +78,36 @@ pub fn copy_tree(source: &Path, destination: &Path, limits: TreeLimits) -> io::R
         &mut bytes,
         &mut summary,
         true,
+        &mut |_| {},
     )?;
     Ok(summary)
 }
 pub fn inspect(root: &Path, limits: TreeLimits) -> io::Result<TreeSummary> {
+    inspect_observed(root, limits, &mut |_| {})
+}
+pub(crate) fn inspect_observed(
+    root: &Path,
+    limits: TreeLimits,
+    observer: &mut dyn FnMut(IoEvent),
+) -> io::Result<TreeSummary> {
     if !plain_metadata(root)?.is_dir() {
         return Err(io::Error::other("not a directory"));
     }
     let mut summary = BTreeMap::new();
     let mut bytes = 0;
-    visit(root, root, root, limits, &mut bytes, &mut summary, false)?;
+    visit(
+        root,
+        root,
+        root,
+        limits,
+        &mut bytes,
+        &mut summary,
+        false,
+        observer,
+    )?;
     Ok(summary)
 }
+#[allow(clippy::too_many_arguments)]
 fn visit(
     root: &Path,
     source: &Path,
@@ -89,7 +116,9 @@ fn visit(
     bytes: &mut u64,
     summary: &mut TreeSummary,
     copy: bool,
+    observer: &mut dyn FnMut(IoEvent),
 ) -> io::Result<()> {
+    observer(IoEvent::Directory);
     let mut entries = fs::read_dir(source)?.collect::<Result<Vec<_>, _>>()?;
     entries.sort_by_key(|e| e.file_name());
     let mut names = BTreeSet::new();
@@ -125,9 +154,10 @@ fn visit(
             if copy {
                 fs::create_dir(&target)?;
             }
-            visit(root, &path, &target, limits, bytes, summary, copy)?;
+            visit(root, &path, &target, limits, bytes, summary, copy, observer)?;
         } else {
             let mut input = fs::File::open(&path)?;
+            observer(IoEvent::Open);
             let mut output = if copy {
                 Some(
                     fs::OpenOptions::new()
@@ -147,6 +177,7 @@ fn visit(
                     break;
                 }
                 length += n as u64;
+                observer(IoEvent::Bytes(n));
                 *bytes = bytes
                     .checked_add(n as u64)
                     .ok_or_else(|| io::Error::other("byte overflow"))?;

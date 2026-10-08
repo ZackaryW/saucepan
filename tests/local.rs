@@ -47,7 +47,8 @@ fn immutable_versions_and_policy_reuse() {
         b"payload"
     );
     fs::write(third.directory.join("index.json"), "tampered").unwrap();
-    assert!(store.path(third.entry.uuid).is_err());
+    assert!(store.path(third.entry.uuid).is_ok());
+    assert!(store.verify(third.entry.uuid).is_err());
 }
 #[test]
 fn concurrent_reuse_and_failed_selection() {

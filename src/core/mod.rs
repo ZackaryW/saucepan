@@ -19,6 +19,9 @@ use std::{
 #[derive(Clone)]
 pub struct Store {
     pub(crate) root: PathBuf,
+    #[cfg(test)]
+    pub(crate) access_observer:
+        Option<std::sync::Arc<dyn Fn(crate::utils::tree::IoEvent) + Send + Sync>>,
 }
 impl Store {
     pub fn root(&self) -> &Path {
@@ -41,7 +44,11 @@ impl Store {
         for part in ["source", "index", "store", "bin", ".locks", ".staging"] {
             std::fs::create_dir(root.join(part))?;
         }
-        Ok(Self { root })
+        Ok(Self {
+            root,
+            #[cfg(test)]
+            access_observer: None,
+        })
     }
     pub fn open(root: &Path) -> Result<Self> {
         ensure!(plain_metadata(root)?.is_dir(), "invalid store root");
@@ -56,7 +63,11 @@ impl Store {
                 "invalid store layout"
             );
         }
-        let store = Self { root };
+        let store = Self {
+            root,
+            #[cfg(test)]
+            access_observer: None,
+        };
         {
             let _guard = store.lock()?;
         }

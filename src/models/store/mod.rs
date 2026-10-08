@@ -131,3 +131,28 @@ pub struct ReclaimReport {
     pub deferred: BTreeMap<Uuid, String>,
     pub pending: BTreeMap<Uuid, String>,
 }
+/// Per-call checks; never persisted as acquisition identity or freshness.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    clap::ValueEnum,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum VerificationMode {
+    #[default]
+    Metadata,
+    Full,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ResolvedResource {
+    pub entry_uuid: uuid::Uuid,
+    pub directory: std::path::PathBuf,
+    pub verification: VerificationMode,
+}

@@ -2,6 +2,7 @@
 //! launcher failure. No PID or elapsed-time heuristic grants reclaim permission.
 use crate::{
     core::Store,
+    models::store::{OutputEntry, ResolvedResource, VerificationMode},
     utils::{
         lock::{LockGuard, LockMode},
         path::beneath,
@@ -15,19 +16,30 @@ use std::{
     time::Duration,
 };
 use uuid::Uuid;
+#[cfg(test)]
+mod tests;
 
 pub struct ResourceLease {
-    entry: Uuid,
-    directory: std::path::PathBuf,
+    resource: ResolvedResource,
     file: File,
     _coordination: LockGuard,
 }
 impl ResourceLease {
     pub fn entry_uuid(&self) -> Uuid {
-        self.entry
+        self.resource.entry_uuid
     }
     pub fn directory(&self) -> &Path {
-        &self.directory
+        &self.resource.directory
+    }
+    pub fn resource(&self) -> &ResolvedResource {
+        &self.resource
+    }
+
+    pub(crate) fn verify(&mut self, store: &Store, output: &OutputEntry) -> Result<()> {
+        anyhow::ensure!(output.uuid == self.entry_uuid(), "lease identity mismatch");
+        store.check_manifest(self.directory(), output)?;
+        self.resource.verification = VerificationMode::Full;
+        Ok(())
     }
 
     /// Used only by the dedicated single-launch shim. Other concurrent spawns
@@ -64,23 +76,57 @@ impl ResourceLease {
 }
 
 impl Store {
-    pub fn lease(&self, entry: Uuid) -> Result<ResourceLease> {
-        let _lock = self.lock()?;
-        self.lease_locked(entry)
+    pub fn resolve(&self, entry: Uuid, mode: VerificationMode) -> Result<ResolvedResource> {
+        Ok(self.lease(entry, mode)?.resource().clone())
     }
-    pub fn lease_claim(&self, app: Uuid, claim: Uuid) -> Result<ResourceLease> {
+    pub fn verify(&self, entry: Uuid) -> Result<ResolvedResource> {
+        self.resolve(entry, VerificationMode::Full)
+    }
+    pub fn lease(&self, entry: Uuid, mode: VerificationMode) -> Result<ResourceLease> {
+        let (output, mut lease) = {
+            let _lock = self.lock()?;
+            let output = self.output(entry)?;
+            let lease = self.metadata_lease_locked(&output)?;
+            (output, lease)
+        };
+        if mode == VerificationMode::Full {
+            lease.verify(self, &output)?;
+        }
+        Ok(lease)
+    }
+    pub fn lease_claim(
+        &self,
+        app: Uuid,
+        claim: Uuid,
+        mode: VerificationMode,
+    ) -> Result<ResourceLease> {
         use anyhow::Context;
-        let _lock = self.lock()?;
-        let application = self.application(app)?;
-        let claim = application.claims.get(&claim).context("claim missing")?;
-        self.lease_locked(claim.entry_uuid)
+        let (output, mut lease) = {
+            let _lock = self.lock()?;
+            let application = self.application(app)?;
+            let claim = application.claims.get(&claim).context("claim missing")?;
+            let output = self.output(claim.entry_uuid)?;
+            let lease = self.metadata_lease_locked(&output)?;
+            (output, lease)
+        };
+        if mode == VerificationMode::Full {
+            lease.verify(self, &output)?;
+        }
+        Ok(lease)
     }
     pub fn execution_lease(&self, entry: Uuid) -> Result<ResourceLease> {
-        let _lock = self.lock()?;
-        self.lease_locked(entry)
+        self.lease(entry, VerificationMode::Full)
     }
     pub(crate) fn lease_locked(&self, entry: Uuid) -> Result<ResourceLease> {
-        let directory = self.verified_path(&self.output(entry)?)?;
+        let output = self.output(entry)?;
+        let mut lease = self.metadata_lease_locked(&output)?;
+        lease.verify(self, &output)?;
+        Ok(lease)
+    }
+    /// Caller holds mutation coordination until selection and native ownership complete.
+    pub(crate) fn metadata_lease_locked(&self, output: &OutputEntry) -> Result<ResourceLease> {
+        let entry = output.uuid;
+        let directory = self.metadata_path(output)?;
         let coordination = LockGuard::acquire(
             &self.root.join(format!(".locks/use-{entry}")),
             LockMode::Shared,
@@ -100,8 +146,11 @@ impl Store {
         #[cfg(unix)]
         file.lock_shared()?;
         Ok(ResourceLease {
-            entry,
-            directory,
+            resource: ResolvedResource {
+                entry_uuid: entry,
+                directory,
+                verification: VerificationMode::Metadata,
+            },
             file,
             _coordination: coordination,
         })

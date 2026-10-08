@@ -1,3 +1,4 @@
+use crate::models::store::VerificationMode;
 use crate::{core::Store, models::source::Source};
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
@@ -66,6 +67,11 @@ enum Commands {
         file: PathBuf,
     },
     Path {
+        uuid: uuid::Uuid,
+        #[arg(long, value_enum, default_value = "metadata")]
+        verification: VerificationMode,
+    },
+    Verify {
         uuid: uuid::Uuid,
     },
     Reclaim,
@@ -150,7 +156,10 @@ pub fn run() -> Result<()> {
                     store.set_settings(app, serde_json::from_slice(&std::fs::read(file)?)?)?;
                     serde_json::json!({"updated":app})
                 }
-                Commands::Path { uuid } => serde_json::json!({"directory":store.path(uuid)?}),
+                Commands::Path { uuid, verification } => {
+                    serde_json::to_value(store.resolve(uuid, verification)?)?
+                }
+                Commands::Verify { uuid } => serde_json::to_value(store.verify(uuid)?)?,
                 Commands::Reclaim => serde_json::to_value(store.reclaim()?)?,
                 Commands::Reacquire { uuid } => {
                     serde_json::to_value(store.reacquire(uuid, &options)?)?

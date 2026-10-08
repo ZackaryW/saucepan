@@ -34,6 +34,8 @@ cargo run -- --root ./scratch path OUTPUT_UUID
 
 Acquisition returns `entry`, `directory`, `reused`, `update_checked`, `stale`, and a `reclaim` report. `new_entry` creates another output for identical inputs; `reuse` returns a compatible verified output. New content never replaces older entry bytes. Local inputs are checked on every acquisition. A saved transaction intent lets reopening recover interrupted publication and claim/binding changes.
 
+`path` defaults to metadata checks without hashing payloads. Use `path OUTPUT_UUID --verification full` or `verify OUTPUT_UUID` for explicit integrity verification. Bare paths have no retained reclaim protection; native consumers hold `ResourceLease` guards. See [resource access](docs/resource-access.md) for ownership and verification contracts.
+
 `models/{source,index,store,policy}` defines the contract, matching `core` modules own behavior, `cli` adapts commands, and `utils` contains domain-independent mechanics. `saucepan-shim` is a separate binary that reads its sibling `.shim.json` app identifier and the application's committed binding.
 
 Portable helpers require caller-owned stable roots. Atomic file replacement does not imply a multi-file transaction or power-loss directory durability; native locks coordinate cooperating callers. Path validation rejects unsafe/ambiguous names; it does not isolate hostile processes running as the same user.
