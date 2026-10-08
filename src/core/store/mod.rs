@@ -172,3 +172,6 @@ impl Store {
         })
     }
 }
+
+pub mod access;
+pub use access::ResourceLease;
