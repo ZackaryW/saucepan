@@ -73,7 +73,7 @@ impl Store {
 /// in-process resource access: Unix replaces the caller's process with the tool.
 pub(crate) fn launch_leased(
     mut command: std::process::Command,
-    lease: ResourceLease,
+    mut lease: ResourceLease,
 ) -> Result<i32> {
     lease.inherit()?;
     #[cfg(unix)]

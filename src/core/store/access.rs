@@ -12,7 +12,7 @@ use anyhow::Result;
 use std::{
     fs::{self, File, OpenOptions},
     io,
-    path::Path,
+    path::{Path, PathBuf},
     time::Duration,
 };
 use uuid::Uuid;
@@ -21,7 +21,8 @@ mod tests;
 
 pub struct ResourceLease {
     resource: ResolvedResource,
-    file: File,
+    marker_path: PathBuf,
+    file: Option<File>,
     _coordination: LockGuard,
 }
 impl ResourceLease {
@@ -42,9 +43,21 @@ impl ResourceLease {
         Ok(())
     }
 
-    /// Used only by the dedicated single-launch shim. Other concurrent spawns
+    /// Used only by dedicated single-launch CLI/shim processes. Other spawns
     /// could inherit the same handle and conservatively extend its lifetime.
-    pub(crate) fn inherit(&self) -> io::Result<()> {
+    pub(crate) fn inherit(&mut self) -> io::Result<()> {
+        // The shared coordination guard excludes reclaim throughout creation
+        // and inheritance, including the interval before the native marker locks.
+        let mut options = OpenOptions::new();
+        options.read(true).write(true).create_new(true);
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            options.share_mode(3);
+        }
+        let file = options.open(&self.marker_path)?;
+        #[cfg(unix)]
+        file.lock_shared()?;
         #[cfg(windows)]
         {
             use std::os::windows::io::AsRawHandle;
@@ -52,7 +65,7 @@ impl ResourceLease {
             // SAFETY: the borrowed file handle remains valid for this call.
             unsafe {
                 SetHandleInformation(
-                    HANDLE(self.file.as_raw_handle()),
+                    HANDLE(file.as_raw_handle()),
                     HANDLE_FLAG_INHERIT.0,
                     HANDLE_FLAG_INHERIT,
                 )
@@ -62,7 +75,7 @@ impl ResourceLease {
         #[cfg(unix)]
         {
             use std::os::fd::AsRawFd;
-            let fd = self.file.as_raw_fd();
+            let fd = file.as_raw_fd();
             // SAFETY: fcntl operates on this guard's valid file descriptor.
             unsafe {
                 let flags = libc::fcntl(fd, libc::F_GETFD);
@@ -71,12 +84,22 @@ impl ResourceLease {
                 }
             }
         }
+        self.file = Some(file);
         Ok(())
     }
 }
 
 impl Store {
     pub fn resolve(&self, entry: Uuid, mode: VerificationMode) -> Result<ResolvedResource> {
+        if mode == VerificationMode::Metadata {
+            let _lock = self.lock()?;
+            let output = self.output(entry)?;
+            return Ok(ResolvedResource {
+                entry_uuid: entry,
+                directory: self.metadata_path(&output)?,
+                verification: mode,
+            });
+        }
         Ok(self.lease(entry, mode)?.resource().clone())
     }
     pub fn verify(&self, entry: Uuid) -> Result<ResolvedResource> {
@@ -126,26 +149,17 @@ impl Store {
             LockMode::Shared,
             Duration::from_secs(30),
         )?;
-        let path = self
+        let marker_path = self
             .root
             .join(format!(".locks/live-{entry}-{}", Uuid::new_v4()));
-        let mut options = OpenOptions::new();
-        options.read(true).write(true).create_new(true);
-        #[cfg(windows)]
-        {
-            use std::os::windows::fs::OpenOptionsExt;
-            options.share_mode(3);
-        }
-        let file = options.open(path)?;
-        #[cfg(unix)]
-        file.lock_shared()?;
         Ok(ResourceLease {
             resource: ResolvedResource {
                 entry_uuid: entry,
                 directory,
                 verification: VerificationMode::Metadata,
             },
-            file,
+            marker_path,
+            file: None,
             _coordination: coordination,
         })
     }

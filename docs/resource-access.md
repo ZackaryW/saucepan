@@ -58,6 +58,11 @@ A copied path carries no protection. Neither an ordinary claim nor a bare
 external edits. Native guards are non-inheritable; managed process launch opts
 into handle inheritance only at its dedicated launch boundary.
 
+Metadata lookups create no lifetime markers. Native guards and full scans use
+shared entry coordination without creating per-use markers. Only a dedicated
+process launch creates an inherited lifetime marker, while the shared guard
+continues protecting the output throughout the handoff to the child.
+
 For external tools, use `run ENTRY_UUID [--verification metadata|full] -- PROGRAM
 ARG...`. Saucepan sets `SAUCEPAN_RESOURCE_DIR` in the child's environment,
 overriding an inherited value without changing the parent environment. Arguments

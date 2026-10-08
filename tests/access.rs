@@ -29,6 +29,52 @@ fn fixture() -> (tempfile::TempDir, Store, Request) {
 }
 
 #[test]
+fn non_process_access_never_creates_lifetime_markers() {
+    let (_tmp, store, request) = fixture();
+    let app = store.register_app("marker-free access".into()).unwrap();
+    let acquired = store
+        .acquire_for(app.uuid, &request, &Default::default())
+        .unwrap();
+    let id = acquired.claim.entry_uuid;
+    let markers = || {
+        fs::read_dir(store.root().join(".locks"))
+            .unwrap()
+            .filter(|p| {
+                p.as_ref()
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("live-")
+            })
+            .count()
+    };
+    for _ in 0..20 {
+        store.path(id).unwrap();
+        store.verify(id).unwrap();
+        let guard = store.lease(id, VerificationMode::Metadata).unwrap();
+        let claim = store
+            .lease_claim(app.uuid, acquired.claim.uuid, VerificationMode::Full)
+            .unwrap();
+        assert_eq!(markers(), 0, "native access allocated process markers");
+        drop((guard, claim));
+    }
+    for command in ["path", "verify"] {
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_saucepan"))
+            .arg("--root")
+            .arg(store.root())
+            .arg(command)
+            .arg(id.to_string())
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+    }
+    assert_eq!(markers(), 0);
+    store.reclaim().unwrap();
+    assert_eq!(store.path(id).unwrap(), acquired.acquired.directory);
+    assert_eq!(markers(), 0);
+}
+
+#[test]
 fn claim_selection_and_multiple_guards_keep_exact_output_alive() {
     let (_tmp, store, request) = fixture();
     let app = store.register_app("reader".into()).unwrap();
