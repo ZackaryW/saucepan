@@ -1,5 +1,25 @@
 # Resource access verification
 
+## Application deactivation follow-up
+
+The `deactivate-applications` change passed formatting, strict all-target Clippy,
+all-target tests (60 passing, including fixture entry points), and strict
+OpenSpec validation on Windows x86_64 on 2026-10-08.
+
+- Native coverage clears an unavailable binding, preserves concurrent settings
+  and existing claims, rejects invalid application IDs, and proves a repeated
+  call does not rewrite the record.
+- Journal fixtures recover deactivation both before and after app-record
+  publication, preserving claims and settings.
+- A real CLI and installed shim test confirms JSON results, continuing target
+  execution, failed new launches, independent binding protection, delayed
+  reclaim after exit, ordinary retention, and successful reactivation through
+  the unchanged shim.
+
+Tests used temporary stores. The existing `mock` installation was not modified.
+Linux/macOS and Rust 1.89 execution remain unverified. Console signal handling
+was not changed or separately rerun for this follow-up.
+
 ## Lease-marker cleanup follow-up
 
 The `clean-lease-markers` follow-up was verified on Windows x86_64 on

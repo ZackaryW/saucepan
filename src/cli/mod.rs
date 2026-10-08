@@ -92,6 +92,10 @@ enum Commands {
         executable: String,
         probe: PathBuf,
     },
+    /// Clear an application's active binding; preserve claims and running consumers.
+    Deactivate {
+        app: uuid::Uuid,
+    },
     InstallShim {
         app: uuid::Uuid,
         name: String,
@@ -196,6 +200,14 @@ pub fn run() -> Result<()> {
                     &executable,
                     &serde_json::from_slice(&std::fs::read(probe)?)?,
                 )?)?,
+                Commands::Deactivate { app } => {
+                    let previous = store.deactivate(app)?;
+                    serde_json::json!({
+                        "app": app,
+                        "deactivated": previous.is_some(),
+                        "previous_binding": previous,
+                    })
+                }
                 Commands::InstallShim {
                     app,
                     name,

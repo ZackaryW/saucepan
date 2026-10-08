@@ -22,7 +22,23 @@ pub struct Probe {
     pub stdout_contains: String,
     pub timeout_seconds: u64,
 }
+
 impl Store {
+    /// Clear the active binding without releasing claims, leases, or cached content.
+    /// A later activation may bind the application again.
+    pub fn deactivate(&self, app: Uuid) -> Result<Option<Binding>> {
+        let _lock = self.lock()?;
+        let mut application = self.application(app)?;
+        let previous = application.active.take();
+        if previous.is_some() {
+            self.commit(Journal {
+                records: vec![Record::Application(application)],
+                stage: None,
+            })?;
+        }
+        Ok(previous)
+    }
+
     pub fn activate(
         &self,
         app: Uuid,
@@ -128,5 +144,85 @@ impl Store {
             fs::set_permissions(&dest, fs::Permissions::from_mode(0o755))?;
         }
         Ok(dest)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{
+        index::Settings,
+        source::Source,
+        store::{Request, Selector},
+    };
+
+    #[test]
+    fn deactivate_missing_payload_preserves_concurrent_app_edits_and_is_idempotent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Store::create(&tmp.path().join("root")).unwrap();
+        let input = tmp.path().join("data");
+        fs::write(&input, b"data").unwrap();
+        let source = store
+            .register_source(Source::Local { path: input })
+            .unwrap();
+        let mut app = store.register_app("fixture".into()).unwrap();
+        let request = Request {
+            source_uuid: source.uuid,
+            selector: Selector::Local,
+            selection: Default::default(),
+            policies: Default::default(),
+        };
+        let claim = store
+            .acquire_for(app.uuid, &request, &Default::default())
+            .unwrap()
+            .claim;
+        app = store.application(app.uuid).unwrap();
+        // An unavailable old binding must not prevent clearing the application.
+        app.active = Some(Binding {
+            entry_uuid: Uuid::new_v4(),
+            executable: "missing".into(),
+        });
+        store
+            .save_record(&Record::Application(app.clone()))
+            .unwrap();
+        let barrier = std::sync::Barrier::new(3);
+        std::thread::scope(|scope| {
+            let deactivate = scope.spawn(|| {
+                barrier.wait();
+                store.deactivate(app.uuid).unwrap().unwrap()
+            });
+            let settings = scope.spawn(|| {
+                barrier.wait();
+                store
+                    .set_settings(
+                        app.uuid,
+                        Settings {
+                            source_filter: vec![source.uuid],
+                        },
+                    )
+                    .unwrap();
+            });
+            barrier.wait();
+            assert_eq!(
+                deactivate.join().unwrap().entry_uuid,
+                app.active.as_ref().unwrap().entry_uuid
+            );
+            settings.join().unwrap();
+        });
+        let result = store.application(app.uuid).unwrap();
+        assert!(result.active.is_none());
+        assert_eq!(result.settings.source_filter, vec![source.uuid]);
+        assert_eq!(result.name, app.name);
+        assert_eq!(result.claims[&claim.uuid].entry_uuid, claim.entry_uuid);
+        let path = store.root.join(format!("index/{}/index.json", app.uuid));
+        // Preserve deliberate formatting as evidence that a no-op does not rewrite.
+        let mut bytes = fs::read(&path).unwrap();
+        bytes.extend_from_slice(b" \n");
+        fs::write(&path, &bytes).unwrap();
+        assert!(store.deactivate(app.uuid).unwrap().is_none());
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        assert!(store.deactivate(Uuid::new_v4()).is_err());
+        assert!(store.deactivate(claim.entry_uuid).is_err());
+        assert_eq!(fs::read(&path).unwrap(), bytes);
     }
 }

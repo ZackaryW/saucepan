@@ -169,6 +169,58 @@ mod tests {
     use super::*;
     use crate::models::store::{Request, Selector};
     #[test]
+    fn interrupted_deactivation_recovers_before_and_after_record_publication() {
+        for published in [false, true] {
+            let tmp = tempfile::tempdir().unwrap();
+            let store = Store::create(&tmp.path().join("root")).unwrap();
+            let mut app = store.register_app("deactivation recovery".into()).unwrap();
+            let source = Uuid::new_v4();
+            let claim = Uuid::new_v4();
+            let target = Uuid::new_v4();
+            app.settings.source_filter = vec![source];
+            app.claims.insert(
+                claim,
+                crate::models::index::Claim {
+                    uuid: claim,
+                    entry_uuid: target,
+                    request: Request {
+                        source_uuid: source,
+                        selector: Selector::Local,
+                        selection: Default::default(),
+                        policies: Default::default(),
+                    },
+                },
+            );
+            app.active = Some(crate::models::index::Binding {
+                entry_uuid: target,
+                executable: "tool".into(),
+            });
+            store
+                .save_record(&Record::Application(app.clone()))
+                .unwrap();
+            app.active = None;
+            let inactive = Record::Application(app.clone());
+            write(
+                &store.root.join(".staging/transaction.json"),
+                &Journal {
+                    records: vec![inactive.clone()],
+                    stage: None,
+                },
+            )
+            .unwrap();
+            if published {
+                store.save_record(&inactive).unwrap();
+            }
+            let reopened = Store::open(&store.root).unwrap();
+            assert_eq!(
+                serde_json::to_value(reopened.application(app.uuid).unwrap()).unwrap(),
+                serde_json::to_value(app).unwrap()
+            );
+            assert!(!store.root.join(".staging/transaction.json").exists());
+        }
+    }
+
+    #[test]
     fn interrupted_publication_recovers_before_and_after_rename() {
         for (renamed, corrupt) in [(false, false), (true, false), (false, true), (true, true)] {
             let tmp = tempfile::tempdir().unwrap();

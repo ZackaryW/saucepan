@@ -139,6 +139,145 @@ fn until(path: &std::path::Path) {
 }
 
 #[test]
+fn deactivation_preserves_live_targets_claims_and_other_bindings() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = Store::create(&tmp.path().join("root")).unwrap();
+    let exe = std::env::current_exe().unwrap();
+    let name = exe.file_name().unwrap().to_str().unwrap();
+    let source = store
+        .register_source(Source::Local { path: exe.clone() })
+        .unwrap();
+    let app = store.register_app("deactivate".into()).unwrap();
+    let other = store.register_app("other".into()).unwrap();
+    let mut request = Request {
+        source_uuid: source.uuid,
+        selector: Selector::Local,
+        selection: Default::default(),
+        policies: Default::default(),
+    };
+    request.selection.bin = vec![name.into()];
+    request.policies.protection = Some(Protection::UseableApp);
+    request.policies.eviction = Eviction::Latest { keep: 1 };
+    request.policies.identical = Identical::NewEntry;
+    let first = store
+        .acquire_for(app.uuid, &request, &Default::default())
+        .unwrap();
+    let entry = first.claim.entry_uuid;
+    let probe = Probe {
+        args: vec![
+            "--exact".into(),
+            "fixture_probe".into(),
+            "--nocapture".into(),
+        ],
+        stdout_contains: "FIXTURE-HEALTHY".into(),
+        timeout_seconds: 10,
+    };
+    store.activate(app.uuid, entry, name, &probe).unwrap();
+    store.activate(other.uuid, entry, name, &probe).unwrap();
+    let shim = store
+        .install_shim(
+            app.uuid,
+            if cfg!(windows) {
+                "fixture.exe"
+            } else {
+                "fixture"
+            },
+            std::path::Path::new(env!("CARGO_BIN_EXE_saucepan-shim")),
+            false,
+        )
+        .unwrap();
+    let shim_bytes = fs::read(&shim).unwrap();
+    let sidecar_bytes = fs::read(shim.with_extension("shim.json")).unwrap();
+    let second = store.acquire(&request).unwrap();
+    let mut before = store.application(app.uuid).unwrap();
+    let mut launcher = Command::new(&shim)
+        .args(["--exact", "fixture_hold", "--nocapture"])
+        .env("SAUCEPAN_MANAGED_FIXTURE", tmp.path())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    until(&tmp.path().join("ready"));
+
+    let deactivate = |id: uuid::Uuid| {
+        Command::new(env!("CARGO_BIN_EXE_saucepan"))
+            .arg("--root")
+            .arg(store.root())
+            .arg("deactivate")
+            .arg(id.to_string())
+            .output()
+            .unwrap()
+    };
+    let response = deactivate(app.uuid);
+    assert!(
+        response.status.success(),
+        "{}",
+        String::from_utf8_lossy(&response.stderr)
+    );
+    let response: serde_json::Value = serde_json::from_slice(&response.stdout).unwrap();
+    assert_eq!(
+        response,
+        serde_json::json!({"app": app.uuid, "deactivated": true, "previous_binding": before.active})
+    );
+    before.active = None;
+    assert_eq!(
+        serde_json::to_value(store.application(app.uuid).unwrap()).unwrap(),
+        serde_json::to_value(&before).unwrap()
+    );
+    let repeated = deactivate(app.uuid);
+    assert!(repeated.status.success());
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&repeated.stdout).unwrap(),
+        serde_json::json!({"app": app.uuid, "deactivated": false, "previous_binding": null})
+    );
+    for invalid in [uuid::Uuid::new_v4(), entry] {
+        let failed = deactivate(invalid);
+        assert!(!failed.status.success());
+        assert!(failed.stdout.is_empty());
+    }
+    let failed = Command::new(&shim).args(&probe.args).output().unwrap();
+    assert!(!failed.status.success());
+    assert!(String::from_utf8_lossy(&failed.stderr).contains("application has no active binding"));
+    assert!(launcher.try_wait().unwrap().is_none());
+    assert!(!tmp.path().join("done").exists());
+    assert_eq!(fs::read(&shim).unwrap(), shim_bytes);
+    assert_eq!(
+        fs::read(shim.with_extension("shim.json")).unwrap(),
+        sidecar_bytes
+    );
+
+    // With both applications inactive, the running target alone protects entry.
+    store.deactivate(other.uuid).unwrap();
+    assert!(store.reclaim().unwrap().deferred.contains_key(&entry));
+    assert!(first.acquired.directory.exists());
+    // Restore the other binding before ending the process to isolate its protection.
+    store.activate(other.uuid, entry, name, &probe).unwrap();
+    fs::write(tmp.path().join("release"), b"stop").unwrap();
+    assert!(launcher.wait().unwrap().success());
+    assert!(tmp.path().join("done").exists());
+    assert!(store.reclaim().unwrap().deferred.contains_key(&entry));
+    store.deactivate(other.uuid).unwrap();
+    // Deactivation itself does not reclaim even an eligible output.
+    assert!(first.acquired.directory.exists());
+    store.reclaim().unwrap();
+    assert_eq!(store.output(entry).unwrap().state, Availability::Reclaimed);
+    assert_eq!(
+        store.application(app.uuid).unwrap().claims[&first.claim.uuid].entry_uuid,
+        entry
+    );
+    assert!(
+        second.directory.exists(),
+        "ordinary retention still applies"
+    );
+    store
+        .activate(app.uuid, second.entry.uuid, name, &probe)
+        .unwrap();
+    let restored = Command::new(&shim).args(&probe.args).output().unwrap();
+    assert!(restored.status.success());
+    assert!(String::from_utf8_lossy(&restored.stdout).contains("FIXTURE-HEALTHY"));
+}
+
+#[test]
 fn active_switch_failed_probe_rollback_streams_and_launcher_death() {
     let tmp = tempfile::tempdir().unwrap();
     let store = Store::create(&tmp.path().join("root")).unwrap();

@@ -66,5 +66,7 @@ Managed executables declare `selection.bin`, a matching `selection.platform`, an
 
 Active useable_app bindings and native execution leases can exceed the retention count. The dedicated shim inherits a lifetime handle into its target: Windows checks sharing conflicts, Unix checks the inherited file lock. Launcher death does not make a still-running target reclaimable. Targets must preserve the inherited lifetime handle; intentionally closing inherited handles or daemonizing outside this lifetime contract is unsupported. Windows console interruption reaches the target's console group; Unix replaces the shim with the target, preserving normal signals. Supported execution evidence is recorded separately for each OS.
 
+Use `deactivate APP_UUID` to clear an application's active binding. Claims, cached outputs, installed shims and running processes remain intact. New shim launches fail until reactivation; subsequent `reclaim` follows retention and remaining live/active protection. Repeating deactivation succeeds as a no-op. See [resource access](docs/resource-access.md) for concurrency and result details.
+
 Saucepan's own release request can be installed with `bootstrap request.json PATH_TO_BUILT_SHIM`; the response includes app and claim UUIDs. `self-update APP_UUID CLAIM_UUID` acquires and probes a replacement through the release provider. All commands require `--root`; Saucepan's shim propagates its root and rejects a conflicting one.
 

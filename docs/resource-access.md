@@ -1,5 +1,26 @@
 # Resource access
 
+`saucepan --root ROOT deactivate APP_UUID` clears only the application's active
+binding. It returns `{ "app": "UUID", "deactivated": true, "previous_binding":
+{ "entry_uuid": "UUID", "executable": "tool.exe" } }`. Repeating it succeeds
+with `deactivated: false` and `previous_binding: null`, without rewriting the
+application. The native API is `Store::deactivate(app) -> Result<Option<Binding>>`.
+Missing application UUIDs and UUIDs belonging to outputs fail.
+
+Claims, settings, installed shims, and stored content remain unchanged. Clearing
+a binding does not require the old payload to be healthy. A launch that already
+selected and leased the binding can finish normally; later shim launches fail
+with `application has no active binding`. A subsequent `reclaim` still respects
+retention, other applications' active bindings, and live leases. Deactivation
+does not itself reclaim content.
+
+Normal activation can restore a binding and reuse the installed shim. Mutations
+serialize at commit: an activation that commits after deactivation, including
+one whose probe was already running, can reactivate the app. The CLI's boolean
+reports whether that invocation removed a binding, not a permanent disabled
+state. If deactivating Saucepan itself, use a directly invoked retained binary
+to reactivate it; its inactive shim cannot launch that command.
+
 Routine managed launch selects the committed active binding, obtains one
 metadata lease, and checks that its declared executable is a regular contained
 file. It does not hash the payload. Activation and rollback still scan the full
