@@ -1,0 +1,37 @@
+[package]
+name = "saucepan"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+license = "MIT"
+description = "Policy-driven source acquisition and managed executable storage"
+default-run = "saucepan"
+
+[[bin]]
+name = "saucepan"
+path = "src/main.rs"
+
+[[bin]]
+name = "saucepan-shim"
+path = "src/bin/saucepan-shim.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+sha2 = "0.10"
+tempfile = "3"
+globset = "0.4"
+url = "2"
+ureq = { version = "3", default-features = false, features = ["rustls", "json"] }
+zip = { version = "8", default-features = false, features = ["deflate"] }
+process-wrap = { version = "10", default-features = false, features = ["std", "creation-flags", "job-object", "process-group"] }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = ["Win32_System_Threading", "Win32_System_Console"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
