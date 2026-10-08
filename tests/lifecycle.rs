@@ -317,3 +317,215 @@ fn managed_update_rejects_aba_and_foreign_rollback() {
         installed.candidate.unwrap()
     );
 }
+
+#[test]
+fn uninstall_preserves_shared_outputs_and_live_target_then_reconciles() {
+    use saucepan::models::{policy::Eviction, store::Availability};
+    let (_tmp, store, mut input) = setup();
+    input.request.policies.eviction = Eviction::Latest { keep: 1 };
+    let installed = store
+        .install_application(&input, &shim(), &Default::default(), None)
+        .unwrap();
+    let first = installed.candidate.unwrap();
+    let other = store.register_app("shared".into()).unwrap();
+    let mut shared = input.request.clone();
+    shared.policies.identical = Identical::Reuse;
+    let claim = store
+        .acquire_for(other.uuid, &shared, &Default::default())
+        .unwrap();
+    assert_eq!(claim.claim.entry_uuid, first);
+    store
+        .activate(other.uuid, first, &shared.selection.bin[0], &input.probe)
+        .unwrap();
+    let second = store.acquire(&input.request).unwrap();
+    fs::write(store.root().join("block-enabled"), b"enabled").unwrap();
+    let mut target = Command::new(store.root().join("bin").join(&input.shim))
+        .args(["--exact", "fixture_blocked_probe", "--nocapture"])
+        .stdout(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    until(&store.root().join("probe-ready"));
+    let result = Command::new(env!("CARGO_BIN_EXE_saucepan"))
+        .arg("--root")
+        .arg(store.root())
+        .arg("uninstall")
+        .arg(installed.app.to_string())
+        .output()
+        .unwrap();
+    let removed: saucepan::models::index::lifecycle::Operation =
+        serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(
+        removed.status,
+        if cfg!(windows) {
+            Phase::CleanupPending
+        } else {
+            Phase::Complete
+        },
+        "{:?}",
+        removed.pending
+    );
+    assert!(store.application(installed.app).is_err());
+    assert!(target.try_wait().unwrap().is_none());
+    assert!(store.reclaim().unwrap().deferred.contains_key(&first));
+    assert_eq!(
+        store.uninstall(other.uuid, false, None).unwrap().status,
+        Phase::Complete
+    );
+    assert!(store.reclaim().unwrap().deferred.contains_key(&first));
+    fs::write(store.root().join("probe-release"), b"release").unwrap();
+    assert!(target.wait().unwrap().success());
+    let final_result = store.reconcile(Some(removed.operation)).unwrap().remove(0);
+    assert_eq!(
+        final_result.status,
+        Phase::Complete,
+        "{:?}",
+        final_result.pending
+    );
+    assert!(
+        !store
+            .root()
+            .join("index")
+            .join(installed.app.to_string())
+            .exists()
+    );
+    assert_eq!(
+        store
+            .uninstall(installed.app, false, None)
+            .unwrap()
+            .operation,
+        removed.operation
+    );
+    assert!(store.uninstall(uuid::Uuid::new_v4(), false, None).is_err());
+    store.reclaim().unwrap();
+    assert_eq!(store.output(first).unwrap().state, Availability::Reclaimed);
+    assert!(second.directory.exists());
+    assert!(store.source(input.request.source_uuid).is_ok());
+}
+
+#[test]
+fn uninstall_fences_both_managed_and_binding_only_inflight_probes() {
+    for managed in [false, true] {
+        let (_tmp, store, input) = setup();
+        let installed = store
+            .install_application(&input, &shim(), &Default::default(), None)
+            .unwrap();
+        fs::write(store.root().join("block-enabled"), b"enabled").unwrap();
+        let probe = Probe {
+            args: vec![
+                "--exact".into(),
+                "fixture_blocked_probe".into(),
+                "--nocapture".into(),
+            ],
+            ..input.probe.clone()
+        };
+        std::thread::scope(|scope| {
+            let worker = scope.spawn(|| {
+                if managed {
+                    store
+                        .update_application(
+                            installed.app,
+                            installed.claim,
+                            &probe,
+                            None,
+                            &Default::default(),
+                            None,
+                        )
+                        .unwrap()
+                        .status
+                        != Phase::Complete
+                } else {
+                    store
+                        .activate(
+                            installed.app,
+                            installed.candidate.unwrap(),
+                            &input.request.selection.bin[0],
+                            &probe,
+                        )
+                        .is_err()
+                }
+            });
+            until(&store.root().join("probe-ready"));
+            assert_eq!(
+                store.uninstall(installed.app, false, None).unwrap().status,
+                Phase::Complete
+            );
+            fs::write(store.root().join("probe-release"), b"release").unwrap();
+            assert!(worker.join().unwrap());
+        });
+        assert!(store.application(installed.app).is_err());
+    }
+}
+
+#[test]
+fn uninstall_preserves_changed_and_unknown_files_without_blocking_other_apps() {
+    let (_tmp, store, input) = setup();
+    let installed = store
+        .install_application(&input, &shim(), &Default::default(), None)
+        .unwrap();
+    let path = store.root().join("bin").join(&input.shim);
+    let original = fs::read(&path).unwrap();
+    fs::write(&path, b"externally replaced").unwrap();
+    let removed = store.uninstall(installed.app, false, None).unwrap();
+    assert_eq!(removed.status, Phase::CleanupPending);
+    assert_eq!(fs::read(&path).unwrap(), b"externally replaced");
+    assert!(
+        Store::open(store.root())
+            .unwrap()
+            .register_app("independent".into())
+            .is_ok()
+    );
+    fs::write(&path, original).unwrap();
+    let unknown = store
+        .root()
+        .join("index")
+        .join(installed.app.to_string())
+        .join("notes.txt");
+    fs::write(&unknown, b"preserve").unwrap();
+    assert_eq!(
+        store.reconcile(Some(removed.operation)).unwrap()[0].status,
+        Phase::CleanupPending
+    );
+    assert_eq!(fs::read(&unknown).unwrap(), b"preserve");
+    assert!(
+        Store::open(store.root())
+            .unwrap()
+            .register_app("still independent".into())
+            .is_ok()
+    );
+    fs::remove_file(unknown).unwrap();
+    assert_eq!(
+        store.reconcile(Some(removed.operation)).unwrap()[0].status,
+        Phase::Complete
+    );
+}
+
+#[test]
+fn unmanaged_shims_require_explicit_adoption_or_exclusion() {
+    let (_tmp, store, input) = setup();
+    let installed = store
+        .install_application(&input, &shim(), &Default::default(), None)
+        .unwrap();
+    let old_name = if cfg!(windows) {
+        "unregistered.exe"
+    } else {
+        "unregistered"
+    };
+    let old = store.root().join("bin").join(old_name);
+    fs::copy(shim(), &old).unwrap();
+    fs::write(
+        old.with_extension("shim.json"),
+        serde_json::to_vec_pretty(&saucepan::core::launch::ShimConfig {
+            app: installed.app,
+            saucepan: false,
+        })
+        .unwrap(),
+    )
+    .unwrap();
+    let rejected = store.uninstall(installed.app, false, None).unwrap();
+    assert_eq!(rejected.status, Phase::Failed);
+    assert!(store.application(installed.app).is_ok());
+    let removed = store.uninstall(installed.app, true, None).unwrap();
+    assert_eq!(removed.status, Phase::Complete);
+    assert_eq!(removed.leftovers.len(), 1);
+    assert!(old.exists());
+}

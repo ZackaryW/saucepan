@@ -171,6 +171,10 @@ impl Store {
                         && op.status != Phase::Preparing
                     {
                         self.resume_application(&mut op)?;
+                    } else if matches!(op.action, Action::Uninstall { .. })
+                        && op.status != Phase::Preparing
+                    {
+                        self.resume_uninstall(&mut op)?;
                     } else {
                         let _lock = self.lock()?;
                         op.pending =
@@ -187,3 +191,4 @@ impl Store {
 mod managed;
 #[cfg(test)]
 mod tests;
+mod uninstall;

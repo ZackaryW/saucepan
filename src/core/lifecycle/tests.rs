@@ -1,6 +1,83 @@
 use super::*;
 
 #[test]
+fn uninstall_fences_pending_maintenance_and_claim_publication() {
+    use crate::models::{
+        index::{Binding, lifecycle::ShimAction},
+        source::Source,
+        store::{Request, Selector},
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let store = Store::create(&tmp.path().join("root")).unwrap();
+    let data = tmp.path().join("data");
+    fs::write(&data, b"fixture").unwrap();
+    let source = store
+        .register_source(Source::Local { path: data.clone() })
+        .unwrap();
+    let request = Request {
+        source_uuid: source.uuid,
+        selector: Selector::Local,
+        selection: Default::default(),
+        policies: Default::default(),
+    };
+    let entry = store.acquire(&request).unwrap();
+    let mut app = store.register_app("remove".into()).unwrap();
+    app.active = Some(Binding {
+        entry_uuid: entry.entry.uuid,
+        executable: "data".into(),
+    });
+    store
+        .save_record(&Record::Application(app.clone()))
+        .unwrap();
+    store
+        .install_shim(app.uuid, "fixture.exe", &data, false)
+        .unwrap();
+    let held =
+        crate::core::shims::shim_lock(store.root(), "fixture.exe", LockMode::Shared).unwrap();
+    let pending = store
+        .maintain_shim(
+            app.uuid,
+            "fixture.exe",
+            &data,
+            ShimAction::Replace,
+            false,
+            None,
+        )
+        .unwrap();
+    assert_eq!(pending.status, Phase::CommitIntent);
+    let removed = store.uninstall(app.uuid, false, None).unwrap();
+    assert_eq!(removed.status, Phase::CleanupPending);
+    drop(held);
+    assert_eq!(
+        store.reconcile(Some(pending.operation)).unwrap()[0].status,
+        Phase::Failed
+    );
+    assert_eq!(
+        store.reconcile(Some(removed.operation)).unwrap()[0].status,
+        Phase::Complete
+    );
+    assert!(
+        store
+            .claim_record(
+                &crate::core::index::claims::ClaimTarget {
+                    app: app.uuid,
+                    id: Uuid::new_v4(),
+                    expected: None
+                },
+                &request,
+                entry.entry.uuid
+            )
+            .is_err()
+    );
+    assert!(!store.root.join("bin/fixture.exe").exists());
+    store.reclaim().unwrap();
+    assert!(
+        entry.directory.exists(),
+        "surviving output policy retains content"
+    );
+}
+
+#[test]
 fn durable_candidate_survives_reclaim_and_invalid_candidate_releases_protection() {
     use crate::models::{
         index::lifecycle::{Installation, Probe},

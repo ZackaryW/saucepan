@@ -104,6 +104,11 @@ impl Store {
             if other.operation == op.operation || other.status.terminal() {
                 continue;
             }
+            if matches!(other.action, Action::Shim { .. } | Action::Update { .. })
+                && self.application(other.app).is_err()
+            {
+                continue;
+            }
             for change in other.shims {
                 ensure!(
                     !names(&change.desired).iter().any(|p| wanted.contains(p)),
@@ -343,6 +348,9 @@ impl Store {
             *op = self.operation(op.operation)?;
             if op.status == Phase::Complete {
                 return Ok(());
+            }
+            if self.application(op.app).is_err() {
+                op.status = Phase::Failed;
             }
             op.pending = vec![format!("{}: {error:#}", change.desired.name)];
             self.save_operation(op)?;

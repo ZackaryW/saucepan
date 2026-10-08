@@ -172,8 +172,18 @@ impl Store {
         for record in &journal.records {
             self.save_record(record)?;
         }
-        if let Some((app, operation)) = journal.retire {
-            self.retire_application_locked(app, operation)?;
+        if let Some((app, operation)) = journal.retire
+            && let Err(error) = self.retire_application_locked(app, operation)
+        {
+            let mut op = journal
+                .operation
+                .clone()
+                .context("retirement requires operation receipt")?;
+            op.status = crate::models::index::lifecycle::Phase::CleanupPending;
+            op.pending = vec![format!("index/{app}: {error:#}")];
+            self.save_operation(&op)?;
+            fs::remove_file(journal_path)?;
+            return Ok(());
         }
         if let Some(operation) = &journal.operation {
             self.save_operation(operation)?;

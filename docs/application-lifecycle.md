@@ -88,3 +88,30 @@ of replacing newer intent. Retry with a new operation ID. The lower-level
 `activate` still changes only a binding and may commit after deactivation;
 `update-claim` still changes only a resource claim. Neither silently acquires
 the other operation's meaning. Uninstall fences both kinds of later commit.
+
+```powershell
+saucepan --root ROOT uninstall APP_UUID
+saucepan --root ROOT reconcile --operation REMOVAL_OPERATION_UUID
+```
+
+Uninstall first marks the application removing, clears its claims/binding and
+rejects later mutation or launch. It then deletes only verified owned launchers
+and configurations. Existing native guards and target processes retain their
+output protection. Changed files remain untouched with a pending reason; missing
+owned files count as already cleaned. Unknown app-directory files also remain
+untouched. Other apps remain usable while cleanup is pending.
+
+Unregistered matching shims require explicit adoption or
+`uninstall APP_UUID --leave-unmanaged-shims`; the latter reports their names as
+leftovers. A completed removal is repeatable and returns its recorded result.
+An arbitrary missing application UUID is an error.
+
+On Windows, self-uninstall through Saucepan's own shim normally reports pending
+launcher cleanup until the wrapper exits. Finish reconciliation using a directly
+invoked retained or newly built Saucepan binary with `--root ROOT`. The command
+does not terminate targets or schedule a hidden cleanup service.
+
+Uninstall never deletes source working data or cached outputs. Later `reclaim`
+still uses surviving output policies, other claims/bindings and live leases.
+Removing a large-retention claim does not necessarily reduce the effective
+window while cached output records still carry that policy demand.

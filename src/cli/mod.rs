@@ -135,6 +135,13 @@ enum Commands {
     Deactivate {
         app: uuid::Uuid,
     },
+    Uninstall {
+        app: uuid::Uuid,
+        #[arg(long)]
+        leave_unmanaged_shims: bool,
+        #[arg(long)]
+        operation: Option<uuid::Uuid>,
+    },
     InstallShim {
         app: uuid::Uuid,
         name: String,
@@ -344,6 +351,14 @@ pub fn run() -> Result<()> {
                         "previous_binding": previous,
                     })
                 }
+                Commands::Uninstall {
+                    app,
+                    leave_unmanaged_shims,
+                    operation,
+                } => operation_value(
+                    store.uninstall(app, leave_unmanaged_shims, operation)?,
+                    &mut exit_code,
+                )?,
                 Commands::InstallShim {
                     app,
                     name,
