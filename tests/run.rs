@@ -73,6 +73,62 @@ fn setup() -> (tempfile::TempDir, Store, Request) {
     request.policies.eviction = Eviction::Latest { keep: 1 };
     (tmp, store, request)
 }
+
+fn markers(store: &Store) -> usize {
+    fs::read_dir(store.root().join(".locks"))
+        .unwrap()
+        .filter(|p| {
+            p.as_ref()
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with("live-")
+        })
+        .count()
+}
+
+#[test]
+fn retained_process_marker_survives_wrapper_death_then_is_swept() {
+    let (tmp, store, request) = setup();
+    let first = store.acquire(&request).unwrap();
+    let mut command = wrapper(&store, first.entry.uuid);
+    fixture(&mut command, tmp.path(), "hold");
+    let mut child = command
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    until(&tmp.path().join("ready"));
+    assert_eq!(markers(&store), 1);
+    store.reclaim().unwrap();
+    assert_eq!(markers(&store), 1);
+    #[cfg(windows)]
+    {
+        child.kill().unwrap();
+        child.wait().unwrap();
+        store.reclaim().unwrap();
+        assert_eq!(
+            markers(&store),
+            1,
+            "inherited marker removed with live target"
+        );
+    }
+    fs::write(tmp.path().join("release"), b"release").unwrap();
+    until(&tmp.path().join("done"));
+    #[cfg(unix)]
+    assert!(child.wait().unwrap().success());
+    let start = Instant::now();
+    while markers(&store) != 0 {
+        store.reclaim().unwrap();
+        assert!(start.elapsed() < Duration::from_secs(5));
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(
+        store.output(first.entry.uuid).unwrap().state,
+        Availability::Ready
+    );
+    assert_eq!(fs::read(first.directory.join("data")).unwrap(), b"payload");
+}
 fn wrapper(store: &Store, entry: uuid::Uuid) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_saucepan"));
     command
@@ -213,6 +269,12 @@ fn failed_launch_or_verification_does_not_leave_live_ownership() {
         assert!(!result.status.success());
         assert!(!tmp.path().join("ready").exists());
         assert!(result.stdout.is_empty());
+        store.reclaim().unwrap();
+        assert_eq!(
+            markers(&store),
+            0,
+            "failed run left stale markers after reclaim"
+        );
         assert!(
             store
                 .acquire(&request)

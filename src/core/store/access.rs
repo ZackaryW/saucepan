@@ -5,7 +5,7 @@ use crate::{
     models::store::{OutputEntry, ResolvedResource, VerificationMode},
     utils::{
         lock::{LockGuard, LockMode},
-        path::beneath,
+        path::{beneath, plain_metadata},
     },
 };
 use anyhow::Result;
@@ -179,7 +179,41 @@ impl Store {
         }
         Ok(false)
     }
+
+    /// Caller holds mutation coordination. Entry coordination excludes a launch
+    /// between marker creation and native locking, including older launchers.
+    pub(crate) fn sweep_closed_markers_locked(&self) -> Result<()> {
+        for candidate in fs::read_dir(self.root.join(".locks"))? {
+            let name = candidate?.file_name();
+            let Some(name) = name.to_str() else { continue };
+            let Some(entry) = marker_entry(name) else {
+                continue;
+            };
+            let _entry_lock = match LockGuard::acquire(
+                &self.root.join(format!(".locks/use-{entry}")),
+                LockMode::Exclusive,
+                Duration::ZERO,
+            ) {
+                Ok(lock) => lock,
+                Err(e) if e.kind() == io::ErrorKind::TimedOut => continue,
+                Err(e) => return Err(e.into()),
+            };
+            let path = beneath(&self.root, &format!(".locks/{name}"))?;
+            if plain_metadata(&path)?.is_file() && !marker_held(&path)? {
+                fs::remove_file(path)?;
+            }
+        }
+        Ok(())
+    }
 }
+
+fn marker_entry(name: &str) -> Option<Uuid> {
+    let parts = name.strip_prefix("live-")?;
+    let entry = Uuid::parse_str(parts.get(..36)?).ok()?;
+    let marker = Uuid::parse_str(parts.get(37..)?).ok()?;
+    (name == format!("live-{entry}-{marker}")).then_some(entry)
+}
+
 fn marker_held(path: &Path) -> io::Result<bool> {
     let mut options = OpenOptions::new();
     options.read(true).write(true);

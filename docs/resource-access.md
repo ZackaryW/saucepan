@@ -63,6 +63,12 @@ shared entry coordination without creating per-use markers. Only a dedicated
 process launch creates an inherited lifetime marker, while the shared guard
 continues protecting the output throughout the handoff to the child.
 
+Reclaim (including acquisition's automatic reclaim pass) also sweeps closed
+process markers for retained or active outputs. Busy entry locks and live native
+handles defer cleanup. This handles older launchers' markers and process crashes
+without relying on PIDs or timeouts. No background sweep runs when Saucepan is
+idle. Stable coordination lock files are retained and reused.
+
 For external tools, use `run ENTRY_UUID [--verification metadata|full] -- PROGRAM
 ARG...`. Saucepan sets `SAUCEPAN_RESOURCE_DIR` in the child's environment,
 overriding an inherited value without changing the parent environment. Arguments

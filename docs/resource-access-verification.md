@@ -1,5 +1,40 @@
 # Resource access verification
 
+## Lease-marker cleanup follow-up
+
+The `clean-lease-markers` follow-up was verified on Windows x86_64 on
+2026-10-08: formatting, strict all-target Clippy, all-target tests (57 passing,
+including fixture entry points), both hidden-console checks, isolated release
+acceptance, and strict OpenSpec validation passed.
+
+- `tests/access.rs::non_process_access_never_creates_lifetime_markers` failed
+  before the fix with four markers in its first iteration; afterward, 20 rounds
+  of native path/full/entry-lease/claim-lease access and CLI path/verify leave zero.
+- `sweep_preserves_live_markers_and_creation_windows_on_retained_outputs`
+  checks stale cleanup, native live handles, the protected creation window,
+  retained/active output preservation, unchanged provenance, malformed-name and
+  directory preservation, and stable coordination locks.
+- `tests/run.rs::retained_process_marker_survives_wrapper_death_then_is_swept`
+  confirms a live inherited marker remains after wrapper termination, then is
+  removed after target exit while the output stays ready. Failed-run coverage
+  also asserts zero stale markers after reclaim.
+- Fresh release acceptance at
+  `target/access-acceptance/3361f5bb-5b49-442c-9c42-0e04f1e9fdc9/report.json`
+  records zero markers after five path/verify pairs and removal of five seeded
+  stale markers on an active output. It verifies the previous mock launcher's
+  inherited marker after wrapper death. Original mock launcher digests are
+  unchanged. Application SHA-256 is
+  `89033bb5c24a18e575169368777f53ea5267632fb8b4824d156cc056521774e9`;
+  shim SHA-256 is
+  `1885d2404230b84ecca42798d39201b4990a2bac45abbf1c108594b89af807e9`.
+
+Cleanup runs during reclaim/acquisition, not on an idle timer. No schema,
+retention rule or installed mock binary changed. Linux/macOS and Rust 1.89
+execution remain unverified. The original resource-access evidence below is
+historical; its binary identities predate this follow-up.
+
+## Original resource-access change
+
 Verified on 2026-10-08 using Windows x86_64, Rust/Cargo 1.98.1.
 
 `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`,

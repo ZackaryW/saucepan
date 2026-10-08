@@ -222,3 +222,82 @@ fn activation_scans_once_per_phase_outside_mutation_lock() {
         (2, 2, 2 * fs::metadata(exe).unwrap().len() as usize)
     );
 }
+
+#[test]
+fn sweep_preserves_live_markers_and_creation_windows_on_retained_outputs() {
+    use crate::models::index::{Binding, Record};
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("data");
+    fs::write(&input, b"retained").unwrap();
+    let store = Store::create(&tmp.path().join("root")).unwrap();
+    let source = store
+        .register_source(Source::Local { path: input })
+        .unwrap();
+    let acquired = store
+        .acquire(&Request {
+            source_uuid: source.uuid,
+            selector: Selector::Local,
+            selection: Default::default(),
+            policies: Default::default(),
+        })
+        .unwrap();
+    let id = acquired.entry.uuid;
+    let before = fs::read(store.root().join(format!("index/{id}/index.json"))).unwrap();
+    let locks = store.root().join(".locks");
+    let unknown = locks.join("live-not-a-saucepan-marker");
+    fs::write(&unknown, b"preserve").unwrap();
+    let unrelated_dir = locks.join(format!("live-{id}-{}", Uuid::new_v4()));
+    fs::create_dir(&unrelated_dir).unwrap();
+    for active in [false, true] {
+        if active {
+            let mut app = store.register_app("active retained entry".into()).unwrap();
+            app.active = Some(Binding {
+                entry_uuid: id,
+                executable: "data".into(),
+            });
+            store.save_record(&Record::Application(app)).unwrap();
+        }
+        let closed = locks.join(format!("live-{id}-{}", Uuid::new_v4()));
+        fs::write(&closed, b"").unwrap();
+        let live = locks.join(format!("live-{id}-{}", Uuid::new_v4()));
+        let mut options = OpenOptions::new();
+        options.read(true).write(true).create_new(true);
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            options.share_mode(3);
+        }
+        let held = options.open(&live).unwrap();
+        #[cfg(unix)]
+        held.lock_shared().unwrap();
+        store.reclaim().unwrap();
+        assert!(!closed.exists());
+        assert!(live.exists());
+        drop(held);
+        store.reclaim().unwrap();
+        assert!(!live.exists());
+
+        // Simulate the exact pre-lock creation window: shared coordination is
+        // already held but the new marker has not yet acquired native ownership.
+        let guard = store.lease(id, VerificationMode::Metadata).unwrap();
+        let creating = guard.marker_path.clone();
+        fs::write(&creating, b"").unwrap();
+        store.reclaim().unwrap();
+        assert!(creating.exists(), "sweep raced marker initialization");
+        drop(guard);
+        store.reclaim().unwrap();
+        assert!(!creating.exists());
+    }
+    assert_eq!(fs::read(unknown).unwrap(), b"preserve");
+    assert!(unrelated_dir.is_dir());
+    assert!(locks.join("mutation").exists());
+    assert!(locks.join(format!("use-{id}")).exists());
+    assert_eq!(
+        fs::read(store.root().join(format!("index/{id}/index.json"))).unwrap(),
+        before
+    );
+    assert_eq!(
+        fs::read(acquired.directory.join("data")).unwrap(),
+        b"retained"
+    );
+}

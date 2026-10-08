@@ -23,6 +23,8 @@ impl Store {
         self.reclaim_locked()
     }
     pub(crate) fn reclaim_locked(&self) -> Result<ReclaimReport> {
+        // Bookkeeping cleanup is independent of whether payloads are evictable.
+        self.sweep_closed_markers_locked()?;
         let records = self.records()?;
         let mut groups: BTreeMap<String, Vec<_>> = BTreeMap::new();
         let mut active = BTreeSet::new();

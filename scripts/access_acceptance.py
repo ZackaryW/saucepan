@@ -59,6 +59,11 @@ request = save("app-request.json", {
 })
 managed = call("acquire", request, "--app", app)
 entry = managed["claim"]["entry_uuid"]
+for _ in range(5):
+    assert call("path", entry)["verification"] == "metadata"
+    assert call("verify", entry)["verification"] == "full"
+lookup_markers = len(list((ROOT / ".locks").glob("live-*")))
+assert lookup_markers == 0
 probe = save("probe.json", {"args": ["--version"], "stdout_contains": "saucepan 0.1.0+efficient-access", "timeout_seconds": 10})
 call("activate", app, entry, BINARY.name, probe)
 installed = Path(call("install-shim", app, BINARY.name, SHIM, "--saucepan")["shim"])
@@ -104,6 +109,14 @@ if os.name == "nt" and old_shim.exists():
         assert time.monotonic() < deadline
         time.sleep(.01)
     entry = replacement
+
+# Closed markers from older lookups are cleaned even for the active output.
+stale_markers = [ROOT / ".locks" / f"live-{entry}-{uuid.uuid4()}" for _ in range(5)]
+for marker in stale_markers:
+    marker.touch()
+call("reclaim")
+assert all(not marker.exists() for marker in stale_markers)
+assert call("path", entry)["entry_uuid"] == entry
 
 (RUN / "data").write_text("leased payload", encoding="utf-8")
 data_source = call("register-source", save("data-source.json", {"type": "local", "path": str(RUN / "data")}))["uuid"]
@@ -154,6 +167,8 @@ report = {
     "native_claim_evidence": str(RUN / "native-claim.log"),
     "existing_mock_launcher_unchanged": before == after,
     "previous_launcher_marker_compatible_after_wrapper_death": old_marker_verified,
+    "markers_after_five_path_and_verify_calls": lookup_markers,
+    "stale_markers_removed_from_active_output": len(stale_markers),
     "platform": os.name,
 }
 save("report.json", report)
