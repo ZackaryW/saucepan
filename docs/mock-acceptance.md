@@ -1,5 +1,7 @@
 # Simulated installation
 
+For the current coordinated lifecycle, use `uv run --no-project python scripts/lifecycle_acceptance.py`. It installs two real release builds in a fresh `target/lifecycle-acceptance/<uuid>/root`, covers update failure, rollback, launcher maintenance and recoverable uninstall, and compares every existing mock file's digest. See [lifecycle verification](lifecycle-verification.md). The older `mock` recipe below intentionally writes `mock`; it was not rerun for the lifecycle change. Do not run an old manager against newly written lifecycle metadata.
+
 Run `uv run --no-project python scripts/acceptance.py` (or Python 3.11+ directly) from the repository. The harness builds actual release executables with build IDs `acceptance-a` and `acceptance-b`, packages them as ZIP assets, and serves them through an explicit loopback GitHub-compatible fixture. It uses the real provider and public CLI for every source, acquisition, claim, activation, and reclaim operation.
 
 The target is `mock/` itself. The harness inspects and reuses an existing compatible root; it never recursively wipes it. Each run adds a distinct fixture source and keeps prior provenance. Recipes and packaged builds live in `target/acceptance/<run-uuid>/`. `target/acceptance/latest.json` records the latest successful run, build digests, UUIDs, process results, and active binding. Both `target/` and `mock/` are ignored by Git.
@@ -35,10 +37,10 @@ For a real release definition, register `github_release`, save its UUID in a req
 ```powershell
 saucepan --root $root bootstrap request.json ./target/release/saucepan-shim.exe
 saucepan --root $root self-update APP_UUID CLAIM_UUID
-saucepan --root $root activate APP_UUID RETAINED_ENTRY_UUID saucepan.exe probe.json
+saucepan --root $root rollback APP_UUID CLAIM_UUID RETAINED_ENTRY_UUID probe.json
 ```
 
-The final command is rollback through the same validation/probe path. A reclaimed output must be reacquired first. Normal self-update never replaces the shim. `install-shim` refuses an occupied destination; replacing the launcher is separate maintenance, performed while it is not running.
+The final command validates the retained output and moves the claim and binding together; primitive `activate` remains available for binding-only changes. A reclaimed output must be reacquired first. Normal self-update never replaces the shim. `install-shim` refuses an occupied destination; use `replace-shim` for owned launcher maintenance, then `reconcile` if a running launcher leaves replacement pending. These commands return lifecycle operation records; success is `status: "complete"`.
 
 Native process checks run with `cargo test --test managed`. On Windows use `uv run --no-project python scripts/verify_windows_console.py` for an attached but hidden console: this checks Ctrl-Break forwarding in addition to launcher death, inherited lease lifetime, arguments, streams, exit status, failed activation, and rollback.
 
@@ -63,6 +65,10 @@ not evidence of runtime parity.
 
 When a previous Windows shim exists in `mock/bin`, the access recipe copies it
 into the isolated installation to verify inherited-marker compatibility after
-wrapper death. It never replaces the original shim. See
+wrapper death. In that isolated fixture only, it starts the old reader against
+the old application-record shape, then restores current metadata after the
+target has acquired its lease. This tests a surviving old process across an
+upgrade; it does not promise that an old launcher reads new application records.
+It never replaces the original shim. See
 [verification evidence](resource-access-verification.md) for scenario coverage
 and the latest recorded build identities.

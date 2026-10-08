@@ -211,6 +211,54 @@ fn failed_install_has_no_live_application_and_cli_install_matches_native_results
 }
 
 #[test]
+fn interrupted_preparation_rechecks_probe_without_publishing_a_transition() {
+    use saucepan::models::index::lifecycle::Action;
+    let (_tmp, store, input) = setup();
+    let installed = store
+        .install_application(&input, &shim(), &Default::default(), None)
+        .unwrap();
+    let before = serde_json::to_value(store.application(installed.app).unwrap()).unwrap();
+    let probe = Probe {
+        stdout_contains: "probe must be checked again".into(),
+        ..input.probe.clone()
+    };
+    let id = uuid::Uuid::new_v4();
+    let (_, guard) = store
+        .begin_operation(
+            id,
+            Some(installed.app),
+            Action::Update {
+                claim: installed.claim,
+                probe: probe.clone(),
+                rollback: None,
+            },
+        )
+        .unwrap();
+    drop(guard);
+    let reopened = Store::open(store.root()).unwrap();
+    assert_eq!(
+        reopened.reconcile(Some(id)).unwrap()[0].status,
+        Phase::Preparing
+    );
+    let result = reopened
+        .update_application(
+            installed.app,
+            installed.claim,
+            &probe,
+            None,
+            &Default::default(),
+            Some(id),
+        )
+        .unwrap();
+    assert_eq!(result.operation, id);
+    assert_eq!(result.status, Phase::Failed);
+    assert_eq!(
+        serde_json::to_value(reopened.application(installed.app).unwrap()).unwrap(),
+        before
+    );
+}
+
+#[test]
 fn managed_update_detects_deactivation_during_probe() {
     let (_tmp, store, input) = setup();
     let installed = store
@@ -475,6 +523,19 @@ fn uninstall_preserves_changed_and_unknown_files_without_blocking_other_apps() {
             .is_ok()
     );
     fs::write(&path, original).unwrap();
+    let sidecar = path.with_extension("shim.json");
+    let config = fs::read(&sidecar).unwrap();
+    fs::write(&sidecar, b"changed after first removal attempt").unwrap();
+    assert_eq!(
+        store.reconcile(Some(removed.operation)).unwrap()[0].status,
+        Phase::CleanupPending
+    );
+    assert_eq!(
+        fs::read(&sidecar).unwrap(),
+        b"changed after first removal attempt"
+    );
+    assert!(path.exists(), "pair preflight preserves the executable too");
+    fs::write(&sidecar, config).unwrap();
     let unknown = store
         .root()
         .join("index")

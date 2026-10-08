@@ -85,7 +85,9 @@ fn durable_candidate_survives_reclaim_and_invalid_candidate_releases_protection(
         source::Source,
         store::{Availability, Request, Selector},
     };
-    for corrupt in [false, true] {
+    // Interrupt before either file, after the sidecar, and after both files.
+    // Also reject corrupt and missing candidates after partial publication.
+    for phase in 0..5 {
         let tmp = tempfile::tempdir().unwrap();
         let store = Store::create(&tmp.path().join("root")).unwrap();
         let exe = std::env::current_exe().unwrap();
@@ -127,14 +129,27 @@ fn durable_candidate_survives_reclaim_and_invalid_candidate_releases_protection(
             Some("pending lifecycle commit intent")
         );
         drop(held);
-        if corrupt {
+        if phase >= 1 {
+            fs::write(
+                store.root.join("bin/tool.shim.json"),
+                crate::core::shims::config_bytes(op.app, false).unwrap(),
+            )
+            .unwrap();
+        }
+        if phase >= 2 {
+            fs::copy(&exe, store.root.join("bin/tool.exe")).unwrap();
+        }
+        assert!(store.application(op.app).is_err());
+        if phase == 3 {
             fs::write(store.path(entry).unwrap().join(&name), b"corrupt").unwrap();
+        } else if phase == 4 {
+            fs::remove_file(store.path(entry).unwrap().join(&name)).unwrap();
         }
         let reopened = Store::open(store.root()).unwrap();
         let result = reopened.reconcile(Some(op.operation)).unwrap().remove(0);
         assert_eq!(
             result.status,
-            if corrupt {
+            if phase >= 3 {
                 Phase::Failed
             } else {
                 Phase::Complete
@@ -142,8 +157,10 @@ fn durable_candidate_survives_reclaim_and_invalid_candidate_releases_protection(
             "{:?}",
             result.pending
         );
-        if corrupt {
+        if phase >= 3 {
             assert!(reopened.application(op.app).is_err());
+            assert!(!store.root.join("bin/tool.exe").exists());
+            assert!(!store.root.join("bin/tool.shim.json").exists());
             reopened.reclaim().unwrap();
             assert_eq!(
                 reopened.output(entry).unwrap().state,
@@ -159,6 +176,8 @@ fn durable_candidate_survives_reclaim_and_invalid_candidate_releases_protection(
                     .entry_uuid,
                 entry
             );
+            assert_eq!(reopened.application(op.app).unwrap().claims.len(), 1);
+            assert_eq!(reopened.operation(op.operation).unwrap().claim, op.claim);
         }
     }
 }
@@ -252,6 +271,58 @@ fn lifecycle_journal_replays_records_retirement_and_receipt() {
                 Phase::Complete
             );
             assert!(!store.root.join(".staging/transaction.json").exists());
+        }
+    }
+}
+
+#[test]
+fn lifecycle_journal_couples_application_and_receipt_at_each_record_boundary() {
+    for app_written in [false, true] {
+        for receipt_written in [false, true] {
+            let tmp = tempfile::tempdir().unwrap();
+            let store = Store::create(&tmp.path().join("root")).unwrap();
+            let mut app = store.register_app("transition".into()).unwrap();
+            let (mut op, guard) = store
+                .begin_operation(
+                    Uuid::new_v4(),
+                    Some(app.uuid),
+                    Action::Uninstall {
+                        leave_unmanaged_shims: false,
+                    },
+                )
+                .unwrap();
+            drop(guard);
+            app.state = AppState::Removing;
+            app.bump().unwrap();
+            op.status = Phase::CleanupPending;
+            op.changed = true;
+            let record = Record::Application(app.clone());
+            index::write(
+                &store.root.join(".staging/transaction.json"),
+                &Journal {
+                    records: vec![record.clone()],
+                    operation: Some(op.clone()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            if app_written {
+                store.save_record(&record).unwrap();
+            }
+            if receipt_written {
+                store.save_operation(&op).unwrap();
+            }
+            let reopened = Store::open(store.root()).unwrap();
+            assert!(reopened.application(app.uuid).is_err());
+            assert_eq!(
+                serde_json::to_value(reopened.record(app.uuid).unwrap()).unwrap(),
+                serde_json::to_value(record).unwrap()
+            );
+            assert_eq!(
+                reopened.operation(op.operation).unwrap().status,
+                Phase::CleanupPending
+            );
+            assert!(reopened.register_app("unrelated".into()).is_ok());
         }
     }
 }

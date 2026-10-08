@@ -1,5 +1,18 @@
 # Resource access verification
 
+## Lifecycle regression run
+
+The lifecycle change reran the full access/marker suite, both hidden Windows
+console checks and the isolated release acceptance on 2026-10-08. The report at
+`target/access-acceptance/b63dfc03-15b0-4c90-a887-34b821c2c360/report.json`
+records zero markers after five path/verify pairs, five stale markers removed,
+successful old-process inherited-marker protection and unchanged mock launchers.
+The old reader starts against an isolated copy of its original record shape;
+the recipe restores current metadata after the target has started. This is
+process-lifetime compatibility, not old-writer/new-metadata compatibility.
+See [lifecycle verification](lifecycle-verification.md) for current whole-change
+evidence. All counts and binary identities in the sections below are historical.
+
 ## Application deactivation follow-up
 
 The `deactivate-applications` change passed formatting, strict all-target Clippy,
