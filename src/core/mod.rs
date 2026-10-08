@@ -2,6 +2,7 @@ pub mod activation;
 pub mod bootstrap;
 pub mod index;
 pub mod launch;
+pub mod lifecycle;
 pub mod policy;
 pub mod source;
 pub mod store;

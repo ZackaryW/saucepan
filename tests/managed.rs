@@ -220,6 +220,7 @@ fn deactivation_preserves_live_targets_claims_and_other_bindings() {
         serde_json::json!({"app": app.uuid, "deactivated": true, "previous_binding": before.active})
     );
     before.active = None;
+    before.revision += 1;
     assert_eq!(
         serde_json::to_value(store.application(app.uuid).unwrap()).unwrap(),
         serde_json::to_value(&before).unwrap()

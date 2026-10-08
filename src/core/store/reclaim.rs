@@ -105,6 +105,7 @@ impl Store {
                 self.commit(Journal {
                     records: vec![Record::Output(Box::new(entry.clone()))],
                     stage: None,
+                    ..Default::default()
                 })?;
                 let path = beneath(&self.root, &format!("store/{}", entry.uuid))?;
                 match fs::remove_dir_all(&path) {
@@ -120,6 +121,7 @@ impl Store {
                 self.commit(Journal {
                     records: vec![Record::Output(Box::new(entry))],
                     stage: None,
+                    ..Default::default()
                 })?;
             }
         }

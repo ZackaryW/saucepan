@@ -2,6 +2,8 @@ use super::store::{OutputEntry, Request};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use uuid::Uuid;
+pub mod lifecycle;
+pub use lifecycle::{AppState, OwnedShim};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -39,6 +41,21 @@ pub struct Application {
     pub settings: Settings,
     pub claims: BTreeMap<Uuid, Claim>,
     pub active: Option<Binding>,
+    #[serde(default)]
+    pub state: AppState,
+    #[serde(default)]
+    pub revision: u64,
+    #[serde(default)]
+    pub shims: Vec<OwnedShim>,
+}
+impl Application {
+    pub(crate) fn bump(&mut self) -> anyhow::Result<()> {
+        self.revision = self
+            .revision
+            .checked_add(1)
+            .ok_or_else(|| anyhow::anyhow!("application revision overflow"))?;
+        Ok(())
+    }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]

@@ -15,13 +15,7 @@ use anyhow::{Context, Result, ensure};
 use std::{fs, path::Path, process::Command, time::Duration};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Probe {
-    pub args: Vec<String>,
-    pub stdout_contains: String,
-    pub timeout_seconds: u64,
-}
+pub use crate::models::index::lifecycle::Probe;
 
 impl Store {
     /// Clear the active binding without releasing claims, leases, or cached content.
@@ -31,9 +25,11 @@ impl Store {
         let mut application = self.application(app)?;
         let previous = application.active.take();
         if previous.is_some() {
+            application.bump()?;
             self.commit(Journal {
                 records: vec![Record::Application(application)],
                 stage: None,
+                ..Default::default()
             })?;
         }
         Ok(previous)
@@ -105,9 +101,11 @@ impl Store {
             executable: executable.into(),
         };
         application.active = Some(binding.clone());
+        application.bump()?;
         self.commit(Journal {
             records: vec![Record::Application(application)],
             stage: None,
+            ..Default::default()
         })?;
         Ok(binding)
     }

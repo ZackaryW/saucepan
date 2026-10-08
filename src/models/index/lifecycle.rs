@@ -1,0 +1,106 @@
+use super::Application;
+use crate::models::store::Request;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AppState {
+    #[default]
+    Ready,
+    Removing,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OwnedShim {
+    pub name: String,
+    pub sidecar: String,
+    pub digest: String,
+    pub config_digest: String,
+    pub saucepan: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Probe {
+    pub args: Vec<String>,
+    pub stdout_contains: String,
+    pub timeout_seconds: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ShimAction {
+    Install,
+    Replace,
+    Adopt,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum Action {
+    Install {
+        name: String,
+        request: Box<Request>,
+        probe: Probe,
+        shim: String,
+        digest: String,
+        saucepan: bool,
+    },
+    Update {
+        claim: Uuid,
+        probe: Probe,
+        rollback: Option<Uuid>,
+    },
+    Shim {
+        action: ShimAction,
+        name: String,
+        digest: String,
+        saucepan: bool,
+    },
+    Uninstall {
+        leave_unmanaged_shims: bool,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Phase {
+    Preparing,
+    CommitIntent,
+    CleanupPending,
+    Complete,
+    Failed,
+    Conflict,
+}
+impl Phase {
+    pub fn terminal(self) -> bool {
+        matches!(self, Self::Complete | Self::Failed | Self::Conflict)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ShimChange {
+    pub previous: Option<OwnedShim>,
+    pub desired: OwnedShim,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Operation {
+    pub operation: Uuid,
+    pub app: Uuid,
+    pub action: Action,
+    pub fingerprint: String,
+    pub status: Phase,
+    pub changed: bool,
+    pub expected_revision: Option<u64>,
+    pub claim: Uuid,
+    pub candidate: Option<Uuid>,
+    pub desired: Option<Application>,
+    pub shims: Vec<ShimChange>,
+    pub pending: Vec<String>,
+    pub leftovers: Vec<String>,
+}

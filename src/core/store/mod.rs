@@ -146,6 +146,7 @@ impl Store {
                 self.commit(Journal {
                     records: vec![self.claim_record(target, request, entry.uuid)?],
                     stage: None,
+                    ..Default::default()
                 })?;
             }
             return Ok(Acquired {
@@ -191,6 +192,7 @@ impl Store {
         self.commit(Journal {
             records,
             stage: Some((stage_name, entry.uuid)),
+            ..Default::default()
         })?;
         let directory = self.root.join("store").join(entry.uuid.to_string());
         Ok(Acquired {

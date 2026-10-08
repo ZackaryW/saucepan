@@ -52,9 +52,11 @@ impl Store {
         let _lock = self.lock()?;
         let mut application = self.application(app)?;
         application.claims.remove(&id).context("claim missing")?;
+        application.bump()?;
         self.commit(Journal {
             records: vec![Record::Application(application)],
             stage: None,
+            ..Default::default()
         })
     }
     pub fn set_settings(&self, app: Uuid, settings: Settings) -> Result<()> {
@@ -63,10 +65,15 @@ impl Store {
         }
         let _lock = self.lock()?;
         let mut application = self.application(app)?;
+        if application.settings.source_filter == settings.source_filter {
+            return Ok(());
+        }
         application.settings = settings;
+        application.bump()?;
         self.commit(Journal {
             records: vec![Record::Application(application)],
             stage: None,
+            ..Default::default()
         })
     }
     /// Filters only this application's existing claims. Settings are not grants.
@@ -108,6 +115,7 @@ impl Store {
                 entry_uuid: entry,
             },
         );
+        app.bump()?;
         Ok(Record::Application(app))
     }
 }

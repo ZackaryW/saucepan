@@ -13,11 +13,15 @@ use std::{collections::BTreeMap, fs, path::Path};
 use uuid::Uuid;
 pub(crate) mod claims;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Journal {
     pub records: Vec<Record>,
     pub stage: Option<(String, Uuid)>,
+    #[serde(default)]
+    pub operation: Option<crate::models::index::lifecycle::Operation>,
+    #[serde(default)]
+    pub retire: Option<(Uuid, Uuid)>,
 }
 
 pub(crate) fn read<T: DeserializeOwned>(path: &Path) -> Result<T> {
@@ -39,7 +43,13 @@ impl Store {
     }
     pub fn application(&self, id: Uuid) -> Result<Application> {
         match self.record(id)? {
-            Record::Application(a) => Ok(a),
+            Record::Application(a) => {
+                ensure!(
+                    a.state == crate::models::index::AppState::Ready,
+                    "application is removing"
+                );
+                Ok(a)
+            }
             _ => bail!("not an application"),
         }
     }
@@ -75,6 +85,9 @@ impl Store {
             settings: Settings::default(),
             claims: BTreeMap::new(),
             active: None,
+            state: Default::default(),
+            revision: 0,
+            shims: Vec::new(),
         };
         self.save_record(&Record::Application(app.clone()))?;
         Ok(app)
@@ -159,6 +172,12 @@ impl Store {
         for record in &journal.records {
             self.save_record(record)?;
         }
+        if let Some((app, operation)) = journal.retire {
+            self.retire_application_locked(app, operation)?;
+        }
+        if let Some(operation) = &journal.operation {
+            self.save_operation(operation)?;
+        }
         fs::remove_file(journal_path)?;
         Ok(())
     }
@@ -205,6 +224,7 @@ mod tests {
                 &Journal {
                     records: vec![inactive.clone()],
                     stage: None,
+                    ..Default::default()
                 },
             )
             .unwrap();
@@ -275,6 +295,7 @@ mod tests {
                     stage.path().file_name().unwrap().to_str().unwrap().into(),
                     entry.uuid,
                 )),
+                ..Default::default()
             };
             write(&store.root.join(".staging/transaction.json"), &journal).unwrap();
             if renamed {
@@ -342,6 +363,7 @@ mod tests {
             &Journal {
                 records: vec![Record::Application(app.clone())],
                 stage: None,
+                ..Default::default()
             },
         )
         .unwrap();

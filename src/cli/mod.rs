@@ -37,6 +37,16 @@ enum Commands {
         release: PathBuf,
     },
     Init,
+    /// List durable lifecycle operations, including pending cleanup.
+    Operations {
+        #[arg(long)]
+        app: Option<uuid::Uuid>,
+    },
+    /// Resume recorded lifecycle work without inferring ownership.
+    Reconcile {
+        #[arg(long)]
+        operation: Option<uuid::Uuid>,
+    },
     RegisterApp {
         name: String,
     },
@@ -113,6 +123,7 @@ pub fn run() -> Result<()> {
         test_now: args.test_now,
         test_github_api: args.test_github_api,
     };
+    let mut exit_code = 0;
     let value = match args.command {
         Commands::Init => {
             let store = Store::create(&root)?;
@@ -121,6 +132,17 @@ pub fn run() -> Result<()> {
         command => {
             let store = Store::open(&root)?;
             match command {
+                Commands::Operations { app } => serde_json::to_value(store.operations(app)?)?,
+                Commands::Reconcile { operation } => {
+                    let results = store.reconcile(operation)?;
+                    if results
+                        .iter()
+                        .any(|op| op.status != crate::models::index::lifecycle::Phase::Complete)
+                    {
+                        exit_code = 2;
+                    }
+                    serde_json::to_value(results)?
+                }
                 Commands::RegisterApp { name } => serde_json::to_value(store.register_app(name)?)?,
                 Commands::Bootstrap {
                     request,
@@ -221,5 +243,8 @@ pub fn run() -> Result<()> {
         }
     };
     println!("{}", serde_json::to_string_pretty(&value)?);
+    if exit_code != 0 {
+        std::process::exit(exit_code);
+    }
     Ok(())
 }
