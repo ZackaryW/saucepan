@@ -12,7 +12,8 @@ Read overlapping requirements together using these responsibility boundaries:
 | [source-resolution](source-resolution/spec.md) | Provider resolution, discovery freshness and asset selection |
 | [output-acquisition](output-acquisition/spec.md) | Immutable output identity, acquisition and reuse |
 | [output-policies](output-policies/spec.md) | Retention demand, protection and reclaim eligibility |
-| [application-claims](application-claims/spec.md) | Request-bearing associations and primitive claim operations |
+| [application-claims](application-claims/spec.md) | Request-bearing associations, context metadata and primitive claim operations |
+| [claim-query](claim-query/spec.md) | Application-scoped context matching and consistent metadata snapshots |
 | [application-deactivation](application-deactivation/spec.md) | Binding-only deactivation and later reactivation |
 | [application-lifecycle](application-lifecycle/spec.md) | Coordinated install/update/rollback and logical uninstall |
 | [lifecycle-recovery](lifecycle-recovery/spec.md) | Operation identity, phases, retries, recovery and integrated acceptance |
