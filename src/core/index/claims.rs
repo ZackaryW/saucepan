@@ -2,7 +2,10 @@ use super::Journal;
 use crate::{
     core::{Store, source::AcquireOptions},
     models::{
-        index::{Claim, ClaimContext, ClaimView, Claimed, Record, Settings, validate_context},
+        index::{
+            Application, Claim, ClaimContext, ClaimView, Claimed, Record, Settings,
+            validate_context,
+        },
         store::Request,
     },
 };
@@ -135,6 +138,14 @@ impl Store {
     pub fn claims(&self, app: Uuid) -> Result<Vec<ClaimView>> {
         let _lock = self.lock()?;
         let application = self.application(app)?;
+        self.claim_views_locked(application, |_| true)
+    }
+    /// Caller holds the mutation lock for the application and output snapshot.
+    pub(crate) fn claim_views_locked(
+        &self,
+        application: Application,
+        matches: impl Fn(&Claim) -> bool,
+    ) -> Result<Vec<ClaimView>> {
         application
             .claims
             .into_values()
@@ -145,6 +156,7 @@ impl Store {
                         .source_filter
                         .contains(&c.request.source_uuid)
             })
+            .filter(matches)
             .map(|claim| {
                 let state = self.output(claim.entry_uuid)?.state;
                 Ok(ClaimView { claim, state })

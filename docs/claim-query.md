@@ -28,3 +28,50 @@ context edit changes their captured application revision. Deactivation and
 recovery preserve labels. Release/uninstall remove them with the claim; reclaim
 keeps them alongside the claim's unavailable output. Managed installation and
 bootstrap start with empty context; use explicit replacement to label them.
+
+## Native queries
+
+`core::query` exports `ClaimQuery`, `Condition`, `Operator`, and `QueryResult`.
+`Store::query_claims(&query)` reads one application's filtered claims under the
+metadata lock. The JSON form is:
+
+```json
+{
+  "app": "00000000-0000-4000-8000-000000000001",
+  "where": [
+    {"key": "project", "op": "eq", "value": "C:/work/project-a"},
+    {"key": "source.alias", "op": "glob", "value": "skills-*"}
+  ]
+}
+```
+
+All conditions must match. A missing key fails even `glob: "*"`. An explicit
+empty `where` returns all claims visible through the app's source filter. Up to
+64 conditions are allowed; key/value limits match context. Unknown fields,
+operators, missing required fields, and malformed patterns fail even when there
+are no candidate claims. A missing/removing/non-application UUID is an error.
+
+Results contain `app`, `revision`, and `claims` (the existing claim/availability
+views, now including context). Every match is returned in UUID order, including
+duplicate labels and unavailable outputs. Zero matches succeeds with an empty
+array. Referenced output metadata corruption fails the query. Results do not
+automatically follow later edits.
+
+`eq` compares literal complete strings, including `*`. `glob` matches the complete
+string with `*` (zero or more Unicode scalars), `?` (one scalar), and backslash
+escapes for `*?\\[]{}`. Unescaped brackets/braces and unsupported/trailing escapes
+fail. Repeated stars act as one. Separators and newlines are ordinary characters;
+Windows and Unix use the same case-sensitive semantics. JSON requires doubling
+backslashes: `"skills-\\*"` matches a literal star. No shell or filesystem expansion
+occurs, and Unicode is not normalized.
+
+Queries read metadata without refreshing sources, checking payload integrity,
+changing revisions, or holding leases. Existing pending transaction recovery
+still runs when opening/locking the store. A result's application revision tracks
+application mutations, not all output availability changes.
+
+For consumption, `Store::lease(result.claims[i].claim.entry_uuid, mode)` selects
+that exact output; `Store::lease_claim(app, claim, mode)` selects the claim's current
+output atomically with lease protection. Search followed by either operation is
+not one atomic operation and can fail if reclaim/removal wins. Context and queries
+provide neither authentication nor standing ownership of future matches.
