@@ -39,6 +39,28 @@ pub(crate) struct Prepared {
     pub stale: bool,
 }
 impl Store {
+    /// Recreate saved provenance without consulting a moving selector. The caller
+    /// compares the complete manifest and dependencies before publication.
+    pub(crate) fn prepare_exact(
+        &self,
+        entry: &crate::models::store::OutputEntry,
+        options: &AcquireOptions,
+    ) -> Result<Prepared> {
+        match &entry.resolved {
+            Resolved::Local => self.prepare(&entry.request, options),
+            Resolved::Git { commit } => {
+                let mut pinned = entry.request.clone();
+                pinned.selector = Selector::Commit {
+                    commit: commit.clone(),
+                };
+                self.prepare(&pinned, options)
+            }
+            Resolved::Release { .. } | Resolved::Url { .. } => {
+                let temp = tempfile::tempdir_in(self.root.join(".staging"))?;
+                self.prepare_remote_resolved(&entry.request, options, temp, Some(&entry.resolved))
+            }
+        }
+    }
     pub(crate) fn prepare(&self, request: &Request, options: &AcquireOptions) -> Result<Prepared> {
         let record = self.source(request.source_uuid)?;
         let temp = tempfile::tempdir_in(self.root.join(".staging"))?;

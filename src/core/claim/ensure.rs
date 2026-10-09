@@ -60,8 +60,37 @@ impl Store {
                         "existing claim context differs; use revision-checked context replacement"
                     )
                 );
+                let entry = self.output(existing.claim.entry_uuid)?;
+                if let Err(error) = self.metadata_path(&entry) {
+                    if Error::from_anyhow(&error).code != ErrorCode::ContentUnavailable {
+                        return Err(error);
+                    }
+                    drop(_lock);
+                    return self.recover_claim_view(
+                        app,
+                        existing.claim.uuid,
+                        Some(application.revision),
+                        existing.relative.clone(),
+                        options,
+                    );
+                }
                 if effective.output.identical == Identical::Reuse {
-                    let selected = self.select_existing(existing, application.revision)?;
+                    let selected = match self.select_existing(existing, application.revision) {
+                        Ok(selected) => selected,
+                        Err(error)
+                            if Error::from_anyhow(&error).code == ErrorCode::ContentUnavailable =>
+                        {
+                            drop(_lock);
+                            return self.recover_claim_view(
+                                app,
+                                existing.claim.uuid,
+                                Some(application.revision),
+                                existing.relative.clone(),
+                                options,
+                            );
+                        }
+                        Err(error) => return Err(error),
+                    };
                     drop(_lock);
                     return self.finish_ensure(app, selected);
                 }

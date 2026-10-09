@@ -358,6 +358,9 @@ impl AppSession {
     pub fn update(&self, claim: Uuid, options: &AcquireOptions) -> Result<Claimed> {
         self.store.update_claim(self.app, claim, options)
     }
+    pub fn recover(&self, claim: Uuid, options: &AcquireOptions) -> Result<Claimed> {
+        self.store.recover_claim(self.app, claim, options)
+    }
     pub fn release(&self, claim: Uuid) -> Result<()> {
         self.store.release_claim(self.app, claim)
     }

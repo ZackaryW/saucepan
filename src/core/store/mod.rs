@@ -19,7 +19,7 @@ mod reclaim;
 pub(crate) struct Acquisition {
     pub acquired: Acquired,
     pub claim: Option<Claim>,
-    lease: Option<ResourceLease>,
+    pub(crate) lease: Option<ResourceLease>,
 }
 
 pub(crate) fn json_digest(value: &impl serde::Serialize) -> Result<String> {
@@ -57,9 +57,19 @@ impl Store {
             Error::new(ErrorCode::ContentUnavailable, "entry is unavailable")
         );
         let path = beneath(&self.root, &format!("store/{}", entry.uuid))?;
+        let metadata = plain_metadata(&path).map_err(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                anyhow::Error::new(error).context(Error::new(
+                    ErrorCode::ContentUnavailable,
+                    "output directory is unavailable",
+                ))
+            } else {
+                anyhow::Error::new(error)
+            }
+        })?;
         ensure!(
-            plain_metadata(&path)?.is_dir(),
-            "output root is not a directory"
+            metadata.is_dir(),
+            Error::new(ErrorCode::IntegrityError, "output root is not a directory")
         );
         Ok(path)
     }
@@ -151,6 +161,17 @@ impl Store {
                 ))
             }
         })?;
+        self.publish_prepared(request, prepared, claim, retain, false)
+    }
+
+    pub(crate) fn publish_prepared(
+        &self,
+        request: &Request,
+        prepared: super::source::Prepared,
+        claim: Option<super::claim::operations::ClaimTarget>,
+        retain: bool,
+        force_new: bool,
+    ) -> Result<Acquisition> {
         let content = prepared.temp.path().join("content");
         let files = manifest(&content)?;
         for bin in &request.selection.bin {
@@ -187,11 +208,24 @@ impl Store {
                 }
             })
             .collect();
-        if request.policies.identical == Identical::Reuse
-            && let Some(entry) = outputs
+        let reusable = if !force_new && request.policies.identical == Identical::Reuse {
+            outputs
                 .iter()
-                .find(|e| e.fingerprint == fingerprint && e.state == Availability::Ready)
-        {
+                .filter(|e| e.fingerprint == fingerprint && e.state == Availability::Ready)
+                .find_map(|entry| match self.metadata_path(entry) {
+                    Ok(_) => Some(Ok(entry)),
+                    Err(error)
+                        if Error::from_anyhow(&error).code == ErrorCode::ContentUnavailable =>
+                    {
+                        None
+                    }
+                    Err(error) => Some(Err(error)),
+                })
+                .transpose()?
+        } else {
+            None
+        };
+        if let Some(entry) = reusable {
             let directory = self.verified_path(entry)?;
             let mut committed_claim = None;
             if let Some(target) = &claim {

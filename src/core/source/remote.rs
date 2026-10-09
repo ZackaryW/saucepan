@@ -147,6 +147,16 @@ impl Store {
         options: &AcquireOptions,
         temp: tempfile::TempDir,
     ) -> Result<Prepared> {
+        self.prepare_remote_resolved(request, options, temp, None)
+    }
+
+    pub(super) fn prepare_remote_resolved(
+        &self,
+        request: &Request,
+        options: &AcquireOptions,
+        temp: tempfile::TempDir,
+        exact: Option<&Resolved>,
+    ) -> Result<Prepared> {
         ensure!(
             matches!(request.selection.format, Format::Raw | Format::Zip),
             "downloads require raw or zip format"
@@ -168,7 +178,9 @@ impl Store {
         });
         let mut update_checked = false;
         let mut stale = false;
-        let discovered = if fresh && !options.force_refresh {
+        let discovered = if let Some(resolved) = exact {
+            resolved.clone()
+        } else if fresh && !options.force_refresh {
             previous.as_ref().unwrap().resolved.clone()
         } else {
             match discover(&record.source, &request.selector, options) {
@@ -235,7 +247,7 @@ impl Store {
             } => !update_checked || etag.is_some() || last_modified.is_some(),
             _ => true,
         };
-        if can_reuse {
+        if can_reuse && exact.is_none() {
             let _guard = self.lock()?;
             for entry in self.records()?.into_iter().filter_map(|r| {
                 if let Record::Output(e) = r {
@@ -250,7 +262,16 @@ impl Store {
                     && entry.request.selection == request.selection
                     && entry.resolved == resolved
                 {
-                    let source = self.verified_path(&entry)?;
+                    let source = match self.verified_path(&entry) {
+                        Ok(source) => source,
+                        Err(error)
+                            if crate::error::Error::from_anyhow(&error).code
+                                == crate::error::ErrorCode::ContentUnavailable =>
+                        {
+                            continue;
+                        }
+                        Err(error) => return Err(error),
+                    };
                     tree::copy_tree(&source, &temp.path().join("content"), TreeLimits::default())?;
                     return Ok(Prepared {
                         temp,
@@ -285,13 +306,19 @@ impl Store {
                 .context("unsupported release digest algorithm")?;
             ensure!(
                 digest.eq_ignore_ascii_case(expected),
-                "release checksum mismatch"
+                crate::error::Error::new(
+                    crate::error::ErrorCode::IntegrityError,
+                    "release checksum mismatch"
+                )
             );
         }
         if let Some(expected) = &request.selection.sha256 {
             ensure!(
                 digest.eq_ignore_ascii_case(expected),
-                "download checksum mismatch"
+                crate::error::Error::new(
+                    crate::error::ErrorCode::IntegrityError,
+                    "download checksum mismatch"
+                )
             );
         }
         let content = temp.path().join("content");

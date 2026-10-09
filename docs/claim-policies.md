@@ -7,7 +7,7 @@ registration key; retries return the same identity and never redisclose a token.
 `Store::session(app, credential)` returns the restricted app-facing API.
 `configure_application` is separate local administration and requires a matching
 revision plus current proof when enabled. CLI credential input/output and the
-recovery flows are still in progress.
+delivery is still in progress; native ensure and recovery are available.
 
 A policy independently restricts actions, source UUIDs, and exact scope strings:
 
@@ -116,3 +116,21 @@ held lease retains its original bytes. The plain path in an ensure response has
 no lifetime protection after the call. Integration examples and concurrent CLI
 coverage are executable in `tests/claim_ensure.rs`; registry permissions and public
 discovery are covered in `tests/registry_security.rs`.
+
+## Unavailable content
+
+`session.recover(claim_uuid, options)` and ensure of an unavailable existing claim
+use its effective `reclaim_policy`. `report_unavailable` returns
+`content_unavailable` before any provider work. `restore_exact` uses the saved Git
+commit or download URL/asset, validates the complete manifest and dependency
+identities, and publishes a fresh output UUID. Changed bytes return `integrity_error`;
+unobtainable originals return `exact_content_unavailable`. Neither falls back to a
+newer version. `refresh` reruns the owning request with the source's ordinary TTL
+and explicit refresh/stale options. It reports whether discovery was refreshed.
+
+Recovery retains scope, context and claim UUID, checks the application revision
+before changing selection, and never activates a binding. Another scope sharing
+the unavailable output remains unchanged. Queries and ordinary leases never
+recover implicitly. Eviction still governs retained history; low-level
+`reacquire ENTRY_UUID` reruns a saved request without moving a claim and is not
+exact restoration. `tests/claim_recovery.rs` exercises real local/Git/HTTP providers.
