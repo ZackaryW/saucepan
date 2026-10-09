@@ -44,7 +44,22 @@ pub fn validate_context(context: &ClaimContext) -> anyhow::Result<()> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claimed {
     pub claim: Claim,
+    pub view: CoveredView,
     pub acquired: super::store::Acquired,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EnsureRequest {
+    pub scope: Scope,
+    pub source_uuid: Uuid,
+    pub selector: super::store::Selector,
+    #[serde(default)]
+    pub selection: super::store::Selection,
+    #[serde(default)]
+    pub context: ClaimContext,
+    #[serde(default)]
+    pub overrides: policy::Overrides,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClaimView {

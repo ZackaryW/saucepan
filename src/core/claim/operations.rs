@@ -47,37 +47,18 @@ impl Store {
         context: &ClaimContext,
         options: &AcquireOptions,
     ) -> Result<Claimed> {
-        validate_context(context)?;
-        self.application(app)?;
-        let registry = self.registry(app)?;
-        self.authorize_resource(
-            &registry,
-            Action::Acquire,
-            Some(request.source_uuid),
-            Some(scope),
-        )?;
-        registry
-            .registry
-            .policies
-            .evaluate(&request_overrides(request))?;
-        let id = Uuid::new_v4();
-        let acquired = self.acquire_inner(
-            request,
-            options,
-            Some(ClaimTarget {
-                app,
+        self.ensure_claim(
+            app,
+            &crate::models::claim::EnsureRequest {
                 scope: scope.clone(),
-                id,
-                expected: None,
+                source_uuid: request.source_uuid,
+                selector: request.selector.clone(),
+                selection: request.selection.clone(),
                 context: context.clone(),
-            }),
-        )?;
-        Ok(Claimed {
-            claim: acquired
-                .claim
-                .expect("scoped acquisition publishes a claim"),
-            acquired: acquired.acquired,
-        })
+                overrides: request_overrides(request),
+            },
+            options,
+        )
     }
     pub fn update_claim(&self, app: Uuid, id: Uuid, options: &AcquireOptions) -> Result<Claimed> {
         self.application(app)?;
@@ -98,7 +79,14 @@ impl Store {
                 context: Default::default(),
             }),
         )?;
+        let view = crate::models::claim::CoveredView {
+            app,
+            claim: id,
+            entry: acquired.acquired.entry.uuid,
+            relative: None,
+        };
         Ok(Claimed {
+            view,
             claim: acquired
                 .claim
                 .expect("scoped acquisition publishes a claim"),

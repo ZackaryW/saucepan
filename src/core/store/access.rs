@@ -43,6 +43,34 @@ impl ResourceLease {
         self.resource.verification = VerificationMode::Full;
         Ok(())
     }
+    pub(crate) fn project(&mut self, output: &OutputEntry, relative: Option<&str>) -> Result<()> {
+        anyhow::ensure!(
+            self.entry_uuid() == output.uuid,
+            Error::new(ErrorCode::IntegrityError, "view output identity mismatch")
+        );
+        if let Some(relative) = relative {
+            anyhow::ensure!(
+                output
+                    .files
+                    .get(relative)
+                    .is_some_and(|entry| entry.digest.is_none()),
+                Error::new(
+                    ErrorCode::InvalidRequest,
+                    "view is not a directory in the output manifest"
+                )
+            );
+            let directory = beneath(self.directory(), relative)?;
+            anyhow::ensure!(
+                plain_metadata(&directory)?.is_dir(),
+                Error::new(
+                    ErrorCode::ContentUnavailable,
+                    "view directory is unavailable"
+                )
+            );
+            self.resource.directory = directory;
+        }
+        Ok(())
+    }
 
     /// Used only by dedicated single-launch CLI/shim processes. Other spawns
     /// could inherit the same handle and conservatively extend its lifetime.

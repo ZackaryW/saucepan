@@ -324,6 +324,27 @@ impl AppSession {
     pub fn app(&self) -> Uuid {
         self.app
     }
+    pub fn ensure(
+        &self,
+        input: &crate::models::claim::EnsureRequest,
+        options: &AcquireOptions,
+    ) -> Result<Claimed> {
+        self.store.ensure_claim(self.app, input, options)
+    }
+    pub fn lease_view(
+        &self,
+        view: &crate::models::claim::CoveredView,
+        mode: VerificationMode,
+    ) -> Result<ResourceLease> {
+        ensure!(
+            view.app == self.app,
+            Error::new(
+                ErrorCode::AccessDenied,
+                "view belongs to another application"
+            )
+        );
+        self.store.lease_view(view, mode)
+    }
     pub fn acquire(
         &self,
         scope: &Scope,

@@ -45,12 +45,15 @@ fn labels(project: &str, alias: &str) -> ClaimContext {
 fn searches_one_application_with_and_filters_and_deterministic_duplicates() {
     let (_tmp, store, app, request) = setup();
     let mut expected = vec![];
-    for alias in ["skills-core", "skills-extra", "skills-core"] {
+    for (ordinal, alias) in ["skills-core", "skills-extra", "skills-core"]
+        .into_iter()
+        .enumerate()
+    {
         expected.push(
             store
                 .acquire_for_with_context(
                     app,
-                    &"fixture".to_string().try_into().unwrap(),
+                    &format!("project-a/{ordinal}").try_into().unwrap(),
                     &request,
                     &labels("A", alias),
                     &Default::default(),
@@ -63,7 +66,7 @@ fn searches_one_application_with_and_filters_and_deterministic_duplicates() {
     store
         .acquire_for_with_context(
             app,
-            &"fixture".to_string().try_into().unwrap(),
+            &"project-b".to_string().try_into().unwrap(),
             &request,
             &labels("B", "skills-core"),
             &Default::default(),

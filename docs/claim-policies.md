@@ -7,7 +7,7 @@ registration key; retries return the same identity and never redisclose a token.
 `Store::session(app, credential)` returns the restricted app-facing API.
 `configure_application` is separate local administration and requires a matching
 revision plus current proof when enabled. CLI credential input/output and the
-remaining ensure/recovery flows are still in progress.
+recovery flows are still in progress.
 
 A policy independently restricts actions, source UUIDs, and exact scope strings:
 
@@ -85,3 +85,34 @@ integrations must retain their `AppSession` boundary.
 actual stores. `cargo test --offline --test lifecycle protected_shim` verifies
 unattended protected launch and edit rejection. Cached output UUIDs from discovery
 are subject to the same app claim policy when leased through a session.
+
+## Scoped ensure and covered views
+
+`AppSession::ensure(&EnsureRequest, &AcquireOptions)` uses registered defaults
+for omitted overrides. Its explicit `scope` identifies the project independently
+of searchable context. An exact retry returns the existing claim and cached output
+without refreshing its source. Another scope gets an independent claim and can
+share the same output bytes. Use `update` to refresh a selected claim explicitly.
+
+A natural local/Git claim for the whole tree can cover `folder: "packages/tool"`
+in the same scope. The result retains the owning claim UUID and includes
+`view.relative: "packages/tool"`; queries show only the owner. Selection constraints
+(platform, binaries, format and filters), retention, protection and recovery must
+agree, and the directory and requested binaries must exist in the owning manifest.
+Folder boundaries are path components: `packages/tool` does not cover
+`packages/toolkit`. A later broader request returns `claim_overlap`, as do
+incompatible ownership policies. Different context returns `claim_context_conflict`;
+replace labels with a revision-checked context operation.
+
+`new_entry` advances the compatible owner to a fresh output without duplicating
+the claim. A covered request prepares the entire owning tree and validates the
+projection before publication. Concurrent changes are reconciled under the store
+lock or return a typed conflict; they are never silently overwritten.
+
+Keep the native guard returned by `session.lease_view(&result.view, mode)` alive
+while reading. Its directory is the selected subfolder, but its lock protects the
+whole output. A later lease follows the claim's current selection; an already
+held lease retains its original bytes. The plain path in an ensure response has
+no lifetime protection after the call. Integration examples and concurrent CLI
+coverage are executable in `tests/claim_ensure.rs`; registry permissions and public
+discovery are covered in `tests/registry_security.rs`.

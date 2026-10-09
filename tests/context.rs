@@ -70,7 +70,7 @@ fn context_publication_replacement_reclaim_and_release() {
     let b = store
         .acquire_for_with_context(
             app.uuid,
-            &"fixture".to_string().try_into().unwrap(),
+            &"project-b".to_string().try_into().unwrap(),
             &request,
             &context("B"),
             &Default::default(),
