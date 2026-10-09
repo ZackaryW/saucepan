@@ -89,6 +89,12 @@ fn managed_claim_and_binding_commit_together_and_rollback_preserves_request() {
         .unwrap();
     assert_eq!(installed.status, Phase::Complete, "{:?}", installed.pending);
     let first = installed.candidate.unwrap();
+    let initial = store.application(installed.app).unwrap();
+    assert!(initial.claims[&installed.claim].context.is_empty());
+    let context = [("project".into(), "lifecycle".into())].into();
+    store
+        .set_claim_context(installed.app, installed.claim, &context, initial.revision)
+        .unwrap();
     let before = serde_json::to_value(store.application(installed.app).unwrap()).unwrap();
     let bad = Probe {
         stdout_contains: "never matched".into(),
@@ -121,6 +127,7 @@ fn managed_claim_and_binding_commit_together_and_rollback_preserves_request() {
         .unwrap();
     assert_eq!(updated.status, Phase::Complete);
     let app = store.application(installed.app).unwrap();
+    assert_eq!(app.claims[&installed.claim].context, context);
     assert_eq!(
         app.claims[&installed.claim].entry_uuid,
         updated.candidate.unwrap()
@@ -137,6 +144,10 @@ fn managed_claim_and_binding_commit_together_and_rollback_preserves_request() {
         )
         .unwrap();
     assert_eq!(rolled.status, Phase::Complete);
+    assert_eq!(
+        store.application(installed.app).unwrap().claims[&installed.claim].context,
+        context
+    );
     assert_eq!(
         store.application(installed.app).unwrap().claims[&installed.claim].entry_uuid,
         first
@@ -297,6 +308,64 @@ fn managed_update_detects_deactivation_during_probe() {
         app.claims[&installed.claim].entry_uuid,
         installed.candidate.unwrap()
     );
+}
+
+#[test]
+fn managed_transitions_detect_context_edits_during_probe() {
+    for rollback in [false, true] {
+        let (_tmp, store, input) = setup();
+        let installed = store
+            .install_application(&input, &shim(), &Default::default(), None)
+            .unwrap();
+        let before = store.application(installed.app).unwrap();
+        fs::write(store.root().join("block-enabled"), b"enabled").unwrap();
+        let probe = Probe {
+            args: vec![
+                "--exact".into(),
+                "fixture_blocked_probe".into(),
+                "--nocapture".into(),
+            ],
+            ..input.probe.clone()
+        };
+        let context = [("project".into(), "changed".into())].into();
+        std::thread::scope(|scope| {
+            let update = scope.spawn(|| {
+                store
+                    .update_application(
+                        installed.app,
+                        installed.claim,
+                        &probe,
+                        if rollback { installed.candidate } else { None },
+                        &Default::default(),
+                        None,
+                    )
+                    .unwrap()
+            });
+            until(&store.root().join("probe-ready"));
+            store
+                .set_claim_context(installed.app, installed.claim, &context, before.revision)
+                .unwrap();
+            fs::write(store.root().join("probe-release"), b"release").unwrap();
+            assert_eq!(update.join().unwrap().status, Phase::Conflict);
+        });
+        let app = store.application(installed.app).unwrap();
+        assert_eq!(app.claims[&installed.claim].context, context);
+        assert_eq!(
+            app.claims[&installed.claim].entry_uuid,
+            installed.candidate.unwrap()
+        );
+        assert_eq!(
+            app.active.unwrap().entry_uuid,
+            before.active.unwrap().entry_uuid
+        );
+        store.deactivate(installed.app).unwrap();
+        assert_eq!(
+            store.application(installed.app).unwrap().claims[&installed.claim].context,
+            context
+        );
+        store.uninstall(installed.app, false, None).unwrap();
+        assert!(store.application(installed.app).is_err());
+    }
 }
 
 #[test]

@@ -1,7 +1,7 @@
 use crate::{
     core::{Store, index::Journal, policy},
     models::{
-        index::Record,
+        index::{Claim, Record},
         policy::Identical,
         store::{Acquired, Availability, FileEntry, OutputEntry, Request, VerificationMode},
     },
@@ -14,6 +14,12 @@ use anyhow::{Result, bail, ensure};
 use std::{collections::BTreeMap, path::PathBuf};
 use uuid::Uuid;
 mod reclaim;
+
+pub(crate) struct Acquisition {
+    pub acquired: Acquired,
+    pub claim: Option<Claim>,
+    lease: Option<ResourceLease>,
+}
 
 pub(crate) fn json_digest(value: &impl serde::Serialize) -> Result<String> {
     Ok(tree::digest(serde_json::to_vec(value)?.as_slice())?)
@@ -96,23 +102,26 @@ impl Store {
         request: &Request,
         options: &super::source::AcquireOptions,
     ) -> Result<Acquired> {
-        self.acquire_inner(request, options, None)
+        Ok(self.acquire_inner(request, options, None)?.acquired)
     }
     pub(crate) fn acquire_inner(
         &self,
         request: &Request,
         options: &super::source::AcquireOptions,
         claim: Option<super::index::claims::ClaimTarget>,
-    ) -> Result<Acquired> {
-        Ok(self.acquire_protected(request, options, claim, false)?.0)
+    ) -> Result<Acquisition> {
+        self.acquire_protected(request, options, claim, false)
     }
     pub(crate) fn acquire_candidate(
         &self,
         request: &Request,
         options: &super::source::AcquireOptions,
     ) -> Result<(Acquired, ResourceLease)> {
-        let (acquired, lease) = self.acquire_protected(request, options, None, true)?;
-        Ok((acquired, lease.expect("requested candidate lease")))
+        let result = self.acquire_protected(request, options, None, true)?;
+        Ok((
+            result.acquired,
+            result.lease.expect("requested candidate lease"),
+        ))
     }
     fn acquire_protected(
         &self,
@@ -120,7 +129,7 @@ impl Store {
         options: &super::source::AcquireOptions,
         claim: Option<super::index::claims::ClaimTarget>,
         retain: bool,
-    ) -> Result<(Acquired, Option<ResourceLease>)> {
+    ) -> Result<Acquisition> {
         policy::validate(request)?;
         let prepared = self.prepare(request, options)?;
         let content = prepared.temp.path().join("content");
@@ -141,6 +150,12 @@ impl Store {
             &request.policies.eviction,
             &request.policies.protection,
         ))?;
+        #[cfg(test)]
+        if claim.is_some()
+            && let Some(observer) = &self.before_claim_commit
+        {
+            observer();
+        }
         let _lock = self.lock()?;
         let records = self.records()?;
         let outputs: Vec<_> = records
@@ -159,9 +174,14 @@ impl Store {
                 .find(|e| e.fingerprint == fingerprint && e.state == Availability::Ready)
         {
             let directory = self.verified_path(entry)?;
+            let mut committed_claim = None;
             if let Some(target) = &claim {
+                let record = self.claim_record(target, request, entry.uuid)?;
+                if let Record::Application(app) = &record {
+                    committed_claim = Some(app.claims[&target.id].clone());
+                }
                 self.commit(Journal {
-                    records: vec![self.claim_record(target, request, entry.uuid)?],
+                    records: vec![record],
                     stage: None,
                     ..Default::default()
                 })?;
@@ -169,8 +189,8 @@ impl Store {
             let lease = retain
                 .then(|| self.metadata_lease_locked(entry))
                 .transpose()?;
-            return Ok((
-                Acquired {
+            return Ok(Acquisition {
+                acquired: Acquired {
                     entry: (**entry).clone(),
                     directory,
                     reused: true,
@@ -179,7 +199,8 @@ impl Store {
                     reclaim: self.reclaim_locked()?,
                 },
                 lease,
-            ));
+                claim: committed_claim,
+            });
         }
         let sequence = outputs
             .iter()
@@ -209,8 +230,13 @@ impl Store {
             .unwrap()
             .to_owned();
         let mut records = vec![Record::Output(Box::new(entry.clone()))];
+        let mut committed_claim = None;
         if let Some(target) = &claim {
-            records.push(self.claim_record(target, request, entry.uuid)?);
+            let record = self.claim_record(target, request, entry.uuid)?;
+            if let Record::Application(app) = &record {
+                committed_claim = Some(app.claims[&target.id].clone());
+            }
+            records.push(record);
         }
         self.commit(Journal {
             records,
@@ -221,8 +247,8 @@ impl Store {
         let lease = retain
             .then(|| self.metadata_lease_locked(&entry))
             .transpose()?;
-        Ok((
-            Acquired {
+        Ok(Acquisition {
+            acquired: Acquired {
                 entry,
                 directory,
                 reused: false,
@@ -231,7 +257,8 @@ impl Store {
                 reclaim: self.reclaim_locked()?,
             },
             lease,
-        ))
+            claim: committed_claim,
+        })
     }
 }
 

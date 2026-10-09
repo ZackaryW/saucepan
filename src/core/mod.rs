@@ -22,6 +22,8 @@ use std::{
 pub struct Store {
     pub(crate) root: PathBuf,
     #[cfg(test)]
+    pub(crate) before_claim_commit: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
+    #[cfg(test)]
     pub(crate) access_observer:
         Option<std::sync::Arc<dyn Fn(crate::utils::tree::IoEvent) + Send + Sync>>,
 }
@@ -49,6 +51,8 @@ impl Store {
         Ok(Self {
             root,
             #[cfg(test)]
+            before_claim_commit: None,
+            #[cfg(test)]
             access_observer: None,
         })
     }
@@ -67,6 +71,8 @@ impl Store {
         }
         let store = Self {
             root,
+            #[cfg(test)]
+            before_claim_commit: None,
             #[cfg(test)]
             access_observer: None,
         };

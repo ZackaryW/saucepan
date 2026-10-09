@@ -210,6 +210,7 @@ mod tests {
             app.claims.insert(
                 claim,
                 crate::models::index::Claim {
+                    context: Default::default(),
                     uuid: claim,
                     entry_uuid: target,
                     request: Request {
@@ -273,6 +274,7 @@ mod tests {
             let old = store
                 .claim_record(
                     &claims::ClaimTarget {
+                        context: Default::default(),
                         app: app.uuid,
                         id: claim_id,
                         expected: None,
@@ -292,6 +294,7 @@ mod tests {
                     store
                         .claim_record(
                             &claims::ClaimTarget {
+                                context: Default::default(),
                                 app: app.uuid,
                                 id: claim_id,
                                 expected: Some(old_entry),

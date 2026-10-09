@@ -5,6 +5,29 @@ use uuid::Uuid;
 pub mod lifecycle;
 pub use lifecycle::{AppState, OwnedShim};
 
+/// Caller-owned labels; never part of output identity or acquisition policy.
+pub type ClaimContext = BTreeMap<String, String>;
+
+pub fn validate_context_field(key: &str, value: &str) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        !key.is_empty() && key.len() <= 128,
+        "context key must contain 1..=128 UTF-8 bytes"
+    );
+    anyhow::ensure!(
+        value.len() <= 4096,
+        "context value exceeds 4096 UTF-8 bytes"
+    );
+    Ok(())
+}
+
+pub fn validate_context(context: &ClaimContext) -> anyhow::Result<()> {
+    anyhow::ensure!(context.len() <= 64, "context exceeds 64 entries");
+    for (key, value) in context {
+        validate_context_field(key, value)?;
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Settings {
@@ -16,6 +39,8 @@ pub struct Claim {
     pub uuid: Uuid,
     pub request: Request,
     pub entry_uuid: Uuid,
+    #[serde(default)]
+    pub context: ClaimContext,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claimed {

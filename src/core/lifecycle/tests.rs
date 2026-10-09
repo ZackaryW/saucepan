@@ -60,6 +60,7 @@ fn uninstall_fences_pending_maintenance_and_claim_publication() {
         store
             .claim_record(
                 &crate::core::index::claims::ClaimTarget {
+                    context: Default::default(),
                     app: app.uuid,
                     id: Uuid::new_v4(),
                     expected: None
@@ -351,4 +352,9 @@ fn removing_state_fences_mutations_and_legacy_defaults_are_explicit() {
     assert!(store.deactivate(app.uuid).is_err());
     assert!(store.set_settings(app.uuid, Default::default()).is_err());
     assert!(store.release_claim(app.uuid, Uuid::new_v4()).is_err());
+    assert!(
+        store
+            .set_claim_context(app.uuid, Uuid::new_v4(), &Default::default(), app.revision)
+            .is_err()
+    );
 }

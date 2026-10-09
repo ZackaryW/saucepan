@@ -86,6 +86,7 @@ impl Store {
             let (candidate, _guard) = self.acquire_candidate(&input.request, options)?;
             let lease = self.validate_candidate(candidate.entry.uuid, &binary, &input.probe)?;
             let claim = Claim {
+                context: Default::default(),
                 uuid: op.claim,
                 request: input.request.clone(),
                 entry_uuid: candidate.entry.uuid,
