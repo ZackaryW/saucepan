@@ -75,3 +75,51 @@ that exact output; `Store::lease_claim(app, claim, mode)` selects the claim's cu
 output atomically with lease protection. Search followed by either operation is
 not one atomic operation and can fail if reclaim/removal wins. Context and queries
 provide neither authentication nor standing ownership of future matches.
+
+## CLI flow
+
+All commands require `--root`. After registering an application and creating a
+request as described in the README, use these PowerShell commands. `$root` is
+your explicit test store path and `$app` is the registered application's UUID.
+
+```powershell
+$a = cargo run -- --root $root acquire request.json --app $app --context examples/claim-query/context-a.json | ConvertFrom-Json
+$b = cargo run -- --root $root acquire request.json --app $app --context examples/claim-query/context-b.json | ConvertFrom-Json
+$query = Get-Content examples/claim-query/query.json -Raw | ConvertFrom-Json
+$query.app = $app
+$query | ConvertTo-Json -Depth 8 | Set-Content query.json
+$found = cargo run -- --root $root query-claims query.json | ConvertFrom-Json
+cargo run -- --root $root set-claim-context $app $a.claim.uuid examples/claim-query/context-b.json --expected-revision $found.revision
+cargo run -- --root $root query-claims query.json
+```
+
+The first search returns project A's claim. Replacement labels it as project B;
+the last search succeeds with no matches. Searching project B then returns both
+claims. With identical inputs and reuse policy, their output UUIDs are equal.
+An empty context file object clears labels. `--context` requires `--app`.
+
+Successful queries print one JSON object and exit zero, including zero matches.
+Invalid input, missing applications, and revision conflicts exit nonzero with
+an error on stderr. The JSON query file contains the exact app UUID; there is
+no second application argument and no wildcard update/release operation.
+
+`cargo test --test query_cli` runs this acquisition/search/replacement flow using
+the example JSON files and a fresh temporary root, also checking native parity,
+multiple matches, stale revisions, error exits, and clearing context. It never
+uses the existing `mock/` installation or a production Saucepan root.
+
+## Verification evidence
+
+Verified on 2026-10-09 on Windows x86_64 with Rust 1.98.1:
+
+- `cargo test --all-targets`: 96 top-level tests passed (97 reported passes
+  including a nested child fixture run). Coverage includes context publication,
+  replacement, recovery, update/rollback conflicts, query filtering and snapshots,
+  portable string matching, and the CLI example flow.
+- `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings`: passed.
+- Strict OpenSpec validation: this change and all 13 existing main specs passed.
+- SHA-256 comparison: all 96 existing `mock/` files remained unchanged.
+
+Linux/macOS execution and the declared minimum Rust 1.89 toolchain were not run
+for this change. String-matching semantics are specified portably and covered by
+platform-neutral cases, but this run establishes Windows execution evidence only.

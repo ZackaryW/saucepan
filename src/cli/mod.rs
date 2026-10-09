@@ -89,6 +89,21 @@ enum Commands {
         file: PathBuf,
         #[arg(long)]
         app: Option<uuid::Uuid>,
+        /// JSON object of string labels, published with the new claim.
+        #[arg(long, requires = "app")]
+        context: Option<PathBuf>,
+    },
+    /// Replace a claim's complete context at an observed application revision.
+    SetClaimContext {
+        app: uuid::Uuid,
+        claim: uuid::Uuid,
+        file: PathBuf,
+        #[arg(long)]
+        expected_revision: u64,
+    },
+    /// Search existing claims using a JSON object containing app and where.
+    QueryClaims {
+        file: PathBuf,
     },
     UpdateClaim {
         app: uuid::Uuid,
@@ -290,14 +305,39 @@ pub fn run() -> Result<()> {
                     serde_json::to_value(store.register_source(source)?)?
                 }
                 Commands::Inspect { uuid } => serde_json::to_value(store.record(uuid)?)?,
-                Commands::Acquire { file, app } => {
+                Commands::Acquire { file, app, context } => {
                     let request = serde_json::from_slice(&std::fs::read(file)?)?;
                     match app {
                         Some(app) => {
-                            serde_json::to_value(store.acquire_for(app, &request, &options)?)?
+                            let context = match context {
+                                Some(file) => serde_json::from_slice(&std::fs::read(file)?)?,
+                                None => Default::default(),
+                            };
+                            serde_json::to_value(
+                                store
+                                    .acquire_for_with_context(app, &request, &context, &options)?,
+                            )?
                         }
                         None => serde_json::to_value(store.acquire_with(&request, &options)?)?,
                     }
+                }
+                Commands::SetClaimContext {
+                    app,
+                    claim,
+                    file,
+                    expected_revision,
+                } => {
+                    let context = serde_json::from_slice(&std::fs::read(file)?)?;
+                    serde_json::to_value(store.set_claim_context(
+                        app,
+                        claim,
+                        &context,
+                        expected_revision,
+                    )?)?
+                }
+                Commands::QueryClaims { file } => {
+                    let query = serde_json::from_slice(&std::fs::read(file)?)?;
+                    serde_json::to_value(store.query_claims(&query)?)?
                 }
                 Commands::UpdateClaim { app, claim } => {
                     serde_json::to_value(store.update_claim(app, claim, &options)?)?

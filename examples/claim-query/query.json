@@ -1,0 +1,7 @@
+{
+  "app": "00000000-0000-4000-8000-000000000001",
+  "where": [
+    {"key": "project", "op": "eq", "value": "C:/work/project-a"},
+    {"key": "source.alias", "op": "glob", "value": "skills-*"}
+  ]
+}
