@@ -44,6 +44,7 @@ impl Store {
                 Error::new(ErrorCode::RevisionConflict, "claim changed before recovery")
             );
             let registry = self.registry(app)?;
+            self.check_session(&registry)?;
             let claim = registry
                 .claims
                 .get(&id)
@@ -141,6 +142,7 @@ impl Store {
         let _lock = self.lock()?;
         let mut application = self.application(app)?;
         let mut registry = self.registry(app)?;
+        self.check_session(&registry)?;
         self.authorize_claim(&registry, &claim, Action::Recover)?;
         ensure!(
             application.revision == revision,

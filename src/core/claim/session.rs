@@ -29,13 +29,20 @@ pub struct AppSession {
     app: Uuid,
 }
 
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ApplicationRegistration {
     pub registration_key: Scope,
     pub name: String,
+    #[serde(default)]
     pub access: AccessPolicy,
+    #[serde(default)]
     pub policies: Registration,
+    #[serde(default)]
     pub credentials_required: bool,
 }
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ApplicationConfiguration {
     pub expected_revision: u64,
     pub access: AccessPolicy,
@@ -77,6 +84,17 @@ impl Store {
         &self,
         input: &ApplicationRegistration,
         proof: Option<&Credential>,
+    ) -> Result<RegisteredApplication> {
+        self.register_application_delivering(input, proof, |_| Ok(()))
+    }
+
+    /// Deliver a newly issued secret before committing the registration. A
+    /// failed delivery leaves metadata unchanged; retries never reissue a token.
+    pub fn register_application_delivering(
+        &self,
+        input: &ApplicationRegistration,
+        proof: Option<&Credential>,
+        deliver: impl FnOnce(&Credential) -> Result<()>,
     ) -> Result<RegisteredApplication> {
         ensure!(
             self.session.is_none(),
@@ -145,6 +163,9 @@ impl Store {
         } else {
             None
         };
+        if let Some(token) = &credential {
+            deliver(token)?;
+        }
         self.commit(Journal {
             records: vec![Record::Application(app.clone())],
             registries: vec![registry],
@@ -163,6 +184,16 @@ impl Store {
         app: Uuid,
         input: ApplicationConfiguration,
         proof: Option<&Credential>,
+    ) -> Result<Option<Credential>> {
+        self.configure_application_delivering(app, input, proof, |_| Ok(()))
+    }
+
+    pub fn configure_application_delivering(
+        &self,
+        app: Uuid,
+        input: ApplicationConfiguration,
+        proof: Option<&Credential>,
+        deliver: impl FnOnce(&Credential) -> Result<()>,
     ) -> Result<Option<Credential>> {
         let ApplicationConfiguration {
             expected_revision,
@@ -196,6 +227,9 @@ impl Store {
             .map(|change| registry.change_credentials(self.metadata.authenticator(), proof, change))
             .transpose()?
             .flatten();
+        if let Some(token) = &token {
+            deliver(token)?;
+        }
         application.bump()?;
         self.commit(Journal {
             records: vec![Record::Application(application)],
@@ -321,6 +355,9 @@ impl Store {
 }
 
 impl AppSession {
+    pub(crate) fn into_store(self) -> Store {
+        self.store
+    }
     pub fn app(&self) -> Uuid {
         self.app
     }

@@ -228,6 +228,27 @@ fn optional_proof_rotation_and_disable_are_atomic_and_do_not_revoke_existing_lea
         code(session.claims().unwrap_err()),
         ErrorCode::AuthenticationFailed
     );
+    assert_eq!(
+        code(
+            session
+                .update(Uuid::new_v4(), &Default::default())
+                .unwrap_err()
+        ),
+        ErrorCode::AuthenticationFailed
+    );
+    assert_eq!(
+        code(session.release(Uuid::new_v4()).unwrap_err()),
+        ErrorCode::AuthenticationFailed
+    );
+    assert_eq!(
+        code(
+            session
+                .lease_claim(Uuid::new_v4(), VerificationMode::Metadata)
+                .err()
+                .unwrap()
+        ),
+        ErrorCode::AuthenticationFailed
+    );
     let new_proof = Credential::from_bytes(rotated.expose()).unwrap();
     let current = store.session(app, Some(rotated)).unwrap();
     assert_eq!(current.claims().unwrap().len(), 1);

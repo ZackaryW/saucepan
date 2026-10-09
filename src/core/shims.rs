@@ -231,7 +231,8 @@ impl Store {
             if let Err(error) = prepared {
                 let _lock = self.lock()?;
                 op.status = Phase::Failed;
-                op.pending = vec![format!("{error:#}")];
+                op.reason = Some(crate::error::Error::from_anyhow(&error));
+                op.pending = vec![op.reason.as_ref().unwrap().message.clone()];
                 self.save_operation(&op)?;
                 return Ok(op);
             }
@@ -339,6 +340,7 @@ impl Store {
             app.shims.push(change.desired.clone());
             app.bump()?;
             op.status = Phase::Complete;
+            op.reason = None;
             op.changed = true;
             op.pending.clear();
             self.commit_operation(op, vec![Record::Application(app)])
@@ -352,7 +354,11 @@ impl Store {
             if self.application(op.app).is_err() {
                 op.status = Phase::Failed;
             }
-            op.pending = vec![format!("{}: {error:#}", change.desired.name)];
+            op.reason = Some(crate::error::Error::from_anyhow(&error));
+            op.pending = vec![format!(
+                "{}: shim operation incomplete",
+                change.desired.name
+            )];
             self.save_operation(op)?;
         }
         Ok(())

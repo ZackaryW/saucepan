@@ -43,8 +43,43 @@ impl fmt::Debug for Secret {
 
 #[derive(Debug, Default)]
 pub struct NativeKeyring;
+static NATIVE_KEYS: Mutex<()> = Mutex::new(());
+impl NativeKeyring {
+    /// Trusted custody administration, used to retire explicitly owned fixture
+    /// keys. Removing a live store's key makes its metadata unreadable.
+    pub fn retire(&self, store: Uuid) -> Result<()> {
+        let _guard = native_coordination()?;
+        keyring::Entry::new(SERVICE, &store.to_string())
+            .map_err(|_| key_error())?
+            .delete_credential()
+            .map_err(|_| key_error())
+    }
+}
+fn native_coordination() -> Result<(
+    std::sync::MutexGuard<'static, ()>,
+    crate::utils::lock::LockGuard,
+)> {
+    let local = NATIVE_KEYS.lock().map_err(|_| key_error())?;
+    #[cfg(unix)]
+    // SAFETY: geteuid has no arguments or memory safety preconditions.
+    let name = format!("saucepan-keyring-{}.lock", unsafe { libc::geteuid() });
+    #[cfg(not(unix))]
+    let name = "saucepan-keyring.lock";
+    let path = std::env::temp_dir().join(name);
+    if path.exists() {
+        crate::utils::path::plain_metadata(&path).map_err(|_| key_error())?;
+    }
+    let external = crate::utils::lock::LockGuard::acquire(
+        &path,
+        crate::utils::lock::LockMode::Exclusive,
+        std::time::Duration::from_secs(30),
+    )
+    .map_err(|_| key_error())?;
+    Ok((local, external))
+}
 impl KeyProvider for NativeKeyring {
     fn load(&self, store: Uuid) -> Result<Option<Secret>> {
+        let _guard = native_coordination()?;
         let entry = keyring::Entry::new(SERVICE, &store.to_string()).map_err(|_| key_error())?;
         match entry.get_secret() {
             Ok(bytes) => Secret::from_bytes(&Zeroizing::new(bytes)).map(Some),
@@ -53,12 +88,18 @@ impl KeyProvider for NativeKeyring {
         }
     }
     fn insert(&self, store: Uuid, secret: &Secret) -> Result<()> {
+        let _guard = native_coordination()?;
         // Initialization holds the store's mutation lock. The randomly allocated
         // store UUID is reserved before provisioning and reused after a crash.
         let entry = keyring::Entry::new(SERVICE, &store.to_string()).map_err(|_| key_error())?;
         match entry.get_secret() {
             Err(keyring::Error::NoEntry) => {
-                entry.set_secret(secret.expose()).map_err(|_| key_error())
+                entry.set_secret(secret.expose()).map_err(|_| key_error())?;
+                let persisted = Zeroizing::new(entry.get_secret().map_err(|_| key_error())?);
+                if persisted.as_slice() != secret.expose() {
+                    return Err(key_error());
+                }
+                Ok(())
             }
             Ok(bytes) => {
                 let _discard = Zeroizing::new(bytes);

@@ -115,5 +115,6 @@ pub struct Operation {
     pub desired_registry: Option<crate::models::claim::RegistryState>,
     pub shims: Vec<ShimChange>,
     pub pending: Vec<String>,
+    pub reason: Option<crate::error::Error>,
     pub leftovers: Vec<String>,
 }

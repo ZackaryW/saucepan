@@ -1,5 +1,12 @@
 # Claim integrity implementation notes
 
+Native keyring operations are serialized across threads and Saucepan processes
+using a coordination lock in the user's temporary directory (UID-qualified on
+Unix). The lock contains no secrets. New key writes are read back before store
+initialization succeeds. This addresses an observed Windows concurrent-key
+creation failure; both thread and subprocess isolation tests are in
+`tests/native_keys.rs`. A missing existing key still fails without replacement.
+
 The record format is readable JSON with HMAC-SHA256 verification. The
 HMAC key lives separately in OS keyring. This detects changes made without the
 key; it does not conceal metadata or prevent filesystem edits. OS permissions

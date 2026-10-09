@@ -3,10 +3,25 @@ use crate::{core::Store, models::source::Source};
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
+mod credentials;
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum ErrorFormat {
+    Text,
+    Json,
+}
 
 #[derive(Parser)]
 #[command(version = concat!(env!("CARGO_PKG_VERSION"),"+",env!("SAUCEPAN_BUILD_ID")))]
 struct Args {
+    #[arg(long, global = true, value_enum, default_value = "text")]
+    error_format: ErrorFormat,
+    /// Read a 32-byte application credential from this file.
+    #[arg(long, global = true)]
+    credential_file: Option<PathBuf>,
+    /// Restrict direct output operations to this application's owned claims.
+    #[arg(long, global = true)]
+    as_app: Option<uuid::Uuid>,
     #[arg(long, global = true)]
     root: Option<PathBuf>,
     #[arg(long, global = true)]
@@ -22,6 +37,41 @@ struct Args {
 }
 #[derive(Subcommand)]
 enum Commands {
+    /// Register by explicit key using a JSON application registration.
+    RegisterApplication {
+        file: PathBuf,
+        #[arg(long)]
+        credential_out: Option<PathBuf>,
+    },
+    /// Trusted local administration with expected_revision in the JSON payload.
+    ConfigureApplication {
+        app: uuid::Uuid,
+        file: PathBuf,
+        #[arg(long)]
+        credential_out: Option<PathBuf>,
+    },
+    EnsureClaim {
+        app: uuid::Uuid,
+        file: PathBuf,
+    },
+    RecoverClaim {
+        app: uuid::Uuid,
+        claim: uuid::Uuid,
+    },
+    DiscoverClaims {
+        file: PathBuf,
+    },
+    /// Lease a claim or contained view for a child process.
+    RunClaim {
+        app: uuid::Uuid,
+        claim: uuid::Uuid,
+        #[arg(long)]
+        relative: Option<String>,
+        #[arg(long, value_enum, default_value = "metadata")]
+        verification: VerificationMode,
+        #[arg(last = true, required = true, num_args = 1..)]
+        command: Vec<std::ffi::OsString>,
+    },
     Bootstrap {
         request: PathBuf,
         built_shim: PathBuf,
@@ -190,8 +240,24 @@ enum Commands {
     },
 }
 pub fn run() -> Result<()> {
-    let args = Args::parse();
-    let root = args.root.context("--root is required")?;
+    let args = match Args::try_parse() {
+        Ok(args) => args,
+        Err(error) if !error.use_stderr() => {
+            error.print()?;
+            return Ok(());
+        }
+        Err(_) => {
+            return Err(crate::error::Error::new(
+                crate::error::ErrorCode::InvalidRequest,
+                "invalid command arguments; see --help",
+            )
+            .into());
+        }
+    };
+    let root = args.root.context(crate::error::Error::new(
+        crate::error::ErrorCode::InvalidRequest,
+        "--root is required",
+    ))?;
     let options = crate::core::source::AcquireOptions {
         force_refresh: args.force_refresh,
         allow_stale: args.allow_stale,
@@ -205,9 +271,116 @@ pub fn run() -> Result<()> {
             serde_json::json!({"root":store.root()})
         }
         command => {
-            let store = Store::open(&root)?;
+            let mut store = Store::open(&root)?;
+            let app = command.application();
+            anyhow::ensure!(
+                args.as_app.is_none() || app.is_none() || args.as_app == app,
+                crate::error::Error::new(
+                    crate::error::ErrorCode::AccessDenied,
+                    "application identity mismatch"
+                )
+            );
+            let bound = args.as_app.or(app);
+            if let Some(app) = bound {
+                anyhow::ensure!(
+                    !command.administration(),
+                    crate::error::Error::new(
+                        crate::error::ErrorCode::AccessDenied,
+                        "command requires trusted administration"
+                    )
+                );
+                store = store
+                    .session(app, credentials::read(args.credential_file.as_deref())?)?
+                    .into_store();
+            }
             match command {
-                Commands::Operations { app } => serde_json::to_value(store.operations(app)?)?,
+                Commands::RegisterApplication {
+                    file,
+                    credential_out,
+                } => {
+                    let input = serde_json::from_slice(&std::fs::read(file)?)?;
+                    let proof = credentials::read(args.credential_file.as_deref())?;
+                    let result =
+                        store.register_application_delivering(&input, proof.as_ref(), |token| {
+                            credentials::deliver(credential_out.as_deref(), token)
+                        })?;
+                    serde_json::to_value(result.application)?
+                }
+                Commands::ConfigureApplication {
+                    app,
+                    file,
+                    credential_out,
+                } => {
+                    let input = serde_json::from_slice(&std::fs::read(file)?)?;
+                    let proof = credentials::read(args.credential_file.as_deref())?;
+                    store.configure_application_delivering(
+                        app,
+                        input,
+                        proof.as_ref(),
+                        |token| credentials::deliver(credential_out.as_deref(), token),
+                    )?;
+                    serde_json::to_value(store.application(app)?)?
+                }
+                Commands::EnsureClaim { app, file } => serde_json::to_value(store.ensure_claim(
+                    app,
+                    &serde_json::from_slice(&std::fs::read(file)?)?,
+                    &options,
+                )?)?,
+                Commands::RecoverClaim { app, claim } => {
+                    serde_json::to_value(store.recover_claim(app, claim, &options)?)?
+                }
+                Commands::DiscoverClaims { file } => serde_json::to_value(
+                    store.discover_claims(&serde_json::from_slice(&std::fs::read(file)?)?)?,
+                )?,
+                Commands::RunClaim {
+                    app,
+                    claim,
+                    relative,
+                    verification,
+                    command,
+                } => {
+                    let view = crate::models::claim::CoveredView {
+                        app,
+                        claim,
+                        entry: uuid::Uuid::nil(),
+                        relative,
+                    };
+                    let lease = store.lease_view(&view, verification)?;
+                    let mut process = std::process::Command::new(&command[0]);
+                    process
+                        .args(&command[1..])
+                        .env("SAUCEPAN_RESOURCE_DIR", lease.directory());
+                    std::process::exit(crate::core::launch::launch_leased(process, lease)?);
+                }
+                Commands::Operations { app } => {
+                    if let Some(identity) = &store.session {
+                        store.authorize_application_action(
+                            identity.app,
+                            crate::models::claim::policy::Action::Read,
+                        )?;
+                        let registry = store.registry(identity.app)?;
+                        let visible: Vec<_> = store
+                            .operations(Some(identity.app))?
+                            .into_iter()
+                            .filter(|operation| {
+                                operation.desired_registry.as_ref().is_none_or(|desired| {
+                                    desired.claims.values().all(|claim| {
+                                        store
+                                            .authorize_claim(
+                                                &registry,
+                                                claim,
+                                                crate::models::claim::policy::Action::Read,
+                                            )
+                                            .is_ok()
+                                    })
+                                })
+                            })
+                            .collect();
+                        serde_json::to_value(visible)?
+                    } else {
+                        serde_json::to_value(store.operations(app)?)?
+                    }
+                }
                 Commands::Reconcile { operation } => {
                     let results = store.reconcile(operation)?;
                     if results
@@ -328,7 +501,10 @@ pub fn run() -> Result<()> {
                                 store.acquire_for_with_context(
                                     app,
                                     &scope
-                                        .context("--scope is required with --app")?
+                                        .context(crate::error::Error::new(
+                                            crate::error::ErrorCode::InvalidRequest,
+                                            "--scope is required with --app",
+                                        ))?
                                         .try_into()?,
                                     &request,
                                     &context,
@@ -354,7 +530,16 @@ pub fn run() -> Result<()> {
                     )?)?
                 }
                 Commands::QueryClaims { file } => {
-                    let query = serde_json::from_slice(&std::fs::read(file)?)?;
+                    let query: crate::core::query::ClaimQuery =
+                        serde_json::from_slice(&std::fs::read(file)?)?;
+                    if store.session.is_none() {
+                        store = store
+                            .session(
+                                query.app,
+                                credentials::read(args.credential_file.as_deref())?,
+                            )?
+                            .into_store();
+                    }
                     serde_json::to_value(store.query_claims(&query)?)?
                 }
                 Commands::UpdateClaim { app, claim } => {
@@ -477,6 +662,69 @@ pub fn run() -> Result<()> {
         std::process::exit(exit_code);
     }
     Ok(())
+}
+
+impl Commands {
+    fn application(&self) -> Option<uuid::Uuid> {
+        match self {
+            Self::EnsureClaim { app, .. }
+            | Self::RecoverClaim { app, .. }
+            | Self::RunClaim { app, .. }
+            | Self::SelfUpdate { app, .. }
+            | Self::UpdateApp { app, .. }
+            | Self::Rollback { app, .. }
+            | Self::SetClaimContext { app, .. }
+            | Self::UpdateClaim { app, .. }
+            | Self::ReleaseClaim { app, .. }
+            | Self::Claims { app }
+            | Self::Activate { app, .. }
+            | Self::Deactivate { app }
+            | Self::Uninstall { app, .. }
+            | Self::InstallShim { app, .. }
+            | Self::ReplaceShim { app, .. }
+            | Self::AdoptShim { app, .. } => Some(*app),
+            Self::Acquire { app, .. } | Self::Operations { app } => *app,
+            _ => None,
+        }
+    }
+    fn administration(&self) -> bool {
+        matches!(
+            self,
+            Self::RegisterApplication { .. }
+                | Self::ConfigureApplication { .. }
+                | Self::RegisterApp { .. }
+                | Self::RegisterSource { .. }
+                | Self::Install { .. }
+                | Self::Bootstrap { .. }
+                | Self::Reconcile { .. }
+                | Self::Reclaim
+                | Self::Settings { .. }
+                | Self::Inspect { .. }
+                | Self::Reacquire { .. }
+                | Self::Acquire { app: None, .. }
+        )
+    }
+}
+
+/// Parse only our option prefix; never reinterpret a child's arguments after --.
+pub fn report_error(error: &anyhow::Error) {
+    let mut json = false;
+    let mut args = std::env::args_os().skip(1).take_while(|arg| arg != "--");
+    while let Some(arg) = args.next() {
+        if arg == "--error-format" {
+            json = args.next().is_some_and(|value| value == "json");
+        } else if arg == "--error-format=json" {
+            json = true;
+        } else if arg == "--error-format=text" {
+            json = false;
+        }
+    }
+    let safe = crate::error::Error::from_anyhow(error);
+    if json {
+        eprintln!("{}", serde_json::json!({"error": safe}));
+    } else {
+        eprintln!("{safe}");
+    }
 }
 
 fn operation_value(

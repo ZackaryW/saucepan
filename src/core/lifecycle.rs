@@ -99,6 +99,7 @@ impl Store {
                 match &action {
                     Action::Update { claim, .. } => {
                         let registry = self.registry(app)?;
+                        self.check_session(&registry)?;
                         let claim =
                             registry
                                 .claims
@@ -159,6 +160,7 @@ impl Store {
             desired_registry: None,
             shims: Vec::new(),
             pending: Vec::new(),
+            reason: None,
             leftovers: Vec::new(),
         };
         self.commit_operation(&op, Vec::new())?;
@@ -206,6 +208,10 @@ impl Store {
                         let _lock = self.lock()?;
                         op.pending =
                             vec!["retry the original command to finish preparation".into()];
+                        op.reason = Some(crate::error::Error::new(
+                            crate::error::ErrorCode::InvalidRequest,
+                            "original command must complete preparation",
+                        ));
                         self.save_operation(&op)?;
                     }
                 }

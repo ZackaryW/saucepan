@@ -6,8 +6,8 @@ separate registry. Create an app using `register_application` with an explicit
 registration key; retries return the same identity and never redisclose a token.
 `Store::session(app, credential)` returns the restricted app-facing API.
 `configure_application` is separate local administration and requires a matching
-revision plus current proof when enabled. CLI credential input/output and the
-delivery is still in progress; native ensure and recovery are available.
+revision plus current proof when enabled. Native and CLI ensure, recovery and
+credential delivery are available; see [claim-cli.md](claim-cli.md).
 
 A policy independently restricts actions, source UUIDs, and exact scope strings:
 
@@ -54,7 +54,7 @@ policy override bounds, safe view paths, and secret redaction.
 
 Native callers can inspect `saucepan::error::Error::from_anyhow(&error).code`.
 Typed causes survive `anyhow` context; no English substring matching is used.
-The CLI presentation is unchanged in this checkpoint.
+The CLI supports the same codes with `--error-format json`.
 
 | Codes | Meaning |
 | --- | --- |

@@ -63,6 +63,7 @@ impl Store {
     pub fn update_claim(&self, app: Uuid, id: Uuid, options: &AcquireOptions) -> Result<Claimed> {
         self.application(app)?;
         let registry = self.registry(app)?;
+        self.check_session(&registry)?;
         let claim = registry
             .claims
             .get(&id)
@@ -104,11 +105,12 @@ impl Store {
         validate_context(context)?;
         let _lock = self.lock()?;
         let mut application = self.application(app)?;
+        let mut registry = self.registry(app)?;
+        self.check_session(&registry)?;
         ensure!(
             application.revision == expected_revision,
             Error::new(ErrorCode::RevisionConflict, "application revision conflict")
         );
-        let mut registry = self.registry(app)?;
         self.authorize_claim(
             &registry,
             registry
@@ -138,6 +140,7 @@ impl Store {
         let _lock = self.lock()?;
         let mut application = self.application(app)?;
         let mut registry = self.registry(app)?;
+        self.check_session(&registry)?;
         self.authorize_claim(
             &registry,
             registry

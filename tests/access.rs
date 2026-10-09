@@ -69,7 +69,7 @@ fn non_process_access_never_creates_lifetime_markers() {
             .arg(id.to_string())
             .output()
             .unwrap();
-        assert!(output.status.success());
+        assert!(output.status.success(), "{:?}", output);
     }
     assert_eq!(markers(), 0);
     store.reclaim().unwrap();

@@ -16,10 +16,7 @@ impl Deref for NativeStore {
 }
 impl Drop for NativeStore {
     fn drop(&mut self) {
-        if let Err(error) =
-            keyring::Entry::new("saucepan.metadata-integrity", &self.key.to_string())
-                .and_then(|entry| entry.delete_credential())
-        {
+        if let Err(error) = NativeKeyring.retire(self.key) {
             eprintln!("native fixture key cleanup failed: {error}");
         }
     }

@@ -90,6 +90,10 @@ impl Store {
                 op.leftovers = unmanaged;
                 op.shims = changes;
                 op.status = Phase::CleanupPending;
+                op.reason = Some(crate::error::Error::new(
+                    crate::error::ErrorCode::IoError,
+                    "application cleanup pending",
+                ));
                 op.changed = true;
                 op.pending.clear();
                 application.state = AppState::Removing;
@@ -108,7 +112,8 @@ impl Store {
                 } else {
                     op.status = Phase::Failed;
                     op.changed = false;
-                    op.pending = vec![format!("{error:#}")];
+                    op.reason = Some(crate::error::Error::from_anyhow(&error));
+                    op.pending = vec![op.reason.as_ref().unwrap().message.clone()];
                     self.save_operation(&op)?;
                     return Ok(op);
                 }
@@ -156,7 +161,8 @@ impl Store {
                 Ok(())
             })();
             if let Err(error) = result {
-                pending.push(format!("{}: {error:#}", change.desired.name));
+                op.reason = Some(crate::error::Error::from_anyhow(&error));
+                pending.push(format!("{}: cleanup pending", change.desired.name));
             }
         }
         let _lock = self.lock()?;
@@ -189,9 +195,13 @@ impl Store {
         match cleanup {
             Ok(()) => {
                 op.status = Phase::Complete;
+                op.reason = None;
                 op.pending.clear();
             }
-            Err(error) => op.pending = vec![format!("retired application: {error:#}")],
+            Err(error) => {
+                op.reason = Some(crate::error::Error::from_anyhow(&error));
+                op.pending = vec!["retired application cleanup pending".into()];
+            }
         }
         self.save_operation(op)
     }

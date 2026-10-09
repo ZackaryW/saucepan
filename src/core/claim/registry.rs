@@ -226,7 +226,8 @@ pub struct RegistryWrites {
     pub writes: Vec<(Identity, Value)>,
     pub deletes: Vec<Identity>,
 }
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum CredentialChange {
     Enable,
     Rotate,

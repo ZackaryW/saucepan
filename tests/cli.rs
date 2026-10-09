@@ -33,6 +33,10 @@ fn lifecycle_inspection_reports_pending_without_success_exit() {
     let pending = call(&["reconcile", "--operation", &id.to_string()]);
     assert_eq!(pending.status.code(), Some(2));
     assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&pending.stdout).unwrap()[0]["reason"]["code"],
+        "invalid_request"
+    );
+    assert_eq!(
         serde_json::from_slice::<serde_json::Value>(&pending.stdout).unwrap()[0]["status"],
         "preparing"
     );

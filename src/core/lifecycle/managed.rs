@@ -164,7 +164,10 @@ impl Store {
                 let current = self.application(app)?;
                 ensure!(
                     Some(current.revision) == op.expected_revision,
-                    "application revision conflict; retry with a new operation"
+                    crate::error::Error::new(
+                        crate::error::ErrorCode::RevisionConflict,
+                        "application revision conflict; retry with a new operation"
+                    )
                 );
                 current
             };
@@ -215,7 +218,10 @@ impl Store {
             let _lock = self.lock()?;
             ensure!(
                 Some(self.application(app)?.revision) == op.expected_revision,
-                "application revision conflict; retry with a new operation"
+                crate::error::Error::new(
+                    crate::error::ErrorCode::RevisionConflict,
+                    "application revision conflict; retry with a new operation"
+                )
             );
             op.status = Phase::CommitIntent;
             op.pending.clear();
@@ -230,12 +236,14 @@ impl Store {
     }
     fn fail_preparation(&self, op: &mut Operation, error: anyhow::Error) -> Result<()> {
         let _lock = self.lock()?;
-        op.status = if error.to_string().contains("revision conflict") {
+        op.reason = Some(crate::error::Error::from_anyhow(&error));
+        op.status = if op.reason.as_ref().unwrap().code == crate::error::ErrorCode::RevisionConflict
+        {
             Phase::Conflict
         } else {
             Phase::Failed
         };
-        op.pending = vec![format!("{error:#}")];
+        op.pending = vec![op.reason.as_ref().unwrap().message.clone()];
         op.candidate = None;
         self.save_operation(op)
     }
@@ -254,7 +262,8 @@ impl Store {
                 {
                     let _lock = self.lock()?;
                     op.candidate = None;
-                    op.pending = vec![format!("candidate unavailable: {error:#}")];
+                    op.reason = Some(crate::error::Error::from_anyhow(&error));
+                    op.pending = vec!["candidate unavailable".into()];
                     op.status = if matches!(op.action, Action::Install { .. }) {
                         Phase::CleanupPending
                     } else {
@@ -287,6 +296,10 @@ impl Store {
                 let current = self.application(op.app)?;
                 if Some(current.revision) != op.expected_revision {
                     op.status = Phase::Conflict;
+                    op.reason = Some(crate::error::Error::new(
+                        crate::error::ErrorCode::RevisionConflict,
+                        "application revision conflict",
+                    ));
                     op.pending =
                         vec!["application revision conflict; retry with a new operation".into()];
                     op.candidate = None;
@@ -298,6 +311,7 @@ impl Store {
             }
             let record = Record::Application(desired.clone());
             op.status = Phase::Complete;
+            op.reason = None;
             op.changed = true;
             op.pending.clear();
             self.commit_operation(op, vec![record])
@@ -310,9 +324,16 @@ impl Store {
             }
             if matches!(op.action, Action::Update { .. }) && self.application(op.app).is_err() {
                 op.status = Phase::Conflict;
+                op.reason = Some(crate::error::Error::new(
+                    crate::error::ErrorCode::RevisionConflict,
+                    "application revision conflict",
+                ));
                 op.candidate = None;
             }
-            op.pending = vec![format!("{error:#}")];
+            if op.status != Phase::Conflict {
+                op.reason = Some(crate::error::Error::from_anyhow(&error));
+            }
+            op.pending = vec![op.reason.as_ref().unwrap().message.clone()];
             self.save_operation(op)?;
         }
         Ok(())

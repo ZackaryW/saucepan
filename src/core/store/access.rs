@@ -159,6 +159,7 @@ impl Store {
             let _lock = self.lock()?;
             self.application(app)?;
             let application = self.registry(app)?;
+            self.check_session(&application)?;
             let claim = application
                 .claims
                 .get(&claim)
