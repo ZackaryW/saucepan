@@ -1,4 +1,5 @@
 pub mod archive;
+pub mod crypto;
 pub mod fs;
 pub mod links;
 pub mod lock;
