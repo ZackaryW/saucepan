@@ -32,11 +32,11 @@ cargo run -- --root ./scratch acquire request.json
 cargo run -- --root ./scratch path OUTPUT_UUID
 ```
 
-Acquisition returns `entry`, `directory`, `reused`, `update_checked`, `stale`, and a `reclaim` report. `new_entry` creates another output for identical inputs; `reuse` returns a compatible verified output. New content never replaces older entry bytes. Local inputs are checked on every acquisition. A saved transaction intent lets reopening recover interrupted publication and claim/binding changes.
+Acquisition returns `entry`, `directory`, `reused`, `update_checked`, `stale`, and a `reclaim` report. `new_entry` creates another output for identical inputs; `reuse` returns a compatible verified output. New content never replaces older entry bytes. Local inputs are checked when preparing outputs; ensuring an available compatible claim reuses its selection without refreshing the source. A saved transaction intent lets reopening recover interrupted publication and claim/binding changes.
 
 `path` defaults to metadata checks without hashing payloads. Use `path OUTPUT_UUID --verification full` or `verify OUTPUT_UUID` for explicit integrity verification. Bare paths have no retained reclaim protection; native consumers hold `ResourceLease` guards. See [resource access](docs/resource-access.md) for ownership and verification contracts.
 
-`models/{source,index,store,policy}` defines the contract, matching `core` modules own behavior, `cli` adapts commands, and `utils` contains domain-independent mechanics. `saucepan-shim` is a separate binary that reads its sibling `.shim.json` app identifier and the application's committed binding.
+`models/{source,index,store,policy,claim}` defines the contract, matching `core` modules own behavior, `cli` adapts commands, and `utils` contains domain-independent mechanics. `saucepan-shim` is a separate binary that reads its sibling `.shim.json` app identifier and the application's committed binding.
 
 Portable helpers require caller-owned stable roots. Atomic file replacement does not imply a multi-file transaction or power-loss directory durability; native locks coordinate cooperating callers. Path validation rejects unsafe/ambiguous names; it does not isolate hostile processes running as the same user.
 
@@ -76,12 +76,16 @@ Saucepan's own release request can be installed with `bootstrap request.json PAT
 
 `replace-shim` maintains a registered launcher, while `adopt-shim` explicitly registers a verified existing pair. `uninstall APP_UUID` releases claims and disables new launches before cleaning verified owned files; cached outputs and existing consumers remain subject to normal retention and leases. Busy or changed files leave inspectable pending work. Use `operations --app APP_UUID` and `reconcile --operation OPERATION_UUID` from a directly invoked binary to finish cleanup after the launcher exits.
 
-See [application lifecycle](docs/application-lifecycle.md) for commands, ownership and recovery rules, and [verification evidence](docs/lifecycle-verification.md) for executed scenarios. Run `uv run --no-project python scripts/lifecycle_acceptance.py` for the full real-build flow in a unique `target/lifecycle-acceptance/<uuid>/root`; it verifies that every existing `mock` file remains unchanged. Existing records load with default lifecycle fields, but old binaries are not supported as writers against newly written metadata.
+See [application lifecycle](docs/application-lifecycle.md) for commands, ownership and recovery rules, and [verification evidence](docs/lifecycle-verification.md) for executed scenarios. Earlier script reports describe historical checkpoints. Earlier layouts are rejected without migration. Current claim-registry acceptance is covered by `cargo test --offline --test claim_acceptance`; it uses the built binary and shim in a disposable root.
 
 
 The Rust app-facing API is `Store::session(app, optional_credential)`. It evaluates
 source, scope and action restrictions independently of whether proof is enabled.
 Use `register_application` with an explicit registration key and
 `configure_application` with an observed revision for administrative changes.
-See [application policy contracts](docs/claim-policies.md). CLI credential delivery,
-claim coverage/deduplication, and explicit recovery commands are still being implemented.
+Compatible same-scope requests share one claim; contained natural folders return
+a relative view of that owner. Different scopes update independently. Recovery
+uses `report_unavailable` (default), `restore_exact`, or `refresh`.
+See [application policy contracts](docs/claim-policies.md), [CLI commands and JSON
+errors](docs/claim-cli.md), the [native consumer example](docs/scoped-consumer.md),
+and [current verification evidence](docs/claim-verification.md).

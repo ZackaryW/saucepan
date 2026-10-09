@@ -1,8 +1,25 @@
 # Specification map
 
-These main specs describe the current Saucepan contract. Archived changes record
+These main specs describe the synchronized Saucepan baseline. Archived changes record
 historical decisions and are not alternative versions to inherit at runtime.
 Adding a provider or policy type does not establish backward schema compatibility.
+
+The implemented `secure-application-claim-registry` change remains active until
+separate sync/archive is requested. It replaces embedded claims with authenticated
+app registries and adds explicit scopes, covered ensure, optional credentials,
+registered recovery and consumer error codes. Current usage and verification:
+
+| Implemented responsibility | Documentation |
+| --- | --- |
+| Registry, scope, access and output policy | [Claim policies](../../docs/claim-policies.md) |
+| Readable HMAC records and native key custody | [Claim integrity](../../docs/claim-integrity.md) |
+| CLI registration, credentials, recovery and machine errors | [Claim CLI](../../docs/claim-cli.md) |
+| Native scoped/view lifetime integration | [Scoped consumer](../../docs/scoped-consumer.md) |
+| Integrated acceptance and host limitations | [Verification](../../docs/claim-verification.md) |
+
+This implementation accepts only its current authenticated contract. Main-spec
+or historical references to inline claims or older record defaults do not imply
+a decoder or migration path for those stores.
 
 Read overlapping requirements together using these responsibility boundaries:
 

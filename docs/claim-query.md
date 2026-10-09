@@ -5,9 +5,11 @@ changes output identity, deduplication, source refresh, or retention. Two projec
 can have distinct claims and contexts while sharing the same cached output.
 
 Native callers use `Store::acquire_for_with_context(app, scope, request, context, options)`
-to publish a new claim and its labels together. `acquire_for` creates empty
-context. Failed acquisition does not publish partial labels. Repeated acquisition
-creates another claim; labels do not enforce uniqueness or provide an upsert.
+to ensure a scoped claim and its labels together. `acquire_for` supplies empty
+context. Failed acquisition does not publish partial labels. A compatible retry
+in the same explicit scope returns the existing claim; changed context requires
+revision-checked replacement. Different scopes retain independent ownership.
+Prefer `AppSession::ensure` to apply registered defaults for omitted policies.
 
 `Store::set_claim_context(app, claim, context, expected_revision)` replaces the
 whole map and returns the committed claim. Read the application's revision first.
@@ -71,8 +73,8 @@ changing revisions, or holding leases. Existing pending transaction recovery
 still runs when opening/locking the store. A result's application revision tracks
 application mutations, not all output availability changes.
 
-For consumption, `Store::lease(result.claims[i].claim.entry_uuid, mode)` selects
-that exact output; `Store::lease_claim(app, claim, mode)` selects the claim's current
+For app consumption, `session.lease_output(result.claims[i].claim.entry_uuid, mode)` selects
+that exact authorized output; `session.lease_claim(claim, mode)` selects the claim's current
 output atomically with lease protection. Search followed by either operation is
 not one atomic operation and can fail if reclaim/removal wins. Context and queries
 provide neither authentication nor standing ownership of future matches.
@@ -109,7 +111,10 @@ the example JSON files and a fresh temporary root, also checking native parity,
 multiple matches, stale revisions, error exits, and clearing context. It never
 uses the existing `mock/` installation or a production Saucepan root.
 
-## Verification evidence
+## Earlier query checkpoint evidence
+
+The counts below describe the query checkpoint before the separate claim registry.
+Current integrated evidence is in [claim-verification.md](claim-verification.md).
 
 Verified on 2026-10-09 on Windows x86_64 with Rust 1.98.1:
 

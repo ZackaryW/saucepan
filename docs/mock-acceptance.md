@@ -1,5 +1,9 @@
 # Simulated installation
 
+This is historical checkpoint evidence. Its earlier record layout and scripts do
+not define current schema compatibility. Use [claim registry verification](claim-verification.md)
+for the current implementation and runnable acceptance commands.
+
 For the current coordinated lifecycle, use `uv run --no-project python scripts/lifecycle_acceptance.py`. It installs two real release builds in a fresh `target/lifecycle-acceptance/<uuid>/root`, covers update failure, rollback, launcher maintenance and recoverable uninstall, and compares every existing mock file's digest. See [lifecycle verification](lifecycle-verification.md). The older `mock` recipe below intentionally writes `mock`; it was not rerun for the lifecycle change. Do not run an old manager against newly written lifecycle metadata.
 
 Run `uv run --no-project python scripts/acceptance.py` (or Python 3.11+ directly) from the repository. The harness builds actual release executables with build IDs `acceptance-a` and `acceptance-b`, packages them as ZIP assets, and serves them through an explicit loopback GitHub-compatible fixture. It uses the real provider and public CLI for every source, acquisition, claim, activation, and reclaim operation.

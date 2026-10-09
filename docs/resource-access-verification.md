@@ -1,5 +1,9 @@
 # Resource access verification
 
+This is historical checkpoint evidence. Its earlier record layout and scripts do
+not define current schema compatibility. Use [claim registry verification](claim-verification.md)
+for the current implementation and runnable acceptance commands.
+
 ## Lifecycle regression run
 
 The lifecycle change reran the full access/marker suite, both hidden Windows

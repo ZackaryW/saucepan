@@ -28,7 +28,8 @@ candidate before probing and again after probing; a probe that modifies content
 cannot publish a new binding. Both scans retain the entry lease without holding
 the global mutation lock. Publication, recovery, and compatible-output reuse
 keep their full integrity checks. Existing installed shims retain their old
-behavior until separately rebuilt and installed.
+behavior in their separate historical roots. Rebuild and install shims for the
+current authenticated store contract; earlier roots are not migrated.
 
 `path ENTRY_UUID` now defaults to `metadata`: it checks identity, ready state,
 and a real contained output directory, without walking or hashing its contents.

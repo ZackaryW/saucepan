@@ -1,5 +1,9 @@
 # Application lifecycle verification
 
+This is historical checkpoint evidence. Its earlier record layout and scripts do
+not define current schema compatibility. Use [claim registry verification](claim-verification.md)
+for the current implementation and runnable acceptance commands.
+
 Verified on Windows x86_64 on 2026-10-08. The coordinated change covers managed
 install, update, rollback, launcher ownership/maintenance, uninstall and explicit
 reconciliation. Earlier changes remain unarchived; planning artifacts are kept

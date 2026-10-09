@@ -1,16 +1,16 @@
 # Application lifecycle
 
 Application metadata includes readiness/removing state, a monotonic mutation
-revision and an owned-shim list. Existing new-format records load as ready with
-revision zero and no registered shims. Removing applications reject claims,
+revision and an owned-shim list. Only the current authenticated store contract is
+supported; earlier layouts are rejected without migration. Removing applications reject claims,
 settings, activation and deactivation mutations; `inspect` can still show the
 record. A no-op deactivation or unchanged settings does not advance revision.
 
 Durable lifecycle operations live under
 `.staging/lifecycle/<operation-uuid>/index.json`. These are recovery receipts,
 not disposable download staging. The short journal couples metadata changes
-with their operation receipt. App retirement moves its validated directory to
-the operation directory so interruption cannot leave a broken index inventory.
+with their operation receipt. App retirement removes authenticated app/registry
+membership in the same transition; verified recovery receipts remain available.
 Unknown additional files are never recursively deleted.
 
 ```powershell
@@ -35,8 +35,9 @@ compaction policy exists; time and PIDs are not proof of abandonment.
 Lock order is operation, shim maintenance, then short store mutation; candidate
 scans and probes run outside store mutation while retaining output protection.
 File cleanup belongs to explicit reconciliation, not global store recovery.
-Current and older writers must not mutate the same root concurrently. Reading
-old records does not promise that old binaries can write the new metadata.
+Only binaries implementing this authenticated contract may use its root. There
+is no older-schema reader or writer compatibility promise. Use untouched separate
+roots when switching back to a previous implementation.
 
 Owned launcher maintenance uses these commands:
 
