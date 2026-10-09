@@ -1,4 +1,5 @@
 use super::Journal;
+use crate::error::{Error, ErrorCode};
 use crate::{
     core::{Store, source::AcquireOptions},
     models::{
@@ -60,7 +61,10 @@ impl Store {
     }
     pub fn update_claim(&self, app: Uuid, id: Uuid, options: &AcquireOptions) -> Result<Claimed> {
         let application = self.application(app)?;
-        let claim = application.claims.get(&id).context("claim missing")?;
+        let claim = application
+            .claims
+            .get(&id)
+            .with_context(|| Error::new(ErrorCode::UnknownClaim, "claim missing"))?;
         let acquired = self.acquire_inner(
             &claim.request,
             options,
@@ -91,9 +95,12 @@ impl Store {
         let mut application = self.application(app)?;
         ensure!(
             application.revision == expected_revision,
-            "application revision conflict"
+            Error::new(ErrorCode::RevisionConflict, "application revision conflict")
         );
-        let claim = application.claims.get_mut(&id).context("claim missing")?;
+        let claim = application
+            .claims
+            .get_mut(&id)
+            .with_context(|| Error::new(ErrorCode::UnknownClaim, "claim missing"))?;
         if claim.context == *context {
             return Ok(claim.clone());
         }
@@ -109,7 +116,10 @@ impl Store {
     pub fn release_claim(&self, app: Uuid, id: Uuid) -> Result<()> {
         let _lock = self.lock()?;
         let mut application = self.application(app)?;
-        application.claims.remove(&id).context("claim missing")?;
+        application
+            .claims
+            .remove(&id)
+            .with_context(|| Error::new(ErrorCode::UnknownClaim, "claim missing"))?;
         application.bump()?;
         self.commit(Journal {
             records: vec![Record::Application(application)],
@@ -172,7 +182,10 @@ impl Store {
         let mut app = self.application(target.app)?;
         ensure!(
             app.claims.get(&target.id).map(|c| c.entry_uuid) == target.expected,
-            "claim changed during acquisition; retry"
+            Error::new(
+                ErrorCode::RevisionConflict,
+                "claim changed during acquisition; retry"
+            )
         );
         let context = app
             .claims

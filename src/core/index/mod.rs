@@ -1,3 +1,4 @@
+use crate::error::{Error, ErrorCode};
 use crate::{
     core::Store,
     models::{
@@ -24,10 +25,29 @@ pub(crate) struct Journal {
     pub retire: Option<(Uuid, Uuid)>,
 }
 
+pub(crate) fn classify_missing(
+    error: anyhow::Error,
+    code: ErrorCode,
+    message: &'static str,
+) -> anyhow::Error {
+    if error
+        .downcast_ref::<std::io::Error>()
+        .is_some_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+    {
+        error.context(Error::new(code, message))
+    } else {
+        error
+    }
+}
+
 pub(crate) fn read<T: DeserializeOwned>(path: &Path) -> Result<T> {
-    Ok(serde_json::from_slice(
-        &fs::read(path).with_context(|| format!("reading {}", path.display()))?,
-    )?)
+    serde_json::from_slice(&fs::read(path).with_context(|| format!("reading {}", path.display()))?)
+        .map_err(|e| {
+            anyhow::Error::new(e).context(Error::new(
+                ErrorCode::IntegrityError,
+                "invalid stored metadata",
+            ))
+        })
 }
 pub(crate) fn write(path: &Path, value: &impl Serialize) -> Result<()> {
     atomic_write(path, |file| {
@@ -38,19 +58,27 @@ pub(crate) fn write(path: &Path, value: &impl Serialize) -> Result<()> {
 impl Store {
     pub fn record(&self, id: Uuid) -> Result<Record> {
         let record: Record = read(&beneath(&self.root, &format!("index/{id}/index.json"))?)?;
-        ensure!(record.uuid() == id, "index identity mismatch");
+        ensure!(
+            record.uuid() == id,
+            Error::new(ErrorCode::IntegrityError, "index identity mismatch")
+        );
         Ok(record)
     }
     pub fn application(&self, id: Uuid) -> Result<Application> {
-        match self.record(id)? {
+        match self.record(id).map_err(|e| {
+            classify_missing(e, ErrorCode::UnknownApplication, "application missing")
+        })? {
             Record::Application(a) => {
                 ensure!(
                     a.state == crate::models::index::AppState::Ready,
-                    "application is removing"
+                    Error::new(ErrorCode::AccessDenied, "application is removing")
                 );
                 Ok(a)
             }
-            _ => bail!("not an application"),
+            _ => bail!(Error::new(
+                ErrorCode::UnknownApplication,
+                "not an application"
+            )),
         }
     }
     pub(crate) fn save_record(&self, record: &Record) -> Result<()> {
@@ -77,7 +105,10 @@ impl Store {
         Ok(out)
     }
     pub fn register_app(&self, name: String) -> Result<Application> {
-        ensure!(!name.trim().is_empty(), "empty app name");
+        ensure!(
+            !name.trim().is_empty(),
+            Error::new(ErrorCode::InvalidRequest, "empty app name")
+        );
         let _guard = self.lock()?;
         let app = Application {
             uuid: Uuid::new_v4(),
@@ -93,7 +124,12 @@ impl Store {
         Ok(app)
     }
     pub fn register_source(&self, source: Source) -> Result<SourceRecord> {
-        let source = super::source::git::normalize(source)?;
+        let source = super::source::git::normalize(source).map_err(|e| {
+            e.context(Error::new(
+                ErrorCode::InvalidRequest,
+                "invalid source definition",
+            ))
+        })?;
         let _guard = self.lock()?;
         for entry in fs::read_dir(self.root.join("source"))? {
             let path = entry?.path();
@@ -114,8 +150,12 @@ impl Store {
         Ok(record)
     }
     pub fn source(&self, id: Uuid) -> Result<SourceRecord> {
-        let record: SourceRecord = read(&beneath(&self.root, &format!("source/{id}.json"))?)?;
-        ensure!(record.uuid == id, "source identity mismatch");
+        let record: SourceRecord = read(&beneath(&self.root, &format!("source/{id}.json"))?)
+            .map_err(|e| classify_missing(e, ErrorCode::SourceError, "source missing"))?;
+        ensure!(
+            record.uuid == id,
+            Error::new(ErrorCode::IntegrityError, "source identity mismatch")
+        );
         Ok(record)
     }
     pub(crate) fn save_source(&self, source: &SourceRecord) -> Result<()> {

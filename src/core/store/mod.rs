@@ -1,3 +1,4 @@
+use crate::error::{Error, ErrorCode};
 use crate::{
     core::{Store, index::Journal, policy},
     models::{
@@ -40,9 +41,11 @@ pub(crate) fn manifest(path: &std::path::Path) -> Result<BTreeMap<String, FileEn
 }
 impl Store {
     pub fn output(&self, id: Uuid) -> Result<OutputEntry> {
-        match self.record(id)? {
+        match self.record(id).map_err(|e| {
+            super::index::classify_missing(e, ErrorCode::UnknownOutput, "output missing")
+        })? {
             Record::Output(entry) => Ok(*entry),
-            _ => bail!("not an output entry"),
+            _ => bail!(Error::new(ErrorCode::UnknownOutput, "not an output entry")),
         }
     }
     pub fn path(&self, id: Uuid) -> Result<PathBuf> {
@@ -51,8 +54,7 @@ impl Store {
     pub(crate) fn metadata_path(&self, entry: &OutputEntry) -> Result<PathBuf> {
         ensure!(
             entry.state == Availability::Ready,
-            "entry is unavailable: {:?}",
-            entry.state
+            Error::new(ErrorCode::ContentUnavailable, "entry is unavailable")
         );
         let path = beneath(&self.root, &format!("store/{}", entry.uuid))?;
         ensure!(
@@ -70,7 +72,10 @@ impl Store {
     pub(crate) fn check_manifest(&self, path: &std::path::Path, entry: &OutputEntry) -> Result<()> {
         ensure!(
             self.access_manifest(path)? == entry.files,
-            "stored output integrity mismatch"
+            Error::new(
+                ErrorCode::IntegrityError,
+                "stored output integrity mismatch"
+            )
         );
         Ok(())
     }
@@ -130,8 +135,22 @@ impl Store {
         claim: Option<super::index::claims::ClaimTarget>,
         retain: bool,
     ) -> Result<Acquisition> {
-        policy::validate(request)?;
-        let prepared = self.prepare(request, options)?;
+        policy::validate(request).map_err(|e| {
+            e.context(Error::new(
+                ErrorCode::InvalidRequest,
+                "invalid acquisition request",
+            ))
+        })?;
+        let prepared = self.prepare(request, options).map_err(|e| {
+            if e.downcast_ref::<Error>().is_some() {
+                e
+            } else {
+                e.context(Error::new(
+                    ErrorCode::SourceError,
+                    "source acquisition failed",
+                ))
+            }
+        })?;
         let content = prepared.temp.path().join("content");
         let files = manifest(&content)?;
         for bin in &request.selection.bin {

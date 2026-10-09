@@ -1,5 +1,6 @@
 //! Execution leases are persisted as markers whose open native handles outlive
 //! launcher failure. No PID or elapsed-time heuristic grants reclaim permission.
+use crate::error::{Error, ErrorCode};
 use crate::{
     core::Store,
     models::store::{OutputEntry, ResolvedResource, VerificationMode},
@@ -127,7 +128,10 @@ impl Store {
         let (output, mut lease) = {
             let _lock = self.lock()?;
             let application = self.application(app)?;
-            let claim = application.claims.get(&claim).context("claim missing")?;
+            let claim = application
+                .claims
+                .get(&claim)
+                .with_context(|| Error::new(ErrorCode::UnknownClaim, "claim missing"))?;
             let output = self.output(claim.entry_uuid)?;
             let lease = self.metadata_lease_locked(&output)?;
             (output, lease)

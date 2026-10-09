@@ -1,3 +1,4 @@
+pub mod claim;
 pub mod index;
 pub mod policy;
 pub mod source;

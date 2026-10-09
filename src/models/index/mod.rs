@@ -1,4 +1,5 @@
 use super::store::{OutputEntry, Request};
+use crate::error::{Error, ErrorCode};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use uuid::Uuid;
@@ -11,17 +12,26 @@ pub type ClaimContext = BTreeMap<String, String>;
 pub fn validate_context_field(key: &str, value: &str) -> anyhow::Result<()> {
     anyhow::ensure!(
         !key.is_empty() && key.len() <= 128,
-        "context key must contain 1..=128 UTF-8 bytes"
+        Error::new(
+            ErrorCode::InvalidRequest,
+            "context key must contain 1..=128 UTF-8 bytes"
+        )
     );
     anyhow::ensure!(
         value.len() <= 4096,
-        "context value exceeds 4096 UTF-8 bytes"
+        Error::new(
+            ErrorCode::InvalidRequest,
+            "context value exceeds 4096 UTF-8 bytes"
+        )
     );
     Ok(())
 }
 
 pub fn validate_context(context: &ClaimContext) -> anyhow::Result<()> {
-    anyhow::ensure!(context.len() <= 64, "context exceeds 64 entries");
+    anyhow::ensure!(
+        context.len() <= 64,
+        Error::new(ErrorCode::InvalidRequest, "context exceeds 64 entries")
+    );
     for (key, value) in context {
         validate_context_field(key, value)?;
     }
