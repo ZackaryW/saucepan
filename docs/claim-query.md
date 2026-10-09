@@ -4,7 +4,7 @@ Context is a plain map of caller-defined string labels on a claim. It never
 changes output identity, deduplication, source refresh, or retention. Two projects
 can have distinct claims and contexts while sharing the same cached output.
 
-Native callers use `Store::acquire_for_with_context(app, request, context, options)`
+Native callers use `Store::acquire_for_with_context(app, scope, request, context, options)`
 to publish a new claim and its labels together. `acquire_for` creates empty
 context. Failed acquisition does not publish partial labels. Repeated acquisition
 creates another claim; labels do not enforce uniqueness or provide an upsert.
@@ -19,8 +19,9 @@ binding. Missing/removing applications and missing claims fail.
 Keys contain 1–128 UTF-8 bytes; values contain 0–4096 bytes; each context has at
 most 64 entries. Values must be strings. Dotted keys are literal. Paths, case,
 whitespace, and Unicode are preserved: the consumer owns canonical project names.
-Omitting context means empty metadata in the current contract, not a general
-schema compatibility or legacy migration promise.
+Omitting context on an acquisition request means empty metadata. Persisted signed
+claim members require their context field; no older-record decoder or migration
+promise is implied.
 
 Primitive updates preserve context present at commit time, including a concurrent
 context edit. Managed updates and rollback preserve labels but conflict if a
@@ -83,8 +84,8 @@ request as described in the README, use these PowerShell commands. `$root` is
 your explicit test store path and `$app` is the registered application's UUID.
 
 ```powershell
-$a = cargo run -- --root $root acquire request.json --app $app --context examples/claim-query/context-a.json | ConvertFrom-Json
-$b = cargo run -- --root $root acquire request.json --app $app --context examples/claim-query/context-b.json | ConvertFrom-Json
+$a = cargo run -- --root $root acquire request.json --app $app --scope project-a --context examples/claim-query/context-a.json | ConvertFrom-Json
+$b = cargo run -- --root $root acquire request.json --app $app --scope project-b --context examples/claim-query/context-b.json | ConvertFrom-Json
 $query = Get-Content examples/claim-query/query.json -Raw | ConvertFrom-Json
 $query.app = $app
 $query | ConvertTo-Json -Depth 8 | Set-Content query.json

@@ -115,6 +115,32 @@ pub fn shim_main() -> Result<i32> {
     )?;
     let config: ShimConfig = serde_json::from_slice(&fs::read(exe.with_extension("shim.json"))?)?;
     let store = Store::open(root)?;
+    {
+        let _lock = store.lock()?;
+        let app = store.application(config.app)?;
+        let name = exe
+            .file_name()
+            .context("shim filename missing")?
+            .to_str()
+            .context("non-UTF8 shim name")?;
+        let owned =
+            app.shims
+                .iter()
+                .find(|owned| owned.name == name)
+                .context(crate::error::Error::new(
+                    crate::error::ErrorCode::IntegrityError,
+                    "shim is not registered to this application",
+                ))?;
+        anyhow::ensure!(
+            owned.saucepan == config.saucepan
+                && super::shims::digest(&exe)? == owned.digest
+                && super::shims::digest(&exe.with_extension("shim.json"))? == owned.config_digest,
+            crate::error::Error::new(
+                crate::error::ErrorCode::IntegrityError,
+                "shim binding authentication failed"
+            )
+        );
+    }
     store.launch(
         config.app,
         &std::env::args_os().skip(1).collect::<Vec<_>>(),

@@ -8,7 +8,7 @@ fn primitive_commit_keeps_intervening_context_and_returns_that_snapshot() {
         let tmp = tempfile::tempdir().unwrap();
         let file = tmp.path().join("file");
         fs::write(&file, "one").unwrap();
-        let mut store = Store::create(&tmp.path().join("root")).unwrap();
+        let mut store = Store::create_fixture(&tmp.path().join("root")).unwrap();
         let app = store.register_app("test".into()).unwrap();
         let source = store
             .register_source(Source::Local { path: file.clone() })
@@ -20,7 +20,12 @@ fn primitive_commit_keeps_intervening_context_and_returns_that_snapshot() {
             policies: Default::default(),
         };
         let claim = store
-            .acquire_for(app.uuid, &request, &Default::default())
+            .acquire_for(
+                app.uuid,
+                &"fixture".to_string().try_into().unwrap(),
+                &request,
+                &Default::default(),
+            )
             .unwrap()
             .claim;
         if !reuse {
@@ -42,8 +47,7 @@ fn primitive_commit_keeps_intervening_context_and_returns_that_snapshot() {
         assert_eq!(updated.claim.context, labels);
         assert_eq!(
             serde_json::to_value(&updated.claim).unwrap(),
-            serde_json::to_value(&store.application(app.uuid).unwrap().claims[&claim.uuid])
-                .unwrap()
+            serde_json::to_value(&store.registry(app.uuid).unwrap().claims[&claim.uuid]).unwrap()
         );
     }
 }
@@ -52,7 +56,7 @@ fn primitive_commit_keeps_intervening_context_and_returns_that_snapshot() {
 fn context_journal_recovers_before_and_after_record_publication() {
     for published in [false, true] {
         let tmp = tempfile::tempdir().unwrap();
-        let store = Store::create(&tmp.path().join("root")).unwrap();
+        let store = Store::create_fixture(&tmp.path().join("root")).unwrap();
         let file = tmp.path().join("file");
         fs::write(&file, "one").unwrap();
         let source = store.register_source(Source::Local { path: file }).unwrap();
@@ -64,29 +68,44 @@ fn context_journal_recovers_before_and_after_record_publication() {
             policies: Default::default(),
         };
         let claimed = store
-            .acquire_for(app.uuid, &request, &Default::default())
+            .acquire_for(
+                app.uuid,
+                &"fixture".to_string().try_into().unwrap(),
+                &request,
+                &Default::default(),
+            )
             .unwrap();
         app = store.application(app.uuid).unwrap();
-        app.claims.get_mut(&claimed.claim.uuid).unwrap().context =
-            [("project".into(), "recovered".into())].into();
+        let mut registry = store.registry(app.uuid).unwrap();
+        registry
+            .claims
+            .get_mut(&claimed.claim.uuid)
+            .unwrap()
+            .context = [("project".into(), "recovered".into())].into();
         app.bump().unwrap();
         let record = Record::Application(app.clone());
-        super::super::write(
-            &store.root.join(".staging/transaction.json"),
-            &Journal {
+        store.interrupt_commit(
+            Journal {
                 records: vec![record.clone()],
+                registries: vec![registry],
                 ..Default::default()
             },
-        )
-        .unwrap();
-        if published {
-            store.save_record(&record).unwrap();
-        }
-        let reopened = Store::open(&store.root).unwrap();
+            if published { 1 } else { 0 },
+        );
+        let reopened = Store::open_fixture(&store.root).unwrap();
+        assert_eq!(
+            reopened.registry(app.uuid).unwrap().claims[&claimed.claim.uuid].context["project"],
+            "recovered"
+        );
         assert_eq!(
             serde_json::to_value(reopened.application(app.uuid).unwrap()).unwrap(),
             serde_json::to_value(&app).unwrap()
         );
-        assert!(!store.root.join(".staging/transaction.json").exists());
+        assert!(
+            !store
+                .root
+                .join(".staging/metadata-transaction.json")
+                .exists()
+        );
     }
 }

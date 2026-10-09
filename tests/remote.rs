@@ -1,6 +1,7 @@
+mod native_root;
 mod support;
 use saucepan::{
-    core::{Store, source::AcquireOptions},
+    core::source::AcquireOptions,
     models::{
         source::Source,
         store::{AssetFilter, Format, Request, Selector},
@@ -34,7 +35,7 @@ fn release_cache_expiry_fallback_and_cli_use_real_transport() {
         }
     });
     let tmp = tempfile::tempdir().unwrap();
-    let store = Store::create(&tmp.path().join("root")).unwrap();
+    let store = native_root::create(&tmp.path().join("root")).unwrap();
     let source = store
         .register_source(Source::GithubRelease {
             repo: "owner/tool".into(),
@@ -175,7 +176,7 @@ fn url_downloads_refresh_unvalidated_bytes_and_preserve_previous_content() {
         )
     });
     let tmp = tempfile::tempdir().unwrap();
-    let store = Store::create(&tmp.path().join("root")).unwrap();
+    let store = native_root::create(&tmp.path().join("root")).unwrap();
     let source = store
         .register_source(Source::Url {
             url: format!("{}/file", server.base),
@@ -246,7 +247,7 @@ fn zip_integrity_tag_and_shared_platform_discovery() {
         }
     });
     let tmp = tempfile::tempdir().unwrap();
-    let store = Store::create(&tmp.path().join("root")).unwrap();
+    let store = native_root::create(&tmp.path().join("root")).unwrap();
     let source = store
         .register_source(Source::GithubRelease {
             repo: "owner/tool".into(),

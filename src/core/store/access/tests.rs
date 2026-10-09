@@ -14,7 +14,7 @@ fn observed_io_and_paused_scan_do_not_serialize_unrelated_operations() {
     let tmp = tempfile::tempdir().unwrap();
     let input = tmp.path().join("data");
     fs::write(&input, b"payload").unwrap();
-    let mut store = Store::create(&tmp.path().join("root")).unwrap();
+    let mut store = Store::create_fixture(&tmp.path().join("root")).unwrap();
     let source = store
         .register_source(Source::Local { path: input })
         .unwrap();
@@ -96,7 +96,7 @@ fn managed_launch_boundary_checks_target_without_payload_io() {
     let tmp = tempfile::tempdir().unwrap();
     let input = tmp.path().join("tool");
     fs::write(&input, b"not executed at this boundary").unwrap();
-    let mut store = Store::create(&tmp.path().join("root")).unwrap();
+    let mut store = Store::create_fixture(&tmp.path().join("root")).unwrap();
     let source = store
         .register_source(Source::Local { path: input })
         .unwrap();
@@ -164,7 +164,7 @@ fn activation_scans_once_per_phase_outside_mutation_lock() {
     let tmp = tempfile::tempdir().unwrap();
     let exe = std::env::current_exe().unwrap();
     let name = exe.file_name().unwrap().to_str().unwrap().to_owned();
-    let mut store = Store::create(&tmp.path().join("root")).unwrap();
+    let mut store = Store::create_fixture(&tmp.path().join("root")).unwrap();
     let source = store
         .register_source(Source::Local { path: exe.clone() })
         .unwrap();
@@ -229,7 +229,7 @@ fn sweep_preserves_live_markers_and_creation_windows_on_retained_outputs() {
     let tmp = tempfile::tempdir().unwrap();
     let input = tmp.path().join("data");
     fs::write(&input, b"retained").unwrap();
-    let store = Store::create(&tmp.path().join("root")).unwrap();
+    let store = Store::create_fixture(&tmp.path().join("root")).unwrap();
     let source = store
         .register_source(Source::Local { path: input })
         .unwrap();

@@ -1,3 +1,4 @@
+mod native_root;
 use saucepan::{
     core::{
         Store,
@@ -45,6 +46,7 @@ fn documented_cli_flow_and_native_parity() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().join("root");
     success(&root, &["init"]);
+    let _native_key_cleanup = native_root::open(&root).unwrap();
     let input = temp.path().join("input.txt");
     fs::write(&input, "shared data").unwrap();
     let source = temp.path().join("source.json");
@@ -76,6 +78,8 @@ fn documented_cli_flow_and_native_parity() {
         &[
             "acquire",
             request.to_str().unwrap(),
+            "--scope",
+            "fixture",
             "--app",
             &app,
             "--context",
@@ -88,6 +92,8 @@ fn documented_cli_flow_and_native_parity() {
         &[
             "acquire",
             request.to_str().unwrap(),
+            "--scope",
+            "fixture",
             "--app",
             &app,
             "--context",
@@ -171,6 +177,8 @@ fn documented_cli_flow_and_native_parity() {
             &[
                 "acquire",
                 request.to_str().unwrap(),
+                "--scope",
+                "fixture",
                 "--app",
                 &app,
                 "--context",
@@ -201,7 +209,14 @@ fn documented_cli_flow_and_native_parity() {
     // Ordinary acquisition and clearing context remain explicit supported paths.
     let empty = success(
         &root,
-        &["acquire", request.to_str().unwrap(), "--app", &app],
+        &[
+            "acquire",
+            request.to_str().unwrap(),
+            "--scope",
+            "fixture",
+            "--app",
+            &app,
+        ],
     );
     assert_eq!(empty["claim"]["context"], json!({}));
     write(&context_a, &json!({}));

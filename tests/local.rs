@@ -1,18 +1,16 @@
-use saucepan::{
-    core::Store,
-    models::{
-        policy::{Eviction, Identical},
-        source::Source,
-        store::{Request, Selector},
-    },
+mod native_root;
+use saucepan::models::{
+    policy::{Eviction, Identical},
+    source::Source,
+    store::{Request, Selector},
 };
 use std::fs;
-fn setup() -> (tempfile::TempDir, Store, Request) {
+fn setup() -> (tempfile::TempDir, native_root::NativeStore, Request) {
     let dir = tempfile::tempdir().unwrap();
     let input = dir.path().join("input");
     fs::create_dir(&input).unwrap();
     fs::write(input.join("index.json"), "payload").unwrap();
-    let store = Store::create(&dir.path().join("root")).unwrap();
+    let store = native_root::create(&dir.path().join("root")).unwrap();
     let source = store
         .register_source(Source::Local { path: input })
         .unwrap();

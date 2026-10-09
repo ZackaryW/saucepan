@@ -1,8 +1,6 @@
+mod native_root;
 use saucepan::{
-    core::{
-        Store,
-        query::{ClaimQuery, Condition, Operator},
-    },
+    core::query::{ClaimQuery, Condition, Operator},
     models::{
         index::{ClaimContext, Settings},
         policy::Eviction,
@@ -13,11 +11,11 @@ use saucepan::{
 use std::fs;
 use uuid::Uuid;
 
-fn setup() -> (tempfile::TempDir, Store, Uuid, Request) {
+fn setup() -> (tempfile::TempDir, native_root::NativeStore, Uuid, Request) {
     let tmp = tempfile::tempdir().unwrap();
     let file = tmp.path().join("file");
     fs::write(&file, "one").unwrap();
-    let store = Store::create(&tmp.path().join("root")).unwrap();
+    let store = native_root::create(&tmp.path().join("root")).unwrap();
     let app = store.register_app("consumer".into()).unwrap();
     let source = store.register_source(Source::Local { path: file }).unwrap();
     let request = Request {
@@ -50,7 +48,13 @@ fn searches_one_application_with_and_filters_and_deterministic_duplicates() {
     for alias in ["skills-core", "skills-extra", "skills-core"] {
         expected.push(
             store
-                .acquire_for_with_context(app, &request, &labels("A", alias), &Default::default())
+                .acquire_for_with_context(
+                    app,
+                    &"fixture".to_string().try_into().unwrap(),
+                    &request,
+                    &labels("A", alias),
+                    &Default::default(),
+                )
                 .unwrap()
                 .claim
                 .uuid,
@@ -59,24 +63,32 @@ fn searches_one_application_with_and_filters_and_deterministic_duplicates() {
     store
         .acquire_for_with_context(
             app,
+            &"fixture".to_string().try_into().unwrap(),
             &request,
             &labels("B", "skills-core"),
             &Default::default(),
         )
         .unwrap();
     store
-        .acquire_for(app, &request, &Default::default())
+        .acquire_for(
+            app,
+            &"fixture".to_string().try_into().unwrap(),
+            &request,
+            &Default::default(),
+        )
         .unwrap();
     let other = store.register_app("other".into()).unwrap();
     store
         .acquire_for_with_context(
             other.uuid,
+            &"fixture".to_string().try_into().unwrap(),
             &request,
             &labels("A", "skills-core"),
             &Default::default(),
         )
         .unwrap();
     let query = ClaimQuery {
+        scope: None,
         app,
         conditions: vec![
             condition("project", Operator::Eq, "A"),
@@ -97,16 +109,19 @@ fn searches_one_application_with_and_filters_and_deterministic_duplicates() {
     assert_eq!(found.revision, store.application(app).unwrap().revision);
     assert!(found.claims.iter().all(|v| v.state == Availability::Ready));
     let exact_star = ClaimQuery {
+        scope: None,
         app,
         conditions: vec![condition("source.alias", Operator::Eq, "skills-*")],
     };
     assert!(store.query_claims(&exact_star).unwrap().claims.is_empty());
     let missing = ClaimQuery {
+        scope: None,
         app,
         conditions: vec![condition("missing", Operator::Glob, "*")],
     };
     assert!(store.query_claims(&missing).unwrap().claims.is_empty());
     let all = ClaimQuery {
+        scope: None,
         app,
         conditions: vec![],
     };
@@ -133,6 +148,7 @@ fn searches_one_application_with_and_filters_and_deterministic_duplicates() {
     assert!(
         store
             .query_claims(&ClaimQuery {
+                scope: None,
                 app: request.source_uuid,
                 conditions: vec![]
             })
@@ -146,6 +162,7 @@ fn query_uses_metadata_without_refreshing_sources_or_touching_payloads() {
     let output = store
         .acquire_for_with_context(
             app,
+            &"fixture".to_string().try_into().unwrap(),
             &request,
             &labels("A", "skills-core"),
             &Default::default(),
@@ -153,15 +170,11 @@ fn query_uses_metadata_without_refreshing_sources_or_touching_payloads() {
         .unwrap();
     let app_path = store.root().join(format!("index/{app}/index.json"));
     let before = fs::read(&app_path).unwrap();
-    // Unavailable source metadata and payload must not prevent a metadata query.
-    fs::remove_file(
-        store
-            .root()
-            .join(format!("source/{}.json", request.source_uuid)),
-    )
-    .unwrap();
+    // Source and output bytes may be unavailable; signed provenance must remain intact.
+    fs::remove_file(_tmp.path().join("file")).unwrap();
     fs::remove_file(output.acquired.directory.join("file")).unwrap();
     let query = ClaimQuery {
+        scope: None,
         app,
         conditions: vec![],
     };
@@ -178,10 +191,11 @@ fn query_uses_metadata_without_refreshing_sources_or_touching_payloads() {
     fs::remove_file(&path).unwrap();
     assert!(store.query_claims(&query).is_err());
     let no_match = ClaimQuery {
+        scope: None,
         app,
         conditions: vec![condition("project", Operator::Eq, "elsewhere")],
     };
-    assert!(store.query_claims(&no_match).unwrap().claims.is_empty());
+    assert!(store.query_claims(&no_match).is_err());
 }
 
 #[test]
@@ -191,12 +205,14 @@ fn results_do_not_protect_content_and_unavailable_claims_remain_searchable() {
     let old = store
         .acquire_for_with_context(
             app,
+            &"fixture".to_string().try_into().unwrap(),
             &request,
             &labels("A", "skills-core"),
             &Default::default(),
         )
         .unwrap();
     let query = ClaimQuery {
+        scope: None,
         app,
         conditions: vec![],
     };

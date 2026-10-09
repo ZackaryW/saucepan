@@ -32,6 +32,7 @@ pub struct Probe {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Installation {
+    pub scope: crate::models::claim::Scope,
     pub name: String,
     pub request: Request,
     pub probe: Probe,
@@ -51,6 +52,7 @@ pub enum ShimAction {
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Action {
     Install {
+        scope: crate::models::claim::Scope,
         name: String,
         request: Box<Request>,
         probe: Probe,
@@ -110,6 +112,7 @@ pub struct Operation {
     pub claim: Uuid,
     pub candidate: Option<Uuid>,
     pub desired: Option<Application>,
+    pub desired_registry: Option<crate::models::claim::RegistryState>,
     pub shims: Vec<ShimChange>,
     pub pending: Vec<String>,
     pub leftovers: Vec<String>,

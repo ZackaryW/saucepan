@@ -40,6 +40,7 @@ impl Store {
             operation.unwrap_or_else(Uuid::new_v4),
             None,
             Action::Install {
+                scope: input.scope.clone(),
                 name: input.name.clone(),
                 request: Box::new(input.request.clone()),
                 probe: input.probe.clone(),
@@ -86,17 +87,32 @@ impl Store {
             let (candidate, _guard) = self.acquire_candidate(&input.request, options)?;
             let lease = self.validate_candidate(candidate.entry.uuid, &binary, &input.probe)?;
             let claim = Claim {
+                scope: input.scope.clone(),
+                overrides: crate::models::claim::policy::Overrides {
+                    identical: Some(input.request.policies.identical),
+                    keep: Some(match input.request.policies.eviction {
+                        crate::models::policy::Eviction::Latest { keep } => keep,
+                    }),
+                    useable_app: Some(true),
+                    reclaim: None,
+                },
+                effective: crate::models::claim::policy::Effective {
+                    output: input.request.policies.clone(),
+                    reclaim: Default::default(),
+                },
                 context: Default::default(),
                 uuid: op.claim,
                 request: input.request.clone(),
                 entry_uuid: candidate.entry.uuid,
             };
+            let mut registry = Self::new_registry(op.app, 1)?;
+            registry.claims.insert(claim.uuid, claim);
+            op.desired_registry = Some(registry);
             op.candidate = Some(candidate.entry.uuid);
             op.desired = Some(Application {
                 uuid: op.app,
                 name: input.name.clone(),
                 settings: Default::default(),
-                claims: [(claim.uuid, claim)].into(),
                 active: Some(Binding {
                     entry_uuid: candidate.entry.uuid,
                     executable: binary,
@@ -152,7 +168,8 @@ impl Store {
                 );
                 current
             };
-            let request = desired
+            let mut registry = self.registry(app)?;
+            let request = registry
                 .claims
                 .get(&claim)
                 .context("claim missing")?
@@ -160,7 +177,7 @@ impl Store {
                 .clone();
             let binary = executable(&request)?.to_owned();
             let (entry, _guard) = if let Some(entry) = rollback {
-                let guard = self.lease(entry, VerificationMode::Metadata)?;
+                let _lock = self.lock()?;
                 let output = self.output(entry)?;
                 ensure!(
                     output.item_key
@@ -171,13 +188,16 @@ impl Store {
                         ))?,
                     "rollback target belongs to another item"
                 );
+                // Authorization belongs to the claim being transitioned. A
+                // historical candidate is intentionally not its current output.
+                let guard = self.metadata_lease_locked(&output)?;
                 (entry, guard)
             } else {
                 let (candidate, guard) = self.acquire_candidate(&request, options)?;
                 (candidate.entry.uuid, guard)
             };
             let lease = self.validate_candidate(entry, &binary, probe)?;
-            desired
+            registry
                 .claims
                 .get_mut(&claim)
                 .context("claim missing")?
@@ -189,6 +209,8 @@ impl Store {
             desired.bump()?;
             op.claim = claim;
             op.candidate = Some(entry);
+            registry.registry.revision = desired.revision;
+            op.desired_registry = Some(registry);
             op.desired = Some(desired);
             let _lock = self.lock()?;
             ensure!(
@@ -222,7 +244,11 @@ impl Store {
             return self.cleanup_failed_install(op);
         }
         let entry = op.candidate.context("application intent lacks candidate")?;
-        match self.lease(entry, VerificationMode::Full) {
+        let mut maintenance = self.clone();
+        maintenance.session = None;
+        // This private path consumes an authenticated committed receipt; it does
+        // not grant app callers unrestricted direct-output access.
+        match maintenance.lease(entry, VerificationMode::Full) {
             Ok(_lease) => self.finish_application(op),
             Err(error) => {
                 {

@@ -1,9 +1,13 @@
 # Application claim policies
 
-The Rust contracts live in `models::claim` and the shared decision function in
-`core::claim::policy`. This checkpoint defines and tests those contracts; the
-existing store has not yet switched to the separate authenticated registry.
-Do not treat these types alone as enforcement by existing CLI commands.
+The Rust contracts live in `models::claim`; `core::claim` owns authenticated
+persistence, app sessions and the shared evaluator. App claims are stored in a
+separate registry. Create an app using `register_application` with an explicit
+registration key; retries return the same identity and never redisclose a token.
+`Store::session(app, credential)` returns the restricted app-facing API.
+`configure_application` is separate local administration and requires a matching
+revision plus current proof when enabled. CLI credential input/output and the
+remaining ensure/recovery flows are still in progress.
 
 A policy independently restricts actions, source UUIDs, and exact scope strings:
 
@@ -69,3 +73,15 @@ validation, missing identities, reclaimed output, failed source acquisition and
 malformed stored JSON. New registry/auth/recovery-specific codes become reachable
 when those operations are integrated. Unclassified errors use `internal_error`
 with a generic message rather than leaking arbitrary error text.
+
+`query_claims` accepts an optional exact `scope`; omission searches permitted
+scopes in that one app. `discover_claims` is a separate anonymous native operation
+that returns only explicitly public, permitted, credential-free candidates. It
+does not create a claim or authorize direct UUID access. Store-level acquisition,
+output inspection and maintenance are trusted local administrative APIs; app
+integrations must retain their `AppSession` boundary.
+
+`cargo test --offline --test registry_security` exercises enforcement against
+actual stores. `cargo test --offline --test lifecycle protected_shim` verifies
+unattended protected launch and edit rejection. Cached output UUIDs from discovery
+are subject to the same app claim policy when leased through a session.

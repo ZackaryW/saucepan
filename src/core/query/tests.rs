@@ -14,7 +14,7 @@ use uuid::Uuid;
 #[test]
 fn strict_shape_and_validation_even_without_candidates() {
     let tmp = tempfile::tempdir().unwrap();
-    let store = Store::create(&tmp.path().join("root")).unwrap();
+    let store = Store::create_fixture(&tmp.path().join("root")).unwrap();
     let app = store.register_app("empty".into()).unwrap();
     for bad in [
         json!({"app":app.uuid}),
@@ -35,6 +35,7 @@ fn strict_shape_and_validation_even_without_candidates() {
         ("x".into(), "[".into(), Operator::Glob),
     ] {
         let query = ClaimQuery {
+            scope: None,
             app: app.uuid,
             conditions: vec![Condition { key, value, op }],
         };
@@ -54,12 +55,14 @@ fn strict_shape_and_validation_even_without_candidates() {
     assert!(
         store
             .query_claims(&ClaimQuery {
+                scope: None,
                 app: app.uuid,
                 conditions: vec![condition; 65]
             })
             .is_err()
     );
     let mut query = ClaimQuery {
+        scope: None,
         app: app.uuid,
         conditions: vec![],
     };
@@ -75,7 +78,7 @@ fn strict_shape_and_validation_even_without_candidates() {
 #[test]
 fn coherent_revision_context_and_selection_during_mutation() {
     let tmp = tempfile::tempdir().unwrap();
-    let mut store = Store::create(&tmp.path().join("root")).unwrap();
+    let mut store = Store::create_fixture(&tmp.path().join("root")).unwrap();
     let file = tmp.path().join("file");
     fs::write(&file, "one").unwrap();
     let source = store.register_source(Source::Local { path: file }).unwrap();
@@ -87,12 +90,18 @@ fn coherent_revision_context_and_selection_during_mutation() {
         policies: Default::default(),
     };
     let claim = store
-        .acquire_for(app.uuid, &request, &Default::default())
+        .acquire_for(
+            app.uuid,
+            &"fixture".to_string().try_into().unwrap(),
+            &request,
+            &Default::default(),
+        )
         .unwrap()
         .claim;
     let original = store.application(app.uuid).unwrap();
     store.access_observer = Some(Arc::new(|_| panic!("query traversed payload")));
     let query = ClaimQuery {
+        scope: None,
         app: app.uuid,
         conditions: vec![],
     };

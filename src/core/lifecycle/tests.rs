@@ -8,7 +8,7 @@ fn uninstall_fences_pending_maintenance_and_claim_publication() {
         store::{Request, Selector},
     };
     let tmp = tempfile::tempdir().unwrap();
-    let store = Store::create(&tmp.path().join("root")).unwrap();
+    let store = Store::create_fixture(&tmp.path().join("root")).unwrap();
     let data = tmp.path().join("data");
     fs::write(&data, b"fixture").unwrap();
     let source = store
@@ -59,7 +59,8 @@ fn uninstall_fences_pending_maintenance_and_claim_publication() {
     assert!(
         store
             .claim_record(
-                &crate::core::index::claims::ClaimTarget {
+                &crate::core::claim::operations::ClaimTarget {
+                    scope: "fixture".to_string().try_into().unwrap(),
                     context: Default::default(),
                     app: app.uuid,
                     id: Uuid::new_v4(),
@@ -90,7 +91,7 @@ fn durable_candidate_survives_reclaim_and_invalid_candidate_releases_protection(
     // Also reject corrupt and missing candidates after partial publication.
     for phase in 0..5 {
         let tmp = tempfile::tempdir().unwrap();
-        let store = Store::create(&tmp.path().join("root")).unwrap();
+        let store = Store::create_fixture(&tmp.path().join("root")).unwrap();
         let exe = std::env::current_exe().unwrap();
         let name = exe.file_name().unwrap().to_string_lossy().into_owned();
         let source = store
@@ -107,6 +108,7 @@ fn durable_candidate_survives_reclaim_and_invalid_candidate_releases_protection(
         request.policies.identical = Identical::NewEntry;
         request.policies.eviction = Eviction::Latest { keep: 1 };
         let input = Installation {
+            scope: "fixture".to_string().try_into().unwrap(),
             name: "recovery".into(),
             request,
             probe: Probe {
@@ -146,7 +148,7 @@ fn durable_candidate_survives_reclaim_and_invalid_candidate_releases_protection(
         } else if phase == 4 {
             fs::remove_file(store.path(entry).unwrap().join(&name)).unwrap();
         }
-        let reopened = Store::open(store.root()).unwrap();
+        let reopened = Store::open_fixture(store.root()).unwrap();
         let result = reopened.reconcile(Some(op.operation)).unwrap().remove(0);
         assert_eq!(
             result.status,
@@ -177,7 +179,7 @@ fn durable_candidate_survives_reclaim_and_invalid_candidate_releases_protection(
                     .entry_uuid,
                 entry
             );
-            assert_eq!(reopened.application(op.app).unwrap().claims.len(), 1);
+            assert_eq!(reopened.registry(op.app).unwrap().claims.len(), 1);
             assert_eq!(reopened.operation(op.operation).unwrap().claim, op.claim);
         }
     }
@@ -186,7 +188,7 @@ fn durable_candidate_survives_reclaim_and_invalid_candidate_releases_protection(
 #[test]
 fn operation_identity_and_pending_work_are_isolated() {
     let tmp = tempfile::tempdir().unwrap();
-    let store = Store::create(&tmp.path().join("root")).unwrap();
+    let store = Store::create_fixture(&tmp.path().join("root")).unwrap();
     let app = store.register_app("fixture".into()).unwrap();
     let id = Uuid::new_v4();
     let action = Action::Uninstall {
@@ -218,7 +220,7 @@ fn operation_identity_and_pending_work_are_isolated() {
             )
             .is_err()
     );
-    let reopened = Store::open(store.root()).unwrap();
+    let reopened = Store::open_fixture(store.root()).unwrap();
     assert_eq!(
         reopened.reconcile(Some(id)).unwrap()[0].status,
         Phase::Preparing
@@ -228,110 +230,103 @@ fn operation_identity_and_pending_work_are_isolated() {
 }
 
 #[test]
-fn lifecycle_journal_replays_records_retirement_and_receipt() {
-    for published in [false, true] {
-        for retired in [false, true] {
-            let tmp = tempfile::tempdir().unwrap();
-            let store = Store::create(&tmp.path().join("root")).unwrap();
-            let mut app = store.register_app("remove".into()).unwrap();
-            let (mut op, guard) = store
-                .begin_operation(
-                    Uuid::new_v4(),
-                    Some(app.uuid),
-                    Action::Uninstall {
-                        leave_unmanaged_shims: false,
-                    },
-                )
-                .unwrap();
-            drop(guard);
-            app.state = AppState::Removing;
-            app.bump().unwrap();
-            store
-                .save_record(&Record::Application(app.clone()))
-                .unwrap();
-            op.status = Phase::Complete;
-            op.changed = true;
-            let journal = Journal {
+fn lifecycle_journal_replays_registry_retirement_and_receipt() {
+    for boundary in 0..5 {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Store::create_fixture(&tmp.path().join("root")).unwrap();
+        let mut app = store.register_app("remove".into()).unwrap();
+        let (mut op, guard) = store
+            .begin_operation(
+                Uuid::new_v4(),
+                Some(app.uuid),
+                Action::Uninstall {
+                    leave_unmanaged_shims: false,
+                },
+            )
+            .unwrap();
+        drop(guard);
+        app.state = AppState::Removing;
+        app.bump().unwrap();
+        store
+            .save_record(&Record::Application(app.clone()))
+            .unwrap();
+        op.status = Phase::Complete;
+        op.changed = true;
+        store.interrupt_commit(
+            Journal {
                 operation: Some(op.clone()),
                 retire: Some((app.uuid, op.operation)),
                 ..Default::default()
-            };
-            index::write(&store.root.join(".staging/transaction.json"), &journal).unwrap();
-            if retired {
-                store
-                    .retire_application_locked(app.uuid, op.operation)
-                    .unwrap();
-            }
-            if published {
-                store.save_operation(&op).unwrap();
-            }
-            let reopened = Store::open(store.root()).unwrap();
-            assert!(reopened.records().unwrap().is_empty());
-            assert_eq!(
-                reopened.operation(op.operation).unwrap().status,
-                Phase::Complete
-            );
-            assert!(!store.root.join(".staging/transaction.json").exists());
-        }
+            },
+            boundary,
+        );
+        let reopened = Store::open_fixture(store.root()).unwrap();
+        assert!(reopened.records().unwrap().is_empty());
+        assert!(reopened.registry(app.uuid).is_err());
+        assert_eq!(
+            reopened.operation(op.operation).unwrap().status,
+            Phase::Complete
+        );
+        assert!(
+            !store
+                .root
+                .join(".staging/metadata-transaction.json")
+                .exists()
+        );
     }
 }
 
 #[test]
-fn lifecycle_journal_couples_application_and_receipt_at_each_record_boundary() {
-    for app_written in [false, true] {
-        for receipt_written in [false, true] {
-            let tmp = tempfile::tempdir().unwrap();
-            let store = Store::create(&tmp.path().join("root")).unwrap();
-            let mut app = store.register_app("transition".into()).unwrap();
-            let (mut op, guard) = store
-                .begin_operation(
-                    Uuid::new_v4(),
-                    Some(app.uuid),
-                    Action::Uninstall {
-                        leave_unmanaged_shims: false,
-                    },
-                )
-                .unwrap();
-            drop(guard);
-            app.state = AppState::Removing;
-            app.bump().unwrap();
-            op.status = Phase::CleanupPending;
-            op.changed = true;
-            let record = Record::Application(app.clone());
-            index::write(
-                &store.root.join(".staging/transaction.json"),
-                &Journal {
-                    records: vec![record.clone()],
-                    operation: Some(op.clone()),
-                    ..Default::default()
+fn lifecycle_journal_couples_application_registry_and_receipt_at_each_boundary() {
+    for boundary in 0..5 {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Store::create_fixture(&tmp.path().join("root")).unwrap();
+        let mut app = store.register_app("transition".into()).unwrap();
+        let (mut op, guard) = store
+            .begin_operation(
+                Uuid::new_v4(),
+                Some(app.uuid),
+                Action::Uninstall {
+                    leave_unmanaged_shims: false,
                 },
             )
             .unwrap();
-            if app_written {
-                store.save_record(&record).unwrap();
-            }
-            if receipt_written {
-                store.save_operation(&op).unwrap();
-            }
-            let reopened = Store::open(store.root()).unwrap();
-            assert!(reopened.application(app.uuid).is_err());
-            assert_eq!(
-                serde_json::to_value(reopened.record(app.uuid).unwrap()).unwrap(),
-                serde_json::to_value(record).unwrap()
-            );
-            assert_eq!(
-                reopened.operation(op.operation).unwrap().status,
-                Phase::CleanupPending
-            );
-            assert!(reopened.register_app("unrelated".into()).is_ok());
-        }
+        drop(guard);
+        app.state = AppState::Removing;
+        app.bump().unwrap();
+        op.status = Phase::CleanupPending;
+        op.changed = true;
+        let record = Record::Application(app.clone());
+        store.interrupt_commit(
+            Journal {
+                records: vec![record.clone()],
+                operation: Some(op.clone()),
+                ..Default::default()
+            },
+            boundary,
+        );
+        let reopened = Store::open_fixture(store.root()).unwrap();
+        assert!(reopened.application(app.uuid).is_err());
+        assert_eq!(
+            serde_json::to_value(reopened.record(app.uuid).unwrap()).unwrap(),
+            serde_json::to_value(record).unwrap()
+        );
+        assert_eq!(
+            reopened.registry(app.uuid).unwrap().registry.revision,
+            app.revision
+        );
+        assert_eq!(
+            reopened.operation(op.operation).unwrap().status,
+            Phase::CleanupPending
+        );
+        assert!(reopened.register_app("unrelated".into()).is_ok());
     }
 }
 
 #[test]
 fn removing_state_fences_mutations_and_legacy_defaults_are_explicit() {
     let tmp = tempfile::tempdir().unwrap();
-    let store = Store::create(&tmp.path().join("root")).unwrap();
+    let store = Store::create_fixture(&tmp.path().join("root")).unwrap();
     let mut app = store.register_app("state".into()).unwrap();
     let mut json = serde_json::to_value(&app).unwrap();
     for field in ["revision", "state", "shims"] {

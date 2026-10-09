@@ -1,5 +1,6 @@
+mod native_root;
 use saucepan::{
-    core::{Store, source::AcquireOptions},
+    core::source::AcquireOptions,
     models::{
         source::{Resolved, Source},
         store::{Request, Selector},
@@ -37,7 +38,7 @@ fn shared_source_tracked_and_pinned_outputs_with_cli_parity() {
     git(&input, &["add", "."]);
     git(&input, &["commit", "-m", "one"]);
     let first = git(&input, &["rev-parse", "HEAD"]);
-    let store = Store::create(&tmp.path().join("root")).unwrap();
+    let store = native_root::create(&tmp.path().join("root")).unwrap();
     let source = store
         .register_source(Source::Git {
             origin: input.to_str().unwrap().into(),

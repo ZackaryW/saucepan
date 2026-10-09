@@ -41,7 +41,7 @@ impl Store {
                     groups.entry(e.item_key.clone()).or_default().push(*e);
                 }
                 Record::Application(app) => {
-                    for claim in app.claims.values() {
+                    for claim in self.registry(app.uuid)?.claims.values() {
                         let request = &claim.request;
                         let key = super::json_digest(&(
                             request.source_uuid,

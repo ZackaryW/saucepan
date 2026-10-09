@@ -1,5 +1,6 @@
+mod native_root;
 use saucepan::{
-    core::{Store, activation::Probe},
+    core::activation::Probe,
     models::{
         policy::{Eviction, Identical, Protection},
         source::Source,
@@ -38,7 +39,7 @@ fn probe_mutation_preserves_binding_and_corrupted_reuse_is_rejected() {
     let name = exe.file_name().unwrap().to_str().unwrap();
     fs::copy(&exe, input.join(name)).unwrap();
     fs::write(input.join("probe-data"), b"initial").unwrap();
-    let store = Store::create(&tmp.path().join("root")).unwrap();
+    let store = native_root::create(&tmp.path().join("root")).unwrap();
     let source = store
         .register_source(Source::Local { path: input })
         .unwrap();
@@ -141,7 +142,7 @@ fn until(path: &std::path::Path) {
 #[test]
 fn deactivation_preserves_live_targets_claims_and_other_bindings() {
     let tmp = tempfile::tempdir().unwrap();
-    let store = Store::create(&tmp.path().join("root")).unwrap();
+    let store = native_root::create(&tmp.path().join("root")).unwrap();
     let exe = std::env::current_exe().unwrap();
     let name = exe.file_name().unwrap().to_str().unwrap();
     let source = store
@@ -160,7 +161,12 @@ fn deactivation_preserves_live_targets_claims_and_other_bindings() {
     request.policies.eviction = Eviction::Latest { keep: 1 };
     request.policies.identical = Identical::NewEntry;
     let first = store
-        .acquire_for(app.uuid, &request, &Default::default())
+        .acquire_for(
+            app.uuid,
+            &"fixture".to_string().try_into().unwrap(),
+            &request,
+            &Default::default(),
+        )
         .unwrap();
     let entry = first.claim.entry_uuid;
     let probe = Probe {
@@ -296,7 +302,7 @@ fn deactivation_preserves_live_targets_claims_and_other_bindings() {
     store.reclaim().unwrap();
     assert_eq!(store.output(entry).unwrap().state, Availability::Reclaimed);
     assert_eq!(
-        store.application(app.uuid).unwrap().claims[&first.claim.uuid].entry_uuid,
+        store.registry(app.uuid).unwrap().claims[&first.claim.uuid].entry_uuid,
         entry
     );
     assert!(
@@ -314,7 +320,7 @@ fn deactivation_preserves_live_targets_claims_and_other_bindings() {
 #[test]
 fn active_switch_failed_probe_rollback_streams_and_launcher_death() {
     let tmp = tempfile::tempdir().unwrap();
-    let store = Store::create(&tmp.path().join("root")).unwrap();
+    let store = native_root::create(&tmp.path().join("root")).unwrap();
     let exe = std::env::current_exe().unwrap();
     let name = exe.file_name().unwrap().to_str().unwrap();
     let source = store
@@ -332,7 +338,12 @@ fn active_switch_failed_probe_rollback_streams_and_launcher_death() {
     request.policies.eviction = Eviction::Latest { keep: 1 };
     request.policies.identical = Identical::NewEntry;
     let first = store
-        .acquire_for(app.uuid, &request, &Default::default())
+        .acquire_for(
+            app.uuid,
+            &"fixture".to_string().try_into().unwrap(),
+            &request,
+            &Default::default(),
+        )
         .unwrap();
     let probe = Probe {
         args: vec![
@@ -359,7 +370,12 @@ fn active_switch_failed_probe_rollback_streams_and_launcher_death() {
         )
         .unwrap();
     let second = store
-        .acquire_for(app.uuid, &request, &Default::default())
+        .acquire_for(
+            app.uuid,
+            &"fixture".to_string().try_into().unwrap(),
+            &request,
+            &Default::default(),
+        )
         .unwrap();
     assert!(
         second
@@ -521,7 +537,12 @@ fn active_switch_failed_probe_rollback_streams_and_launcher_death() {
                 .unwrap();
             until(&tmp.path().join("ready"));
             let third = store
-                .acquire_for(app.uuid, &request, &Default::default())
+                .acquire_for(
+                    app.uuid,
+                    &"fixture".to_string().try_into().unwrap(),
+                    &request,
+                    &Default::default(),
+                )
                 .unwrap();
             store
                 .activate(app.uuid, third.claim.entry_uuid, name, &probe)

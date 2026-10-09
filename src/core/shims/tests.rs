@@ -3,7 +3,7 @@ use crate::models::index::Binding;
 
 fn setup() -> (tempfile::TempDir, Store, Uuid, PathBuf) {
     let tmp = tempfile::tempdir().unwrap();
-    let store = Store::create(&tmp.path().join("root")).unwrap();
+    let store = Store::create_fixture(&tmp.path().join("root")).unwrap();
     let mut app = store.register_app("shim fixture".into()).unwrap();
     app.active = Some(Binding {
         entry_uuid: Uuid::new_v4(),
@@ -38,7 +38,7 @@ fn shim_publication_recovers_each_file_boundary_and_retry_is_idempotent() {
         if phase >= 2 {
             fs::copy(&built, store.root.join("bin/tool.exe")).unwrap();
         }
-        let reopened = Store::open(store.root()).unwrap();
+        let reopened = Store::open_fixture(store.root()).unwrap();
         assert!(reopened.register_app("unrelated".into()).is_ok());
         let done = reopened.reconcile(Some(op.operation)).unwrap().remove(0);
         assert_eq!(done.status, Phase::Complete, "{:?}", done.pending);

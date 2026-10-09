@@ -1,10 +1,8 @@
-use saucepan::{
-    core::Store,
-    models::{
-        policy::{Eviction, Identical},
-        source::Source,
-        store::{Availability, Request, Selector},
-    },
+mod native_root;
+use saucepan::models::{
+    policy::{Eviction, Identical},
+    source::Source,
+    store::{Availability, Request, Selector},
 };
 use std::fs;
 #[test]
@@ -12,7 +10,7 @@ fn latest_ten_overrides_claims_and_reacquisition() {
     let tmp = tempfile::tempdir().unwrap();
     let input = tmp.path().join("input");
     fs::write(&input, b"same").unwrap();
-    let store = Store::create(&tmp.path().join("root")).unwrap();
+    let store = native_root::create(&tmp.path().join("root")).unwrap();
     let source = store
         .register_source(Source::Local { path: input })
         .unwrap();
@@ -25,7 +23,12 @@ fn latest_ten_overrides_claims_and_reacquisition() {
     };
     request.policies.identical = Identical::NewEntry;
     let first = store
-        .acquire_for(app.uuid, &request, &Default::default())
+        .acquire_for(
+            app.uuid,
+            &"fixture".to_string().try_into().unwrap(),
+            &request,
+            &Default::default(),
+        )
         .unwrap();
     let lease = store.execution_lease(first.claim.entry_uuid).unwrap();
     for _ in 0..10 {
@@ -80,7 +83,7 @@ fn deletion_failure_is_pending_and_retryable() {
     let tmp = tempfile::tempdir().unwrap();
     let input = tmp.path().join("file");
     fs::write(&input, b"bytes").unwrap();
-    let store = Store::create(&tmp.path().join("root")).unwrap();
+    let store = native_root::create(&tmp.path().join("root")).unwrap();
     let source = store
         .register_source(Source::Local { path: input })
         .unwrap();

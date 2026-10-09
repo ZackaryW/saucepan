@@ -1,10 +1,11 @@
+mod native_root;
 use std::process::Command;
 
 #[test]
 fn lifecycle_inspection_reports_pending_without_success_exit() {
-    use saucepan::{core::Store, models::index::lifecycle::Action};
+    use saucepan::models::index::lifecycle::Action;
     let tmp = tempfile::tempdir().unwrap();
-    let store = Store::create(&tmp.path().join("root")).unwrap();
+    let store = native_root::create(&tmp.path().join("root")).unwrap();
     let app = store.register_app("pending".into()).unwrap();
     let id = uuid::Uuid::new_v4();
     let (_, guard) = store
@@ -64,6 +65,7 @@ fn documented_initialization_and_registration_use_only_explicit_root() {
         serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap()
     };
     invoke(&["init"]);
+    let _native_key_cleanup = native_root::open(&root).unwrap();
     let app = invoke(&["register-app", "example"]);
     assert_eq!(app["name"], "example");
     assert!(
@@ -95,7 +97,7 @@ fn documented_initialization_and_registration_use_only_explicit_root() {
     assert_eq!(
         saucepan::core::Store::open(&root)
             .unwrap()
-            .application(uuid::Uuid::parse_str(app["uuid"].as_str().unwrap()).unwrap())
+            .registry(uuid::Uuid::parse_str(app["uuid"].as_str().unwrap()).unwrap())
             .unwrap()
             .claims
             .len(),

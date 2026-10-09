@@ -2,7 +2,7 @@
 
 Rust source acquisition with separate source working data, immutable outputs, and application claims. This is a new implementation; legacy stores and protocols are not migrated.
 
-Use an explicit root. During development the final simulated installation lives in `mock/`, never the user's production `.saucepan`.
+Use an explicit root. Use a fresh disposable root for the authenticated claim-registry layout. The historical `mock/` installation remains an earlier acceptance fixture and is not migrated.
 
 ```powershell
 cargo run -- --root ./scratch init
@@ -19,7 +19,7 @@ Save a source definition and register it:
 cargo run -- --root ./scratch register-source source.json
 ```
 
-The returned source UUID identifies `source/<uuid>.json`. App/output records live at `index/<uuid>/index.json`; only outputs have `store/<uuid>/` contents. Source definitions and index files are local metadata, not authentication proofs. Filesystem access follows the local OS user's trust boundary.
+The returned source UUID identifies `source/<uuid>.json`. App/output records live at `index/<uuid>/index.json`; only outputs have `store/<uuid>/` contents. Claims now live in `claims/<app-uuid>/index.json` and `<claim-uuid>.json`. `root.json` authenticates catalog membership. Source, index, claim and lifecycle records are readable JSON with HMAC-SHA256 tags; the signing key lives in native OS keyring. Existing unsigned roots are rejected. Filesystem access follows the local OS user's trust boundary. See [integrity and custody](docs/claim-integrity.md).
 
 Save a request using the returned source UUID (replace the illustrative UUID):
 
@@ -58,9 +58,9 @@ Put that object in the request's `selection`. For ZIP assets use `format: "zip"`
 
 Remote discovery is cached for 24 hours from a successful check. `--force-refresh` bypasses the interval; `--allow-stale` explicitly permits old discovery after failed checks and reports `stale: true`. Reads never extend freshness. Local inputs have no discovery TTL. Release sources do not clone Git repositories. The hidden `--test-github-api http://127.0.0.1:PORT` and `--test-now SECONDS` options support deterministic isolated fixtures without changing production defaults.
 
-To associate a request with an application, use `acquire request.json --app APP_UUID`. The result includes a claim UUID and the acquired output. `update-claim APP_UUID CLAIM_UUID` reacquires that claim's original request; `release-claim APP_UUID CLAIM_UUID` only removes that association. `claims APP_UUID` reports that app's claims and availability. `settings APP_UUID settings.json` accepts `{"source_filter":["SOURCE_UUID"]}` to filter this view; filters do not create claims or grant access. Two apps can share one output, then update independently.
+To associate a request with an application, use `acquire request.json --app APP_UUID --scope PROJECT_KEY`. The result includes a claim UUID and the acquired output. `update-claim APP_UUID CLAIM_UUID` reacquires that claim's original request; `release-claim APP_UUID CLAIM_UUID` only removes that association. `claims APP_UUID` reports that app's claims and availability. `settings APP_UUID settings.json` accepts `{"source_filter":["SOURCE_UUID"]}` to filter this view; filters do not create claims or grant access. Two apps can share one output, then update independently.
 
-Attach project or alias labels with `acquire request.json --app APP_UUID --context context.json`, where the context file is a plain string map. Search with `query-claims query.json` using `{ "app": "APP_UUID", "where": [{ "key": "project", "op": "eq", "value": "my-project" }] }`. Operators are `eq` and explicit string `glob`; all conditions must match. Results include the application revision and every matching claim in UUID order. `set-claim-context APP_UUID CLAIM_UUID context.json --expected-revision N` replaces labels without moving the claim. See [claim context and queries](docs/claim-query.md) for complete examples, wildcard syntax, and lease boundaries. Run `cargo test --test query_cli` for the isolated two-project CLI flow.
+Attach project or alias labels with `acquire request.json --app APP_UUID --scope PROJECT_KEY --context context.json`, where the context file is a plain string map. Search with `query-claims query.json` using `{ "app": "APP_UUID", "where": [{ "key": "project", "op": "eq", "value": "my-project" }] }`. Operators are `eq` and explicit string `glob`; all conditions must match. Results include the application revision and every matching claim in UUID order. `set-claim-context APP_UUID CLAIM_UUID context.json --expected-revision N` replaces labels without moving the claim. See [claim context and queries](docs/claim-query.md) for complete examples, wildcard syntax, and lease boundaries. Run `cargo test --test query_cli` for the isolated two-project CLI flow.
 
 Every acquisition evaluates latest-ten retention for its source/selector/selection item. `policies.eviction` can override the positive count. Coexisting attached counts use the maximum; claims preserve their policy demand but ordinary claims do not prevent reclaim. Reuse preserves creation order. `reclaim` reports effective counts, deferred protected/in-use entries, and failed deletions as pending. Provenance remains after content deletion. `path` refuses unavailable entries; `reacquire ENTRY_UUID` gets a live output, while `update-claim` also moves the application's claim.
 
@@ -70,7 +70,7 @@ Active useable_app bindings and native execution leases can exceed the retention
 
 Use `deactivate APP_UUID` to clear an application's active binding. Claims, cached outputs, installed shims and running processes remain intact. New shim launches fail until reactivation; subsequent `reclaim` follows retention and remaining live/active protection. Repeating deactivation succeeds as a no-op. See [resource access](docs/resource-access.md) for concurrency and result details.
 
-For a coordinated application install, use `install NAME request.json probe.json PATH_TO_BUILT_SHIM --shim NAME.exe`. `update-app APP_UUID CLAIM_UUID probe.json` and `rollback APP_UUID CLAIM_UUID ENTRY_UUID probe.json` validate the candidate before committing the claim and binding together. Failed validation preserves both selections; an intervening app mutation reports a conflict. The primitive `activate` and `update-claim` commands retain their separate meanings.
+For a coordinated application install, use `install NAME request.json probe.json PATH_TO_BUILT_SHIM --shim NAME.exe --scope APPLICATION_KEY`. `update-app APP_UUID CLAIM_UUID probe.json` and `rollback APP_UUID CLAIM_UUID ENTRY_UUID probe.json` validate the candidate before committing the claim and binding together. Failed validation preserves both selections; an intervening app mutation reports a conflict. The primitive `activate` and `update-claim` commands retain their separate meanings.
 
 Saucepan's own release request can be installed with `bootstrap request.json PATH_TO_BUILT_SHIM`; `self-update APP_UUID CLAIM_UUID` uses the same coordinated update flow. Multi-step commands return an operation record with `operation`, `app`, `claim`, `candidate`, `status` and pending reasons. Retrying with the same `--operation UUID` and inputs resumes work or returns its recorded result. Pending, failed and conflicted results exit 2. All commands require `--root`; Saucepan's shim propagates its root and rejects a conflicting one.
 
@@ -78,3 +78,10 @@ Saucepan's own release request can be installed with `bootstrap request.json PAT
 
 See [application lifecycle](docs/application-lifecycle.md) for commands, ownership and recovery rules, and [verification evidence](docs/lifecycle-verification.md) for executed scenarios. Run `uv run --no-project python scripts/lifecycle_acceptance.py` for the full real-build flow in a unique `target/lifecycle-acceptance/<uuid>/root`; it verifies that every existing `mock` file remains unchanged. Existing records load with default lifecycle fields, but old binaries are not supported as writers against newly written metadata.
 
+
+The Rust app-facing API is `Store::session(app, optional_credential)`. It evaluates
+source, scope and action restrictions independently of whether proof is enabled.
+Use `register_application` with an explicit registration key and
+`configure_application` with an observed revision for administrative changes.
+See [application policy contracts](docs/claim-policies.md). CLI credential delivery,
+claim coverage/deduplication, and explicit recovery commands are still being implemented.

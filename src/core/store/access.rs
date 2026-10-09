@@ -94,6 +94,7 @@ impl Store {
     pub fn resolve(&self, entry: Uuid, mode: VerificationMode) -> Result<ResolvedResource> {
         if mode == VerificationMode::Metadata {
             let _lock = self.lock()?;
+            self.authorize_output(entry, crate::models::claim::policy::Action::Lease)?;
             let output = self.output(entry)?;
             return Ok(ResolvedResource {
                 entry_uuid: entry,
@@ -109,6 +110,7 @@ impl Store {
     pub fn lease(&self, entry: Uuid, mode: VerificationMode) -> Result<ResourceLease> {
         let (output, mut lease) = {
             let _lock = self.lock()?;
+            self.authorize_output(entry, crate::models::claim::policy::Action::Lease)?;
             let output = self.output(entry)?;
             let lease = self.metadata_lease_locked(&output)?;
             (output, lease)
@@ -127,11 +129,17 @@ impl Store {
         use anyhow::Context;
         let (output, mut lease) = {
             let _lock = self.lock()?;
-            let application = self.application(app)?;
+            self.application(app)?;
+            let application = self.registry(app)?;
             let claim = application
                 .claims
                 .get(&claim)
                 .with_context(|| Error::new(ErrorCode::UnknownClaim, "claim missing"))?;
+            self.authorize_claim(
+                &application,
+                claim,
+                crate::models::claim::policy::Action::Lease,
+            )?;
             let output = self.output(claim.entry_uuid)?;
             let lease = self.metadata_lease_locked(&output)?;
             (output, lease)

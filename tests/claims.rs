@@ -1,10 +1,8 @@
-use saucepan::{
-    core::Store,
-    models::{
-        index::Settings,
-        source::Source,
-        store::{Request, Selector},
-    },
+mod native_root;
+use saucepan::models::{
+    index::Settings,
+    source::Source,
+    store::{Request, Selector},
 };
 use std::fs;
 #[test]
@@ -16,7 +14,7 @@ fn claims_remain_independent_and_failure_preserves_associations() {
         fs::create_dir(input.join(folder)).unwrap();
         fs::write(input.join(folder).join("file"), b"one").unwrap();
     }
-    let store = Store::create(&tmp.path().join("root")).unwrap();
+    let store = native_root::create(&tmp.path().join("root")).unwrap();
     let source = store
         .register_source(Source::Local {
             path: input.clone(),
@@ -32,15 +30,30 @@ fn claims_remain_independent_and_failure_preserves_associations() {
     };
     request.selection.folder = Some("a".into());
     let a = store
-        .acquire_for(app_a.uuid, &request, &Default::default())
+        .acquire_for(
+            app_a.uuid,
+            &"fixture".to_string().try_into().unwrap(),
+            &request,
+            &Default::default(),
+        )
         .unwrap();
     let b = store
-        .acquire_for(app_b.uuid, &request, &Default::default())
+        .acquire_for(
+            app_b.uuid,
+            &"fixture".to_string().try_into().unwrap(),
+            &request,
+            &Default::default(),
+        )
         .unwrap();
     assert_eq!(a.acquired.entry.uuid, b.acquired.entry.uuid);
     request.selection.folder = Some("b".into());
     let extra = store
-        .acquire_for(app_a.uuid, &request, &Default::default())
+        .acquire_for(
+            app_a.uuid,
+            &"fixture".to_string().try_into().unwrap(),
+            &request,
+            &Default::default(),
+        )
         .unwrap();
     assert_ne!(extra.claim.uuid, a.claim.uuid);
     fs::write(input.join("a/file"), b"two").unwrap();
@@ -49,7 +62,7 @@ fn claims_remain_independent_and_failure_preserves_associations() {
         .unwrap();
     assert_ne!(updated.claim.entry_uuid, a.claim.entry_uuid);
     assert_eq!(
-        store.application(app_a.uuid).unwrap().claims[&a.claim.uuid].entry_uuid,
+        store.registry(app_a.uuid).unwrap().claims[&a.claim.uuid].entry_uuid,
         a.claim.entry_uuid
     );
     fs::remove_file(input.join("a/file")).unwrap();
@@ -60,7 +73,7 @@ fn claims_remain_independent_and_failure_preserves_associations() {
             .is_err()
     );
     assert_eq!(
-        store.application(app_b.uuid).unwrap().claims[&b.claim.uuid].entry_uuid,
+        store.registry(app_b.uuid).unwrap().claims[&b.claim.uuid].entry_uuid,
         updated.claim.entry_uuid
     );
     store.release_claim(app_a.uuid, a.claim.uuid).unwrap();
@@ -79,7 +92,7 @@ fn claims_remain_independent_and_failure_preserves_associations() {
         )
         .unwrap();
     assert!(store.claims(app_a.uuid).unwrap().is_empty());
-    assert_eq!(store.application(app_a.uuid).unwrap().claims.len(), 1);
+    assert_eq!(store.registry(app_a.uuid).unwrap().claims.len(), 1);
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_saucepan"))
         .arg("--root")
         .arg(store.root())

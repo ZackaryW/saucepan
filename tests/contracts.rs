@@ -1,3 +1,4 @@
+mod native_root;
 use saucepan::{
     core::Store,
     models::{source::Source, store::Request},
@@ -7,7 +8,7 @@ use saucepan::{
 fn persistence_and_legacy_refusal() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().join("root");
-    let store = Store::create(&root).unwrap();
+    let store = native_root::create(&root).unwrap();
     let app = store.register_app("example".into()).unwrap();
     assert_eq!(
         Store::open(&root)
@@ -28,7 +29,7 @@ fn persistence_and_legacy_refusal() {
     let legacy = dir.path().join("legacy");
     std::fs::create_dir(&legacy).unwrap();
     std::fs::write(legacy.join("index.json.enc"), b"old").unwrap();
-    assert!(Store::create(&legacy).is_err());
+    assert!(native_root::create(&legacy).is_err());
     assert!(Store::open(&legacy).is_err());
     assert_eq!(
         std::fs::read(legacy.join("index.json.enc")).unwrap(),
@@ -45,7 +46,7 @@ fn strict_request_and_index_identity() {
     bad["policies"] = serde_json::json!({"identical":"surprise"});
     assert!(serde_json::from_value::<Request>(bad).is_err());
     let root = tempfile::tempdir().unwrap();
-    let store = Store::create(root.path()).unwrap();
+    let store = native_root::create(root.path()).unwrap();
     let app = store.register_app("app".into()).unwrap();
     let path = root.path().join(format!("index/{}/index.json", app.uuid));
     let mut value: serde_json::Value =

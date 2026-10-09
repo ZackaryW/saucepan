@@ -1,19 +1,17 @@
-use saucepan::{
-    core::Store,
-    models::{
-        policy::{Eviction, Identical},
-        source::Source,
-        store::{Availability, Request, Selector, VerificationMode},
-    },
+mod native_root;
+use saucepan::models::{
+    policy::{Eviction, Identical},
+    source::Source,
+    store::{Availability, Request, Selector, VerificationMode},
 };
 use std::fs;
 use uuid::Uuid;
 
-fn fixture() -> (tempfile::TempDir, Store, Request) {
+fn fixture() -> (tempfile::TempDir, native_root::NativeStore, Request) {
     let tmp = tempfile::tempdir().unwrap();
     let input = tmp.path().join("data");
     fs::write(&input, b"original").unwrap();
-    let store = Store::create(&tmp.path().join("root")).unwrap();
+    let store = native_root::create(&tmp.path().join("root")).unwrap();
     let source = store
         .register_source(Source::Local { path: input })
         .unwrap();
@@ -33,7 +31,12 @@ fn non_process_access_never_creates_lifetime_markers() {
     let (_tmp, store, request) = fixture();
     let app = store.register_app("marker-free access".into()).unwrap();
     let acquired = store
-        .acquire_for(app.uuid, &request, &Default::default())
+        .acquire_for(
+            app.uuid,
+            &"fixture".to_string().try_into().unwrap(),
+            &request,
+            &Default::default(),
+        )
         .unwrap();
     let id = acquired.claim.entry_uuid;
     let markers = || {
@@ -79,7 +82,12 @@ fn claim_selection_and_multiple_guards_keep_exact_output_alive() {
     let (_tmp, store, request) = fixture();
     let app = store.register_app("reader".into()).unwrap();
     let claimed = store
-        .acquire_for(app.uuid, &request, &Default::default())
+        .acquire_for(
+            app.uuid,
+            &"fixture".to_string().try_into().unwrap(),
+            &request,
+            &Default::default(),
+        )
         .unwrap();
     let old = claimed.claim.entry_uuid;
     let before = serde_json::to_value(store.output(old).unwrap()).unwrap();
@@ -137,7 +145,12 @@ fn simultaneous_claim_update_returns_one_consistent_selection() {
     let (_tmp, store, request) = fixture();
     let app = store.register_app("reader".into()).unwrap();
     let claimed = store
-        .acquire_for(app.uuid, &request, &Default::default())
+        .acquire_for(
+            app.uuid,
+            &"fixture".to_string().try_into().unwrap(),
+            &request,
+            &Default::default(),
+        )
         .unwrap();
     let old = store
         .lease(claimed.claim.entry_uuid, VerificationMode::Metadata)

@@ -22,6 +22,15 @@ impl Store {
     pub fn deactivate(&self, app: Uuid) -> Result<Option<Binding>> {
         let _lock = self.lock()?;
         let mut application = self.application(app)?;
+        if let Some(binding) = &application.active {
+            self.authorize_binding(
+                app,
+                binding.entry_uuid,
+                crate::models::claim::policy::Action::Activate,
+            )?;
+        } else {
+            self.authorize_application_action(app, crate::models::claim::policy::Action::Activate)?;
+        }
         let previous = application.active.take();
         if previous.is_some() {
             application.bump()?;
@@ -42,8 +51,10 @@ impl Store {
         probe: &Probe,
     ) -> Result<Binding> {
         self.application(app)?;
+        self.authorize_binding(app, entry, crate::models::claim::policy::Action::Activate)?;
         let _lease = self.validate_candidate(entry, executable, probe)?;
         let _lock = self.lock()?;
+        self.authorize_binding(app, entry, crate::models::claim::policy::Action::Activate)?;
         self.metadata_path(&self.output(entry)?)?;
         let mut application = self.application(app)?;
         let binding = Binding {
@@ -132,7 +143,7 @@ mod tests {
     #[test]
     fn deactivate_missing_payload_preserves_concurrent_app_edits_and_is_idempotent() {
         let tmp = tempfile::tempdir().unwrap();
-        let store = Store::create(&tmp.path().join("root")).unwrap();
+        let store = Store::create_fixture(&tmp.path().join("root")).unwrap();
         let input = tmp.path().join("data");
         fs::write(&input, b"data").unwrap();
         let source = store
@@ -146,7 +157,12 @@ mod tests {
             policies: Default::default(),
         };
         let claim = store
-            .acquire_for(app.uuid, &request, &Default::default())
+            .acquire_for(
+                app.uuid,
+                &"fixture".to_string().try_into().unwrap(),
+                &request,
+                &Default::default(),
+            )
             .unwrap()
             .claim;
         app = store.application(app.uuid).unwrap();
@@ -186,13 +202,18 @@ mod tests {
         assert!(result.active.is_none());
         assert_eq!(result.settings.source_filter, vec![source.uuid]);
         assert_eq!(result.name, app.name);
-        assert_eq!(result.claims[&claim.uuid].entry_uuid, claim.entry_uuid);
+        assert_eq!(
+            store.registry(result.uuid).unwrap().claims[&claim.uuid].entry_uuid,
+            claim.entry_uuid
+        );
         let path = store.root.join(format!("index/{}/index.json", app.uuid));
-        // Preserve deliberate formatting as evidence that a no-op does not rewrite.
+        // A no-op preserves signed bytes; even envelope formatting edits violate catalog membership.
         let mut bytes = fs::read(&path).unwrap();
+        assert!(store.deactivate(app.uuid).unwrap().is_none());
+        assert_eq!(fs::read(&path).unwrap(), bytes);
         bytes.extend_from_slice(b" \n");
         fs::write(&path, &bytes).unwrap();
-        assert!(store.deactivate(app.uuid).unwrap().is_none());
+        assert!(store.deactivate(app.uuid).is_err());
         assert_eq!(fs::read(&path).unwrap(), bytes);
         assert!(store.deactivate(Uuid::new_v4()).is_err());
         assert!(store.deactivate(claim.entry_uuid).is_err());

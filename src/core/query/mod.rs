@@ -3,7 +3,7 @@ mod matching;
 pub mod model;
 use crate::core::Store;
 use anyhow::Result;
-pub use model::{ClaimQuery, Condition, Operator, QueryResult};
+pub use model::{ClaimQuery, Condition, DiscoveryQuery, Operator, QueryResult};
 
 impl Store {
     /// Read one coherent filtered application view, in claim UUID order.
@@ -14,13 +14,63 @@ impl Store {
         let _lock = self.lock()?;
         let application = self.application(query.app)?;
         let revision = application.revision;
-        let claims =
-            self.claim_views_locked(application, |claim| conditions.matches(&claim.context))?;
+        let claims = self.claim_views_locked(application, |claim| {
+            query
+                .scope
+                .as_ref()
+                .is_none_or(|scope| scope == &claim.scope)
+                && conditions.matches(&claim.context)
+        })?;
         Ok(QueryResult {
             app: query.app,
             revision,
             claims,
         })
+    }
+    /// Anonymous discovery only exposes explicitly public scopes. This returns
+    /// metadata, never a claim grant or a retained output lifetime.
+    pub fn discover_claims(&self, query: &DiscoveryQuery) -> Result<Vec<QueryResult>> {
+        let conditions = matching::CompiledConditions::compile(&query.conditions)?;
+        let _lock = self.lock()?;
+        let mut found = Vec::new();
+        for record in self.records()? {
+            let crate::models::index::Record::Application(app) = record else {
+                continue;
+            };
+            if app.state != crate::models::index::AppState::Ready {
+                continue;
+            }
+            let registry = self.registry(app.uuid)?;
+            let mut claims = Vec::new();
+            for claim in registry.claims.values() {
+                if registry.publicly_visible(claim)
+                    && query
+                        .scope
+                        .as_ref()
+                        .is_none_or(|scope| scope == &claim.scope)
+                    && (app.settings.source_filter.is_empty()
+                        || app
+                            .settings
+                            .source_filter
+                            .contains(&claim.request.source_uuid))
+                    && conditions.matches(&claim.context)
+                {
+                    claims.push(crate::models::claim::ClaimView {
+                        claim: claim.clone(),
+                        state: self.output(claim.entry_uuid)?.state,
+                    });
+                }
+            }
+            if !claims.is_empty() {
+                found.push(QueryResult {
+                    app: app.uuid,
+                    revision: app.revision,
+                    claims,
+                });
+            }
+        }
+        found.sort_by_key(|result| result.app);
+        Ok(found)
     }
 }
 

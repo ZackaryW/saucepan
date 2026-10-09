@@ -56,6 +56,7 @@ impl Store {
         self.self_request(request)?;
         self.install_application(
             &Installation {
+                scope: "saucepan/self".to_string().try_into()?,
                 name: "saucepan".into(),
                 request: request.clone(),
                 probe: saucepan_probe(),
@@ -93,7 +94,8 @@ impl Store {
         {
             return self.update_application(app, claim, &saucepan_probe(), None, options, Some(id));
         }
-        let application = self.application(app)?;
+        self.application(app)?;
+        let application = self.registry(app)?;
         let request = &application
             .claims
             .get(&claim)

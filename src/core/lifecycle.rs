@@ -29,32 +29,44 @@ impl Store {
         )?)
     }
     pub fn operation(&self, id: Uuid) -> Result<Operation> {
-        let op: Operation = index::read(&beneath(
-            &self.root,
-            &format!(".staging/lifecycle/{id}/index.json"),
-        )?)?;
-        ensure!(op.operation == id, "operation identity mismatch");
+        let _lock = self.lock()?;
+        let snapshot = self.metadata.snapshot()?;
+        let reference = snapshot
+            .catalog
+            .records
+            .get(&format!(".staging/lifecycle/{id}/index.json"))
+            .context("operation missing")?;
+        let op: Operation = snapshot.read(self.metadata.authenticator(), reference.identity)?;
+        ensure!(
+            op.operation == id && index::operation_identity(&op) == reference.identity,
+            "operation identity mismatch"
+        );
         Ok(op)
     }
     pub(crate) fn save_operation(&self, op: &Operation) -> Result<()> {
-        let dir = self.operation_dir(op.operation)?;
-        fs::create_dir_all(&dir)?;
-        index::write(&dir.join("index.json"), op)
+        let snapshot = self.metadata.snapshot()?;
+        self.metadata.publish(
+            &snapshot,
+            vec![(index::operation_identity(op), serde_json::to_value(op)?)],
+            vec![],
+        )?;
+        Ok(())
     }
     pub(crate) fn operations_locked(&self) -> Result<Vec<Operation>> {
-        let path = beneath(&self.root, ".staging/lifecycle")?;
-        if !path.exists() {
-            return Ok(Vec::new());
-        }
+        let snapshot = self.metadata.snapshot()?;
         let mut operations = Vec::new();
-        for item in fs::read_dir(path)? {
-            let item = item?;
-            let id = Uuid::parse_str(&item.file_name().to_string_lossy())
-                .context("invalid operation directory")?;
-            // Directory creation may have stopped before the first atomic record write.
-            if self.operation_dir(id)?.join("index.json").exists() {
-                operations.push(self.operation(id)?);
-            }
+        for reference in snapshot
+            .catalog
+            .records
+            .values()
+            .filter(|r| r.identity.kind == crate::core::claim::security::Kind::Operation)
+        {
+            let op: Operation = snapshot.read(self.metadata.authenticator(), reference.identity)?;
+            ensure!(
+                index::operation_identity(&op) == reference.identity,
+                "operation identity mismatch"
+            );
+            operations.push(op);
         }
         operations.sort_by_key(|op| op.operation);
         Ok(operations)
@@ -76,6 +88,46 @@ impl Store {
     ) -> Result<(Operation, LockGuard)> {
         let guard = self.operation_lock(id)?;
         let _lock = self.lock()?;
+        if let Some(app) = app {
+            if self.session.is_some()
+                || self
+                    .metadata
+                    .snapshot()?
+                    .contains(crate::core::claim::registry::registry_identity(app))?
+            {
+                use crate::models::claim::policy::Action as Permission;
+                match &action {
+                    Action::Update { claim, .. } => {
+                        let registry = self.registry(app)?;
+                        let claim =
+                            registry
+                                .claims
+                                .get(claim)
+                                .context(crate::error::Error::new(
+                                    crate::error::ErrorCode::UnknownClaim,
+                                    "claim missing",
+                                ))?;
+                        self.authorize_claim(&registry, claim, Permission::Update)?;
+                        self.authorize_claim(&registry, claim, Permission::Activate)?;
+                    }
+                    Action::Uninstall { .. } => {
+                        self.authorize_application_action(app, Permission::Remove)?
+                    }
+                    Action::Shim { .. } => {
+                        self.authorize_application_action(app, Permission::Activate)?
+                    }
+                    Action::Install { .. } => anyhow::bail!("invalid existing-app installation"),
+                }
+            }
+        } else {
+            ensure!(
+                self.session.is_none(),
+                crate::error::Error::new(
+                    crate::error::ErrorCode::AccessDenied,
+                    "installation requires administration"
+                )
+            );
+        }
         let fingerprint = super::store::json_digest(&(app, &action))?;
         let record_path = self.operation_dir(id)?.join("index.json");
         if record_path.exists() {
@@ -104,6 +156,7 @@ impl Store {
             claim,
             candidate: None,
             desired: None,
+            desired_registry: None,
             shims: Vec::new(),
             pending: Vec::new(),
             leftovers: Vec::new(),
@@ -111,37 +164,11 @@ impl Store {
         self.commit_operation(&op, Vec::new())?;
         Ok((op, guard))
     }
-    pub(crate) fn retire_application_locked(&self, app: Uuid, operation: Uuid) -> Result<()> {
-        let source = beneath(&self.root, &format!("index/{app}"))?;
-        let dest = beneath(&self.operation_dir(operation)?, "removed-app")?;
-        ensure!(
-            !(source.exists() && dest.exists()),
-            "conflicting retired application"
-        );
-        if source.exists() {
-            ensure!(
-                plain_metadata(&source)?.is_dir(),
-                "invalid application directory"
-            );
-            let contents: Vec<_> = fs::read_dir(&source)?.collect::<std::io::Result<_>>()?;
-            ensure!(
-                contents.len() == 1 && contents[0].file_name() == "index.json",
-                "unknown files in application directory"
-            );
-            match self.record(app)? {
-                Record::Application(a) => ensure!(
-                    a.state == AppState::Removing && a.active.is_none() && a.claims.is_empty(),
-                    "application not ready for retirement"
-                ),
-                _ => anyhow::bail!("not an application"),
-            }
-            fs::rename(source, dest)?;
-        }
-        Ok(())
-    }
     pub(crate) fn commit_operation(&self, op: &Operation, records: Vec<Record>) -> Result<()> {
+        let registries = op.desired_registry.as_ref().filter(|r| records.iter().any(|record| matches!(record, Record::Application(app) if app.uuid == r.registry.app))).cloned().into_iter().collect();
         self.commit(Journal {
             records,
+            registries,
             operation: Some(op.clone()),
             ..Default::default()
         })

@@ -63,7 +63,7 @@ this extra coordination only after explicit replacement with the new build.
 Managed application commands share candidate validation and operation reporting:
 
 ```powershell
-saucepan --root ROOT install example request.json probe.json BUILT_SHIM --shim example.exe
+saucepan --root ROOT install example request.json probe.json BUILT_SHIM --shim example.exe --scope example
 saucepan --root ROOT update-app APP_UUID CLAIM_UUID probe.json
 saucepan --root ROOT rollback APP_UUID CLAIM_UUID RETAINED_ENTRY_UUID probe.json
 ```

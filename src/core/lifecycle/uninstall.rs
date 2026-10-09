@@ -34,6 +34,10 @@ impl Store {
             let result = (|| -> Result<()> {
                 let _lock = self.lock()?;
                 let mut application = self.application(app)?;
+                self.authorize_application_action(
+                    app,
+                    crate::models::claim::policy::Action::Remove,
+                )?;
                 let mut changes: Vec<_> = application
                     .shims
                     .iter()
@@ -90,7 +94,9 @@ impl Store {
                 op.pending.clear();
                 application.state = AppState::Removing;
                 application.active = None;
-                application.claims.clear();
+                let mut registry = self.registry(app)?;
+                registry.claims.clear();
+                op.desired_registry = Some(registry);
                 application.bump()?;
                 self.commit_operation(&op, vec![Record::Application(application)])
             })();
@@ -158,34 +164,25 @@ impl Store {
         if !op.pending.is_empty() {
             return self.save_operation(op);
         }
-        // Rename/replay failure becomes an app-local pending receipt, never a poisoned global journal.
-        self.commit(Journal {
-            operation: Some(op.clone()),
-            retire: Some((op.app, op.operation)),
-            ..Default::default()
-        })?;
-        *op = self.operation(op.operation)?;
-        if !op.pending.is_empty() {
-            return Ok(());
+        // Retire live app and registry membership in the same signed generation.
+        if self
+            .metadata
+            .snapshot()?
+            .contains(crate::core::claim::registry::registry_identity(op.app))?
+        {
+            self.commit(Journal {
+                operation: Some(op.clone()),
+                retire: Some((op.app, op.operation)),
+                ..Default::default()
+            })?;
         }
-        let retired = beneath(&self.operation_dir(op.operation)?, "removed-app")?;
         let cleanup = (|| -> Result<()> {
-            if retired.exists() {
-                let children: Vec<_> = fs::read_dir(&retired)?.collect::<std::io::Result<_>>()?;
-                ensure!(
-                    children.iter().all(|e| e.file_name() == "index.json"),
-                    "unknown files in retired app directory"
-                );
-                let path = beneath(&retired, "index.json")?;
+            // Only remove empty directories; preserve and report foreign files.
+            for relative in [format!("index/{}", op.app), format!("claims/{}", op.app)] {
+                let path = beneath(&self.root, &relative)?;
                 if path.exists() {
-                    let record: Record = index::read(&path)?;
-                    ensure!(
-                        matches!(record, Record::Application(ref app) if app.uuid == op.app && app.state == AppState::Removing && app.active.is_none() && app.claims.is_empty()),
-                        "retired app identity mismatch"
-                    );
-                    fs::remove_file(path)?;
+                    fs::remove_dir(path)?;
                 }
-                fs::remove_dir(retired)?;
             }
             Ok(())
         })();

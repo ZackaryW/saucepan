@@ -1,5 +1,10 @@
-use super::Journal;
+use super::registry::RegistryState;
+use crate::core::index::Journal;
 use crate::error::{Error, ErrorCode};
+use crate::models::claim::{
+    Scope,
+    policy::{Action, Overrides},
+};
 use crate::{
     core::{Store, source::AcquireOptions},
     models::{
@@ -18,6 +23,7 @@ mod tests;
 
 pub(crate) struct ClaimTarget {
     pub app: Uuid,
+    pub scope: Scope,
     pub id: Uuid,
     pub expected: Option<Uuid>,
     pub context: ClaimContext,
@@ -26,27 +32,41 @@ impl Store {
     pub fn acquire_for(
         &self,
         app: Uuid,
+        scope: &Scope,
         request: &Request,
         options: &AcquireOptions,
     ) -> Result<Claimed> {
-        self.acquire_for_with_context(app, request, &ClaimContext::new(), options)
+        self.acquire_for_with_context(app, scope, request, &ClaimContext::new(), options)
     }
     /// Publish caller context atomically with a new claim, independent of output reuse.
     pub fn acquire_for_with_context(
         &self,
         app: Uuid,
+        scope: &Scope,
         request: &Request,
         context: &ClaimContext,
         options: &AcquireOptions,
     ) -> Result<Claimed> {
         validate_context(context)?;
         self.application(app)?;
+        let registry = self.registry(app)?;
+        self.authorize_resource(
+            &registry,
+            Action::Acquire,
+            Some(request.source_uuid),
+            Some(scope),
+        )?;
+        registry
+            .registry
+            .policies
+            .evaluate(&request_overrides(request))?;
         let id = Uuid::new_v4();
         let acquired = self.acquire_inner(
             request,
             options,
             Some(ClaimTarget {
                 app,
+                scope: scope.clone(),
                 id,
                 expected: None,
                 context: context.clone(),
@@ -60,16 +80,19 @@ impl Store {
         })
     }
     pub fn update_claim(&self, app: Uuid, id: Uuid, options: &AcquireOptions) -> Result<Claimed> {
-        let application = self.application(app)?;
-        let claim = application
+        self.application(app)?;
+        let registry = self.registry(app)?;
+        let claim = registry
             .claims
             .get(&id)
             .with_context(|| Error::new(ErrorCode::UnknownClaim, "claim missing"))?;
+        self.authorize_claim(&registry, claim, Action::Update)?;
         let acquired = self.acquire_inner(
             &claim.request,
             options,
             Some(ClaimTarget {
                 app,
+                scope: claim.scope.clone(),
                 id,
                 expected: Some(claim.entry_uuid),
                 context: Default::default(),
@@ -97,7 +120,16 @@ impl Store {
             application.revision == expected_revision,
             Error::new(ErrorCode::RevisionConflict, "application revision conflict")
         );
-        let claim = application
+        let mut registry = self.registry(app)?;
+        self.authorize_claim(
+            &registry,
+            registry
+                .claims
+                .get(&id)
+                .with_context(|| Error::new(ErrorCode::UnknownClaim, "claim missing"))?,
+            Action::SetContext,
+        )?;
+        let claim = registry
             .claims
             .get_mut(&id)
             .with_context(|| Error::new(ErrorCode::UnknownClaim, "claim missing"))?;
@@ -109,6 +141,7 @@ impl Store {
         application.bump()?;
         self.commit(Journal {
             records: vec![Record::Application(application)],
+            registries: vec![registry],
             ..Default::default()
         })?;
         Ok(result)
@@ -116,13 +149,23 @@ impl Store {
     pub fn release_claim(&self, app: Uuid, id: Uuid) -> Result<()> {
         let _lock = self.lock()?;
         let mut application = self.application(app)?;
-        application
+        let mut registry = self.registry(app)?;
+        self.authorize_claim(
+            &registry,
+            registry
+                .claims
+                .get(&id)
+                .with_context(|| Error::new(ErrorCode::UnknownClaim, "claim missing"))?,
+            Action::Release,
+        )?;
+        registry
             .claims
             .remove(&id)
             .with_context(|| Error::new(ErrorCode::UnknownClaim, "claim missing"))?;
         application.bump()?;
         self.commit(Journal {
             records: vec![Record::Application(application)],
+            registries: vec![registry],
             stage: None,
             ..Default::default()
         })
@@ -156,9 +199,17 @@ impl Store {
         application: Application,
         matches: impl Fn(&Claim) -> bool,
     ) -> Result<Vec<ClaimView>> {
-        application
+        let registry = self.registry(application.uuid)?;
+        self.check_session(&registry)?;
+        registry
             .claims
-            .into_values()
+            .values()
+            .filter(|claim| {
+                self.authorize_claim(&registry, claim, Action::Read).is_ok()
+                    && self
+                        .authorize_claim(&registry, claim, Action::Discover)
+                        .is_ok()
+            })
             .filter(|c| {
                 application.settings.source_filter.is_empty()
                     || application
@@ -166,7 +217,8 @@ impl Store {
                         .source_filter
                         .contains(&c.request.source_uuid)
             })
-            .filter(matches)
+            .filter(|claim| matches(claim))
+            .cloned()
             .map(|claim| {
                 let state = self.output(claim.entry_uuid)?.state;
                 Ok(ClaimView { claim, state })
@@ -178,30 +230,67 @@ impl Store {
         target: &ClaimTarget,
         request: &Request,
         entry: Uuid,
-    ) -> Result<Record> {
+    ) -> Result<(Record, RegistryState)> {
         let mut app = self.application(target.app)?;
+        let mut registry = self.registry(target.app)?;
+        self.authorize_resource(
+            &registry,
+            if target.expected.is_some() {
+                Action::Update
+            } else {
+                Action::Acquire
+            },
+            Some(request.source_uuid),
+            Some(&target.scope),
+        )?;
         ensure!(
-            app.claims.get(&target.id).map(|c| c.entry_uuid) == target.expected,
+            registry.claims.get(&target.id).map(|c| c.entry_uuid) == target.expected,
             Error::new(
                 ErrorCode::RevisionConflict,
                 "claim changed during acquisition; retry"
             )
         );
-        let context = app
+        let context = registry
             .claims
             .get(&target.id)
             .map(|claim| claim.context.clone())
             .unwrap_or_else(|| target.context.clone());
-        app.claims.insert(
+        registry.claims.insert(
             target.id,
             Claim {
                 uuid: target.id,
+                scope: target.scope.clone(),
+                overrides: registry
+                    .claims
+                    .get(&target.id)
+                    .map(|c| c.overrides.clone())
+                    .unwrap_or_else(|| request_overrides(request)),
+                effective: registry.registry.policies.evaluate(
+                    &registry
+                        .claims
+                        .get(&target.id)
+                        .map(|c| c.overrides.clone())
+                        .unwrap_or_else(|| request_overrides(request)),
+                )?,
                 request: request.clone(),
                 entry_uuid: entry,
                 context,
             },
         );
         app.bump()?;
-        Ok(Record::Application(app))
+        registry.registry.revision = app.revision;
+        registry.validate()?;
+        Ok((Record::Application(app), registry))
+    }
+}
+
+fn request_overrides(request: &Request) -> Overrides {
+    Overrides {
+        identical: Some(request.policies.identical),
+        keep: Some(match request.policies.eviction {
+            crate::models::policy::Eviction::Latest { keep } => keep,
+        }),
+        reclaim: None,
+        useable_app: Some(request.policies.protection.is_some()),
     }
 }

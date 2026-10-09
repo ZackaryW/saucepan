@@ -113,7 +113,7 @@ impl Store {
         &self,
         request: &Request,
         options: &super::source::AcquireOptions,
-        claim: Option<super::index::claims::ClaimTarget>,
+        claim: Option<super::claim::operations::ClaimTarget>,
     ) -> Result<Acquisition> {
         self.acquire_protected(request, options, claim, false)
     }
@@ -132,7 +132,7 @@ impl Store {
         &self,
         request: &Request,
         options: &super::source::AcquireOptions,
-        claim: Option<super::index::claims::ClaimTarget>,
+        claim: Option<super::claim::operations::ClaimTarget>,
         retain: bool,
     ) -> Result<Acquisition> {
         policy::validate(request).map_err(|e| {
@@ -195,12 +195,11 @@ impl Store {
             let directory = self.verified_path(entry)?;
             let mut committed_claim = None;
             if let Some(target) = &claim {
-                let record = self.claim_record(target, request, entry.uuid)?;
-                if let Record::Application(app) = &record {
-                    committed_claim = Some(app.claims[&target.id].clone());
-                }
+                let (record, registry) = self.claim_record(target, request, entry.uuid)?;
+                committed_claim = Some(registry.claims[&target.id].clone());
                 self.commit(Journal {
                     records: vec![record],
+                    registries: vec![registry],
                     stage: None,
                     ..Default::default()
                 })?;
@@ -249,16 +248,17 @@ impl Store {
             .unwrap()
             .to_owned();
         let mut records = vec![Record::Output(Box::new(entry.clone()))];
+        let mut registries = Vec::new();
         let mut committed_claim = None;
         if let Some(target) = &claim {
-            let record = self.claim_record(target, request, entry.uuid)?;
-            if let Record::Application(app) = &record {
-                committed_claim = Some(app.claims[&target.id].clone());
-            }
+            let (record, registry) = self.claim_record(target, request, entry.uuid)?;
+            committed_claim = Some(registry.claims[&target.id].clone());
+            registries.push(registry);
             records.push(record);
         }
         self.commit(Journal {
             records,
+            registries,
             stage: Some((stage_name, entry.uuid)),
             ..Default::default()
         })?;

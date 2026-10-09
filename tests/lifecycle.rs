@@ -1,3 +1,4 @@
+mod native_root;
 use saucepan::{
     core::{Store, activation::Probe},
     models::{
@@ -40,9 +41,9 @@ fn until(path: &Path) {
         std::thread::sleep(Duration::from_millis(10));
     }
 }
-fn setup() -> (tempfile::TempDir, Store, Installation) {
+fn setup() -> (tempfile::TempDir, native_root::NativeStore, Installation) {
     let tmp = tempfile::tempdir().unwrap();
-    let store = Store::create(&tmp.path().join("root")).unwrap();
+    let store = native_root::create(&tmp.path().join("root")).unwrap();
     let exe = std::env::current_exe().unwrap();
     let name = exe.file_name().unwrap().to_str().unwrap().to_owned();
     let source = store.register_source(Source::Local { path: exe }).unwrap();
@@ -56,6 +57,7 @@ fn setup() -> (tempfile::TempDir, Store, Installation) {
     request.policies.protection = Some(Protection::UseableApp);
     request.policies.identical = Identical::NewEntry;
     let input = Installation {
+        scope: "fixture".to_string().try_into().unwrap(),
         name: "fixture".into(),
         request,
         probe: Probe {
@@ -90,7 +92,11 @@ fn managed_claim_and_binding_commit_together_and_rollback_preserves_request() {
     assert_eq!(installed.status, Phase::Complete, "{:?}", installed.pending);
     let first = installed.candidate.unwrap();
     let initial = store.application(installed.app).unwrap();
-    assert!(initial.claims[&installed.claim].context.is_empty());
+    assert!(
+        store.registry(installed.app).unwrap().claims[&installed.claim]
+            .context
+            .is_empty()
+    );
     let context = [("project".into(), "lifecycle".into())].into();
     store
         .set_claim_context(installed.app, installed.claim, &context, initial.revision)
@@ -127,9 +133,12 @@ fn managed_claim_and_binding_commit_together_and_rollback_preserves_request() {
         .unwrap();
     assert_eq!(updated.status, Phase::Complete);
     let app = store.application(installed.app).unwrap();
-    assert_eq!(app.claims[&installed.claim].context, context);
     assert_eq!(
-        app.claims[&installed.claim].entry_uuid,
+        store.registry(installed.app).unwrap().claims[&installed.claim].context,
+        context
+    );
+    assert_eq!(
+        store.registry(installed.app).unwrap().claims[&installed.claim].entry_uuid,
         updated.candidate.unwrap()
     );
     assert_eq!(app.active.unwrap().entry_uuid, updated.candidate.unwrap());
@@ -145,16 +154,16 @@ fn managed_claim_and_binding_commit_together_and_rollback_preserves_request() {
         .unwrap();
     assert_eq!(rolled.status, Phase::Complete);
     assert_eq!(
-        store.application(installed.app).unwrap().claims[&installed.claim].context,
+        store.registry(installed.app).unwrap().claims[&installed.claim].context,
         context
     );
     assert_eq!(
-        store.application(installed.app).unwrap().claims[&installed.claim].entry_uuid,
+        store.registry(installed.app).unwrap().claims[&installed.claim].entry_uuid,
         first
     );
     assert_eq!(
         serde_json::to_value(
-            &store.application(installed.app).unwrap().claims[&installed.claim].request
+            &store.registry(installed.app).unwrap().claims[&installed.claim].request
         )
         .unwrap(),
         serde_json::to_value(&input.request).unwrap()
@@ -195,6 +204,7 @@ fn failed_install_has_no_live_application_and_cli_install_matches_native_results
         .arg("--root")
         .arg(store.root())
         .arg("install")
+        .args(["--scope", "fixture"])
         .arg(&input.name)
         .arg(request)
         .arg(probe)
@@ -305,7 +315,7 @@ fn managed_update_detects_deactivation_during_probe() {
     let app = store.application(installed.app).unwrap();
     assert!(app.active.is_none());
     assert_eq!(
-        app.claims[&installed.claim].entry_uuid,
+        store.registry(installed.app).unwrap().claims[&installed.claim].entry_uuid,
         installed.candidate.unwrap()
     );
 }
@@ -349,9 +359,12 @@ fn managed_transitions_detect_context_edits_during_probe() {
             assert_eq!(update.join().unwrap().status, Phase::Conflict);
         });
         let app = store.application(installed.app).unwrap();
-        assert_eq!(app.claims[&installed.claim].context, context);
         assert_eq!(
-            app.claims[&installed.claim].entry_uuid,
+            store.registry(installed.app).unwrap().claims[&installed.claim].context,
+            context
+        );
+        assert_eq!(
+            store.registry(installed.app).unwrap().claims[&installed.claim].entry_uuid,
             installed.candidate.unwrap()
         );
         assert_eq!(
@@ -360,7 +373,7 @@ fn managed_transitions_detect_context_edits_during_probe() {
         );
         store.deactivate(installed.app).unwrap();
         assert_eq!(
-            store.application(installed.app).unwrap().claims[&installed.claim].context,
+            store.registry(installed.app).unwrap().claims[&installed.claim].context,
             context
         );
         store.uninstall(installed.app, false, None).unwrap();
@@ -448,7 +461,12 @@ fn uninstall_preserves_shared_outputs_and_live_target_then_reconciles() {
     let mut shared = input.request.clone();
     shared.policies.identical = Identical::Reuse;
     let claim = store
-        .acquire_for(other.uuid, &shared, &Default::default())
+        .acquire_for(
+            other.uuid,
+            &"fixture".to_string().try_into().unwrap(),
+            &shared,
+            &Default::default(),
+        )
         .unwrap();
     assert_eq!(claim.claim.entry_uuid, first);
     store
@@ -658,4 +676,102 @@ fn unmanaged_shims_require_explicit_adoption_or_exclusion() {
     assert_eq!(removed.status, Phase::Complete);
     assert_eq!(removed.leftovers.len(), 1);
     assert!(old.exists());
+}
+
+#[test]
+fn protected_shim_authenticates_intent_without_client_token_and_lease_survives_uninstall() {
+    use saucepan::core::claim::{registry::CredentialChange, session::ApplicationConfiguration};
+    let (_tmp, store, input) = setup();
+    let installed = store
+        .install_application(&input, &shim(), &Default::default(), None)
+        .unwrap();
+    let token = store
+        .configure_application(
+            installed.app,
+            ApplicationConfiguration {
+                expected_revision: store.application(installed.app).unwrap().revision,
+                access: Default::default(),
+                policies: Default::default(),
+                credential: Some(CredentialChange::Enable),
+            },
+            None,
+        )
+        .unwrap()
+        .unwrap();
+    let session = store.session(installed.app, Some(token)).unwrap();
+    let updated = session
+        .update_application(
+            installed.claim,
+            &input.probe,
+            None,
+            &Default::default(),
+            None,
+        )
+        .unwrap();
+    assert_eq!(updated.status, Phase::Complete, "{:?}", updated.pending);
+    let rolled_back = session
+        .update_application(
+            installed.claim,
+            &input.probe,
+            installed.candidate,
+            &Default::default(),
+            None,
+        )
+        .unwrap();
+    assert_eq!(
+        rolled_back.status,
+        Phase::Complete,
+        "{:?}",
+        rolled_back.pending
+    );
+    let launcher = store.root().join("bin").join(&input.shim);
+    let run = || {
+        Command::new(&launcher)
+            .args(["--exact", "fixture_probe", "--nocapture"])
+            .output()
+            .unwrap()
+    };
+    assert!(run().status.success());
+    for relative in [
+        format!("index/{}/index.json", installed.app),
+        format!("claims/{}/index.json", installed.app),
+        format!(
+            "bin/{}",
+            launcher
+                .with_extension("shim.json")
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+        ),
+    ] {
+        let path = store.root().join(relative);
+        let original = fs::read(&path).unwrap();
+        let mut json: serde_json::Value = serde_json::from_slice(&original).unwrap();
+        if json.get("payload").is_some() {
+            if json["payload"].get("credential").is_some() {
+                json["payload"]["credential"] = serde_json::json!({"mode":"disabled"});
+            } else {
+                json["payload"]["active"]["executable"] = "different.exe".into();
+            }
+        } else {
+            json["saucepan"] = true.into();
+        }
+        fs::write(&path, serde_json::to_vec(&json).unwrap()).unwrap();
+        assert!(!run().status.success());
+        fs::write(&path, original).unwrap();
+    }
+    let held = session
+        .lease_claim(
+            installed.claim,
+            saucepan::models::store::VerificationMode::Metadata,
+        )
+        .unwrap();
+    assert_eq!(
+        session.uninstall(false, None).unwrap().status,
+        Phase::Complete
+    );
+    assert!(held.directory().exists());
+    assert!(session.claims().is_err());
+    assert!(!launcher.exists());
 }

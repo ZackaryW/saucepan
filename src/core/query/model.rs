@@ -7,6 +7,17 @@ use uuid::Uuid;
 #[serde(deny_unknown_fields)]
 pub struct ClaimQuery {
     pub app: Uuid,
+    #[serde(default)]
+    pub scope: Option<crate::models::claim::Scope>,
+    #[serde(rename = "where")]
+    pub conditions: Vec<Condition>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DiscoveryQuery {
+    #[serde(default)]
+    pub scope: Option<crate::models::claim::Scope>,
     #[serde(rename = "where")]
     pub conditions: Vec<Condition>,
 }

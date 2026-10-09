@@ -35,6 +35,8 @@ enum Commands {
         operation: Option<uuid::Uuid>,
     },
     Install {
+        #[arg(long)]
+        scope: String,
         name: String,
         request: PathBuf,
         probe: PathBuf,
@@ -92,6 +94,8 @@ enum Commands {
         /// JSON object of string labels, published with the new claim.
         #[arg(long, requires = "app")]
         context: Option<PathBuf>,
+        #[arg(long, requires = "app")]
+        scope: Option<String>,
     },
     /// Replace a claim's complete context at an observed application revision.
     SetClaimContext {
@@ -237,6 +241,7 @@ pub fn run() -> Result<()> {
                     &mut exit_code,
                 )?,
                 Commands::Install {
+                    scope,
                     name,
                     request,
                     probe,
@@ -246,6 +251,7 @@ pub fn run() -> Result<()> {
                 } => operation_value(
                     store.install_application(
                         &crate::models::index::lifecycle::Installation {
+                            scope: scope.try_into()?,
                             name,
                             request: serde_json::from_slice(&std::fs::read(request)?)?,
                             probe: serde_json::from_slice(&std::fs::read(probe)?)?,
@@ -305,7 +311,12 @@ pub fn run() -> Result<()> {
                     serde_json::to_value(store.register_source(source)?)?
                 }
                 Commands::Inspect { uuid } => serde_json::to_value(store.record(uuid)?)?,
-                Commands::Acquire { file, app, context } => {
+                Commands::Acquire {
+                    file,
+                    app,
+                    context,
+                    scope,
+                } => {
                     let request = serde_json::from_slice(&std::fs::read(file)?)?;
                     match app {
                         Some(app) => {
@@ -314,8 +325,15 @@ pub fn run() -> Result<()> {
                                 None => Default::default(),
                             };
                             serde_json::to_value(
-                                store
-                                    .acquire_for_with_context(app, &request, &context, &options)?,
+                                store.acquire_for_with_context(
+                                    app,
+                                    &scope
+                                        .context("--scope is required with --app")?
+                                        .try_into()?,
+                                    &request,
+                                    &context,
+                                    &options,
+                                )?,
                             )?
                         }
                         None => serde_json::to_value(store.acquire_with(&request, &options)?)?,

@@ -1,5 +1,5 @@
+mod native_root;
 use saucepan::{
-    core::Store,
     error::{Error, ErrorCode},
     models::{
         policy::{Eviction, Identical},
@@ -17,7 +17,7 @@ fn code(error: anyhow::Error) -> ErrorCode {
 #[test]
 fn native_store_failures_have_codes_without_message_matching() {
     let tmp = tempfile::tempdir().unwrap();
-    let store = Store::create(&tmp.path().join("root")).unwrap();
+    let store = native_root::create(&tmp.path().join("root")).unwrap();
     assert_eq!(
         code(store.application(Uuid::new_v4()).unwrap_err()),
         ErrorCode::UnknownApplication

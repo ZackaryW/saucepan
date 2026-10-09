@@ -1,3 +1,4 @@
+mod native_root;
 use saucepan::{
     core::Store,
     models::{
@@ -55,11 +56,11 @@ fn until(path: &Path) {
         std::thread::sleep(Duration::from_millis(10));
     }
 }
-fn setup() -> (tempfile::TempDir, Store, Request) {
+fn setup() -> (tempfile::TempDir, native_root::NativeStore, Request) {
     let tmp = tempfile::tempdir().unwrap();
     let input = tmp.path().join("data");
     fs::write(&input, b"payload").unwrap();
-    let store = Store::create(&tmp.path().join("root")).unwrap();
+    let store = native_root::create(&tmp.path().join("root")).unwrap();
     let source = store
         .register_source(Source::Local { path: input })
         .unwrap();
@@ -198,7 +199,12 @@ fn consumer_survives_claim_release_retention_and_wrapper_death() {
     let (tmp, store, request) = setup();
     let app = store.register_app("consumer".into()).unwrap();
     let first = store
-        .acquire_for(app.uuid, &request, &Default::default())
+        .acquire_for(
+            app.uuid,
+            &"fixture".to_string().try_into().unwrap(),
+            &request,
+            &Default::default(),
+        )
         .unwrap();
     let id = first.claim.entry_uuid;
     let mut command = wrapper(&store, id);

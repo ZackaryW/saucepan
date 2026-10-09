@@ -1,11 +1,9 @@
-use saucepan::{
-    core::Store,
-    models::{
-        index::{Claim, ClaimContext, validate_context},
-        policy::{Eviction, Identical},
-        source::Source,
-        store::{Availability, Request, Selector},
-    },
+mod native_root;
+use saucepan::models::{
+    index::{Claim, ClaimContext, validate_context},
+    policy::{Eviction, Identical},
+    source::Source,
+    store::{Availability, Request, Selector},
 };
 use std::fs;
 
@@ -48,7 +46,7 @@ fn context_publication_replacement_reclaim_and_release() {
     let tmp = tempfile::tempdir().unwrap();
     let file = tmp.path().join("file");
     fs::write(&file, "one").unwrap();
-    let store = Store::create(&tmp.path().join("root")).unwrap();
+    let store = native_root::create(&tmp.path().join("root")).unwrap();
     let app = store.register_app("consumer".into()).unwrap();
     let source = store
         .register_source(Source::Local { path: file.clone() })
@@ -61,10 +59,22 @@ fn context_publication_replacement_reclaim_and_release() {
     };
     request.policies.eviction = Eviction::Latest { keep: 1 };
     let a = store
-        .acquire_for_with_context(app.uuid, &request, &context("A"), &Default::default())
+        .acquire_for_with_context(
+            app.uuid,
+            &"fixture".to_string().try_into().unwrap(),
+            &request,
+            &context("A"),
+            &Default::default(),
+        )
         .unwrap();
     let b = store
-        .acquire_for_with_context(app.uuid, &request, &context("B"), &Default::default())
+        .acquire_for_with_context(
+            app.uuid,
+            &"fixture".to_string().try_into().unwrap(),
+            &request,
+            &context("B"),
+            &Default::default(),
+        )
         .unwrap();
     assert_eq!(a.acquired.entry.uuid, b.acquired.entry.uuid);
     assert_ne!(a.claim.uuid, b.claim.uuid);
@@ -77,12 +87,7 @@ fn context_publication_replacement_reclaim_and_release() {
         context("A")
     );
     json.as_object_mut().unwrap().remove("context");
-    assert!(
-        serde_json::from_value::<Claim>(json)
-            .unwrap()
-            .context
-            .is_empty()
-    );
+    assert!(serde_json::from_value::<Claim>(json).is_err());
     let before = store.application(app.uuid).unwrap();
     let revision = before.revision;
     let changed = store
@@ -95,7 +100,10 @@ fn context_publication_replacement_reclaim_and_release() {
     );
     let after = store.application(app.uuid).unwrap();
     assert_eq!(after.revision, revision + 1);
-    assert_eq!(after.claims[&b.claim.uuid].context, context("B"));
+    assert_eq!(
+        store.registry(app.uuid).unwrap().claims[&b.claim.uuid].context,
+        context("B")
+    );
     assert_eq!(
         serde_json::to_value(&after.active).unwrap(),
         serde_json::to_value(&before.active).unwrap()
@@ -133,7 +141,7 @@ fn context_publication_replacement_reclaim_and_release() {
         Availability::Reclaimed
     );
     assert!(
-        store.application(app.uuid).unwrap().claims[&a.claim.uuid]
+        store.registry(app.uuid).unwrap().claims[&a.claim.uuid]
             .context
             .is_empty()
     );
@@ -141,7 +149,13 @@ fn context_publication_replacement_reclaim_and_release() {
     fs::remove_file(&file).unwrap();
     assert!(
         store
-            .acquire_for_with_context(app.uuid, &request, &context("D"), &Default::default())
+            .acquire_for_with_context(
+                app.uuid,
+                &"fixture".to_string().try_into().unwrap(),
+                &request,
+                &context("D"),
+                &Default::default()
+            )
             .is_err()
     );
     assert_eq!(
@@ -151,7 +165,7 @@ fn context_publication_replacement_reclaim_and_release() {
     store.release_claim(app.uuid, b.claim.uuid).unwrap();
     assert!(
         !store
-            .application(app.uuid)
+            .registry(app.uuid)
             .unwrap()
             .claims
             .contains_key(&b.claim.uuid)
@@ -168,7 +182,7 @@ fn context_publication_replacement_reclaim_and_release() {
 #[test]
 fn invalid_context_fails_before_acquiring_or_mutating() {
     let tmp = tempfile::tempdir().unwrap();
-    let store = Store::create(&tmp.path().join("root")).unwrap();
+    let store = native_root::create(&tmp.path().join("root")).unwrap();
     let app = store.register_app("test".into()).unwrap();
     let request = Request {
         source_uuid: uuid::Uuid::new_v4(),
@@ -178,7 +192,13 @@ fn invalid_context_fails_before_acquiring_or_mutating() {
     };
     let bad = [("".into(), "x".into())].into();
     let err = store
-        .acquire_for_with_context(app.uuid, &request, &bad, &Default::default())
+        .acquire_for_with_context(
+            app.uuid,
+            &"fixture".to_string().try_into().unwrap(),
+            &request,
+            &bad,
+            &Default::default(),
+        )
         .unwrap_err();
     assert!(err.to_string().contains("context key"));
     assert!(

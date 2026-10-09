@@ -9,6 +9,49 @@ use uuid::Uuid;
 pub mod policy;
 pub mod security;
 
+/// Caller-owned labels; never part of output identity or acquisition policy.
+pub type ClaimContext = BTreeMap<String, String>;
+
+pub fn validate_context_field(key: &str, value: &str) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        !key.is_empty() && key.len() <= 128,
+        Error::new(
+            ErrorCode::InvalidRequest,
+            "context key must contain 1..=128 UTF-8 bytes"
+        )
+    );
+    anyhow::ensure!(
+        value.len() <= 4096,
+        Error::new(
+            ErrorCode::InvalidRequest,
+            "context value exceeds 4096 UTF-8 bytes"
+        )
+    );
+    Ok(())
+}
+
+pub fn validate_context(context: &ClaimContext) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        context.len() <= 64,
+        Error::new(ErrorCode::InvalidRequest, "context exceeds 64 entries")
+    );
+    for (key, value) in context {
+        validate_context_field(key, value)?;
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Claimed {
+    pub claim: Claim,
+    pub acquired: super::store::Acquired,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClaimView {
+    pub claim: Claim,
+    pub state: super::store::Availability,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct Scope(String);
@@ -42,13 +85,13 @@ pub struct Claim {
     pub scope: Scope,
     pub request: Request,
     pub entry_uuid: Uuid,
-    pub context: super::index::ClaimContext,
+    pub context: ClaimContext,
     pub overrides: policy::Overrides,
     pub effective: policy::Effective,
 }
 impl Claim {
     pub fn validate(&self) -> Result<()> {
-        super::index::validate_context(&self.context)
+        validate_context(&self.context)
             .map_err(|_| Error::new(ErrorCode::InvalidRequest, "invalid claim context"))?;
         self.effective.validate()
     }
@@ -98,4 +141,11 @@ impl CoveredView {
         }
         Ok(())
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RegistryState {
+    pub registry: Registry,
+    pub claims: BTreeMap<Uuid, Claim>,
 }
