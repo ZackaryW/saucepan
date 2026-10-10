@@ -6,8 +6,9 @@ workflow: this repository ships the Rust manager and its Rust shim.
 
 ## Checks and publication
 
-`core-platforms.yml` runs on relevant pull requests, main-branch pushes, manual
-dispatch and calls from the release workflow. It runs formatting, Clippy,
+`core-platforms.yml` runs only on manual dispatch and calls from the release
+workflow. Pull requests and ordinary branch pushes do not start hosted checks;
+this keeps the full platform matrix an explicit CI expense. It runs formatting, Clippy,
 all-target tests, packaging checks and the explicit native keyring round trip on
 Windows, macOS and Linux. Linux tests run inside an isolated D-Bus/Secret Service
 session because store initialization needs native key custody. A separate
@@ -21,7 +22,9 @@ default-branch source under an unrelated version. Prerelease tags produce
 GitHub prereleases, which Saucepan's `latest_stable` selector excludes.
 The tagged commit must include this repository's release scripts and workflows.
 
-Each build uses `Cargo.lock`, builds both binaries, and sets `SAUCEPAN_BUILD_ID`
+Release packaging waits for the complete platform checks to pass, so failed
+checks do not spend runner time on the six-target build matrix. Each build
+uses `Cargo.lock`, builds both binaries, and sets `SAUCEPAN_BUILD_ID`
 to the tag. Publication waits for every native check, target build, universal
 package and archive validation. Only the publication job has `contents: write`.
 Existing release assets are not overwritten; use a new version/tag for changed

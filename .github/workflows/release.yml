@@ -46,7 +46,7 @@ jobs:
 
   build:
     name: Package ${{ matrix.target }}
-    needs: prepare
+    needs: [prepare, checks]
     strategy:
       fail-fast: false
       matrix:

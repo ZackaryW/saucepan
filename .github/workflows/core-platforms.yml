@@ -1,11 +1,6 @@
 name: Core platform checks
 
 on:
-  pull_request:
-    paths: ['src/**', 'tests/**', 'examples/**', 'scripts/release.py', 'scripts/test_release.py', 'Cargo.toml', 'Cargo.lock', 'build.rs', '.github/workflows/**']
-  push:
-    branches: [main]
-    paths: ['src/**', 'tests/**', 'examples/**', 'scripts/release.py', 'scripts/test_release.py', 'Cargo.toml', 'Cargo.lock', 'build.rs', '.github/workflows/**']
   workflow_dispatch:
   workflow_call:
     inputs:
