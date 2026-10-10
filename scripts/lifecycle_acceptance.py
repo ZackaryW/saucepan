@@ -29,7 +29,7 @@ def snapshot_mock():
 
 before_mock = snapshot_mock()
 def build(label):
-    subprocess.run(["cargo", "build", "--release", "--bins"], cwd=REPO,
+    subprocess.run(["cargo", "build", "--locked", "--release", "--bins"], cwd=REPO,
                    env=dict(os.environ, SAUCEPAN_BUILD_ID=label), check=True)
     directory = RUN / label
     directory.mkdir()
@@ -98,7 +98,8 @@ def inspect(app):
 running = None
 release = RUN / "release"
 try:
-    call("init")
+    initialized = call("init")
+    assert initialized["integrity"] == "basic"
     source = call("register-source", save("source.json", {"type": "github_release", "repo": "fixture/lifecycle"}))["uuid"]
     request = {"source_uuid": source, "selector": {"type": "latest_stable"},
                "selection": {"format": "zip", "bin": [NAME], "filters": [{"asset_patterns": ["saucepan.zip"]}]},
@@ -113,7 +114,7 @@ try:
     assert digest(ROOT / "store" / a / NAME) == digest(exe_a)
 
     other = call("register-app", "shared")["uuid"]
-    shared = call("acquire", request_path, "--app", other)
+    shared = call("acquire", request_path, "--app", other, "--scope", "acceptance/shared")
     assert shared["claim"]["entry_uuid"] == a
     call("activate", other, a, NAME, probe)
     other_name = "shared" + EXT
@@ -136,7 +137,8 @@ try:
     failed = call("self-update", app, claim, executable=launcher, force=True, code=2)
     assert failed["status"] == "failed" and inspect(app) == previous
     rollback = call("rollback", app, claim, a, probe)
-    assert rollback["status"] == "complete" and inspect(app)["claims"][claim]["entry_uuid"] == a
+    current_claims = {view["claim"]["uuid"]: view["claim"] for view in call("claims", app)}
+    assert rollback["status"] == "complete" and current_claims[claim]["entry_uuid"] == a
     call("deactivate", app)
     rejected = subprocess.run([str(launcher), "--version"], capture_output=True, text=True, timeout=10)
     assert rejected.returncode != 0 and "no active binding" in rejected.stderr
@@ -172,7 +174,9 @@ try:
     running = None
     reconciled = call("reconcile", "--operation", removed["operation"])[0]
     assert reconciled["status"] == "complete"
-    assert call("uninstall", app)["operation"] == removed["operation"]
+    # The app session is revoked after retirement; retry its durable receipt
+    # through the explicit administrative reconciliation boundary.
+    assert call("reconcile", "--operation", removed["operation"])[0] == reconciled
     assert not launcher.exists() and not (ROOT / "index" / app).exists()
     assert a in call("reclaim")["reclaimed"]
     assert inspect(a)["state"] == "reclaimed" and inspect(b)["state"] == "ready"
@@ -183,12 +187,12 @@ try:
     local = call("register-source", save("local.json", {"type": "local", "path": str(exe_b)}))["uuid"]
     generic_request = save("generic.json", {"source_uuid": local, "selector": {"type": "local"},
         "selection": {"bin": [NAME]}, "policies": {"protection": {"type": "useable_app"}}})
-    generic = call("install", "generic", generic_request, probe, shim_b, "--shim", "generic" + EXT)
+    generic = call("install", "--scope", "acceptance/generic", "generic", generic_request, probe, shim_b, "--shim", "generic" + EXT)
     assert generic["status"] == "complete"
     assert call("--version", executable=ROOT / "bin" / ("generic" + EXT), raw=True).endswith("+lifecycle-b")
     assert call("uninstall", generic["app"])["status"] == "complete"
     assert before_mock == snapshot_mock()
-    report = {"root": str(ROOT), "host": os.name, "build_a": digest(exe_a), "build_b": digest(exe_b),
+    report = {"root": str(ROOT), "host": os.name, "integrity": "basic", "native_keyring": "not_used", "build_a": digest(exe_a), "build_b": digest(exe_b),
               "shim_a": digest(shim_a), "shim_b": digest(shim_b), "app": app, "claim": claim,
               "entry_a": a, "entry_b": b, "removal": reconciled, "mock_unchanged": True,
               "mock_file_count": len(before_mock), "events": events}

@@ -1,10 +1,10 @@
 # Simulated installation
 
 This is historical checkpoint evidence. Its earlier record layout and scripts do
-not define current schema compatibility. Use [claim registry verification](claim-verification.md)
+not define current schema compatibility. Use [optional keyring verification](optional-keyring-verification.md)
 for the current implementation and runnable acceptance commands.
 
-For current authenticated-store acceptance, use `cargo test --offline --test claim_acceptance`. It uses real built binaries and local source inputs in a disposable root while preserving `mock/`. It is not a rerun of the historical two-build release recipe. See the [documentation map](README.md) for that evidence gap. The historical `scripts/lifecycle_acceptance.py` run is recorded in [lifecycle verification](lifecycle-verification.md); its earlier-layout harness is not a current setup recipe.
+For current basic-store acceptance, use `cargo test --locked --test claim_acceptance`. It uses real built binaries and local source inputs in a disposable root while preserving `mock/`. The separately updated two-build release harness and its current results are described in [optional keyring verification](optional-keyring-verification.md). The earlier run remains recorded in [lifecycle verification](lifecycle-verification.md).
 
 The original run used `uv run --no-project python scripts/acceptance.py` from the repository. That harness built actual release executables with build IDs `acceptance-a` and `acceptance-b`, packaged them as ZIP assets, and served them through an explicit loopback GitHub-compatible fixture. It used the provider and CLI of that checkpoint for every source, acquisition, claim, activation, and reclaim operation. Do not rerun this old-layout recipe against the preserved mock or a current store.
 

@@ -1,5 +1,10 @@
 # Claim registry verification
 
+This report records the earlier protected-only checkpoint. Current ordinary
+acceptance uses basic integrity without keyring access; see
+[optional keyring verification](optional-keyring-verification.md) for the later
+runtime modes, test selection and two-build release evidence.
+
 Verified on Windows x86_64 with Rust 1.98.1 on 2026-10-09. The package remains
 Rust-only: native keyring, HKDF/HMAC, serde and native lifetime guards; no Python
 runtime binding or metadata encryption was introduced.

@@ -37,6 +37,10 @@ earlier layouts are not migrated and old-reader compatibility is not promised.
 
 ## Verification evidence
 
+[Optional keyring verification](optional-keyring-verification.md) records the
+current basic-mode two-build release/bootstrap/update acceptance and separately
+selected Windows native-custody checks.
+
 [Claim registry verification](claim-verification.md) records a Windows x86_64
 checkpoint using the current authenticated layout. Its counts and binary digests
 belong to that dated run, before the later source-query CLI changes. Relevant
@@ -50,20 +54,20 @@ cargo clippy --offline --all-targets -- -D warnings
 openspec validate --all --strict
 ```
 
-The integrated claim fixture uses real built binaries and a fresh temporary root,
-with local provider inputs. Release discovery and ZIP selection are exercised
-separately by `tests/remote.rs`. The older complete two-build release/bootstrap
-recipe predates authenticated registries; its report is not proof that the full
-release-to-self-update flow has been rerun against the current contract. That
-combined acceptance flow still needs current evidence. Linux/macOS runtime
-behavior and Rust 1.89 execution also remain unverified here.
+The integrated claim fixture uses real built binaries and a fresh basic temporary
+root with local provider inputs. `tests/remote.rs` covers release discovery and ZIP
+selection. The updated `scripts/lifecycle_acceptance.py` now verifies the combined
+release-to-self-update flow with separate scoped claims and basic integrity; see
+the report above. Linux/macOS runtime behavior and Rust 1.89 execution remain
+unverified here.
 
 [Mock acceptance](mock-acceptance.md), [resource-access verification](resource-access-verification.md)
 and [lifecycle verification](lifecycle-verification.md) are historical reports.
 Their binary identities, counts, Python harness commands and earlier layouts
 describe the recorded checkpoints. The Python scripts are development harnesses,
-not runtime dependencies. Do not use their old-layout recipes to modify a current
-store or reopen the preserved `mock/` with the current manager.
+not runtime dependencies. The lifecycle harness has since been updated as described
+above; other old-layout recipes must not modify a current store or reopen preserved
+`mock/` with the current manager.
 
 On 2026-10-10 the completed changes were synchronized and archived; strict
 validation passed for all 18 main specs. Documentation reconciliation does not
