@@ -9,6 +9,10 @@ on:
         description: Existing release tag matching Cargo.toml (for example v0.1.0)
         required: true
         type: string
+      check_keyring:
+        description: Also require native keyring checks on configured runners
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -43,6 +47,7 @@ jobs:
     uses: ./.github/workflows/core-platforms.yml
     with:
       ref: ${{ needs.prepare.outputs.commit }}
+      check_keyring: ${{ inputs.check_keyring || false }}
 
   build:
     name: Package ${{ matrix.target }}

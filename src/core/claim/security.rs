@@ -17,7 +17,7 @@ use zeroize::Zeroizing;
 pub const MAX_RECORD_BYTES: usize = 16 * 1024 * 1024;
 const SERVICE: &str = "saucepan.metadata-integrity";
 
-/// Secret storage is explicitly injected for tests. Production uses NativeKeyring.
+/// Protected secret storage. Basic stores never access this provider.
 /// Implementations must not overwrite an existing key in `insert`.
 pub trait KeyProvider: Send + Sync {
     fn load(&self, store: Uuid) -> Result<Option<Secret>>;
@@ -52,16 +52,18 @@ impl NativeKeyring {
     pub fn retire(&self, store: Uuid) -> Result<()> {
         let _guard = native_coordination()?;
         keyring::Entry::new(SERVICE, &store.to_string())
-            .map_err(|_| key_error())?
+            .map_err(|error| native_error("entry", error))?
             .delete_credential()
-            .map_err(|_| key_error())
+            .map_err(|error| native_error("retire", error))
     }
 }
 fn native_coordination() -> Result<(
     std::sync::MutexGuard<'static, ()>,
     crate::utils::lock::LockGuard,
 )> {
-    let local = NATIVE_KEYS.lock().map_err(|_| key_error())?;
+    let local = NATIVE_KEYS
+        .lock()
+        .map_err(|_| custody_error("coordinate", "poisoned_lock"))?;
     #[cfg(unix)]
     // SAFETY: geteuid has no arguments or memory safety preconditions.
     let name = format!("saucepan-keyring-{}.lock", unsafe { libc::geteuid() });
@@ -69,47 +71,82 @@ fn native_coordination() -> Result<(
     let name = "saucepan-keyring.lock";
     let path = std::env::temp_dir().join(name);
     if path.exists() {
-        crate::utils::path::plain_metadata(&path).map_err(|_| key_error())?;
+        crate::utils::path::plain_metadata(&path)
+            .map_err(|_| custody_error("coordinate", "invalid_lock_path"))?;
     }
     let external = crate::utils::lock::LockGuard::acquire(
         &path,
         crate::utils::lock::LockMode::Exclusive,
         std::time::Duration::from_secs(30),
     )
-    .map_err(|_| key_error())?;
+    .map_err(|_| custody_error("coordinate", "lock_unavailable"))?;
     Ok((local, external))
 }
 impl KeyProvider for NativeKeyring {
     fn load(&self, store: Uuid) -> Result<Option<Secret>> {
         let _guard = native_coordination()?;
-        let entry = keyring::Entry::new(SERVICE, &store.to_string()).map_err(|_| key_error())?;
+        let entry = keyring::Entry::new(SERVICE, &store.to_string())
+            .map_err(|error| native_error("entry", error))?;
         match entry.get_secret() {
-            Ok(bytes) => Secret::from_bytes(&Zeroizing::new(bytes)).map(Some),
+            Ok(bytes) => Secret::from_bytes(&Zeroizing::new(bytes))
+                .map(Some)
+                .map_err(|_| custody_error("load", "invalid_key_length")),
             Err(keyring::Error::NoEntry) => Ok(None),
-            Err(_) => Err(key_error()),
+            Err(error) => Err(native_error("load", error)),
         }
     }
     fn insert(&self, store: Uuid, secret: &Secret) -> Result<()> {
         let _guard = native_coordination()?;
         // Initialization holds the store's mutation lock. The randomly allocated
         // store UUID is reserved before provisioning and reused after a crash.
-        let entry = keyring::Entry::new(SERVICE, &store.to_string()).map_err(|_| key_error())?;
+        let entry = keyring::Entry::new(SERVICE, &store.to_string())
+            .map_err(|error| native_error("entry", error))?;
         match entry.get_secret() {
             Err(keyring::Error::NoEntry) => {
-                entry.set_secret(secret.expose()).map_err(|_| key_error())?;
-                let persisted = Zeroizing::new(entry.get_secret().map_err(|_| key_error())?);
+                entry
+                    .set_secret(secret.expose())
+                    .map_err(|error| native_error("insert", error))?;
+                let persisted = Zeroizing::new(
+                    entry
+                        .get_secret()
+                        .map_err(|error| native_error("read_back", error))?,
+                );
                 if persisted.as_slice() != secret.expose() {
-                    return Err(key_error());
+                    return Err(custody_error("read_back", "key_mismatch"));
                 }
                 Ok(())
             }
             Ok(bytes) => {
                 let _discard = Zeroizing::new(bytes);
-                Err(key_error())
+                Err(custody_error("insert", "already_exists"))
             }
-            Err(_) => Err(key_error()),
+            Err(error) => Err(native_error("check_existing", error)),
         }
     }
+}
+
+fn custody_error(operation: &str, reason: &str) -> Error {
+    let mut error = Error::new(
+        ErrorCode::KeyUnavailable,
+        format!("metadata signing key is unavailable ({operation}: {reason})"),
+    );
+    error.details.insert("operation".into(), operation.into());
+    error.details.insert("reason".into(), reason.into());
+    error
+}
+fn native_error(operation: &str, error: keyring::Error) -> Error {
+    // Backend error payloads may include secret bytes or platform descriptions.
+    // Report only controlled categories, never Display/Debug of the backend.
+    let reason = match error {
+        keyring::Error::NoEntry => "missing_key",
+        keyring::Error::NoStorageAccess(_) => "storage_unavailable",
+        keyring::Error::PlatformFailure(_) => "platform_failure",
+        keyring::Error::BadEncoding(_) | keyring::Error::BadDataFormat(_, _) => {
+            "invalid_secret_data"
+        }
+        _ => "backend_error",
+    };
+    custody_error(operation, reason)
 }
 
 /// In-memory custody for explicitly isolated fixtures. Never selected implicitly.
@@ -540,4 +577,36 @@ fn invalid_payload() -> Error {
         ErrorCode::InvalidRequest,
         "metadata payload is invalid or too large",
     )
+}
+
+#[cfg(test)]
+mod diagnostics_tests {
+    use super::*;
+    #[test]
+    fn native_errors_preserve_stage_without_exposing_backend_payloads() {
+        let error = native_error(
+            "load",
+            keyring::Error::BadEncoding(b"secret-payload".to_vec()),
+        );
+        assert_eq!(error.code, ErrorCode::KeyUnavailable);
+        assert_eq!(error.details["operation"], "load");
+        assert_eq!(error.details["reason"], "invalid_secret_data");
+        assert!(!format!("{error:?} {error}").contains("secret-payload"));
+        let error = native_error(
+            "insert",
+            keyring::Error::PlatformFailure(Box::new(std::io::Error::other(
+                "secret-platform-data",
+            ))),
+        );
+        assert_eq!(error.details["reason"], "platform_failure");
+        assert!(
+            !serde_json::to_string(&error)
+                .unwrap()
+                .contains("secret-platform-data")
+        );
+        assert_ne!(
+            custody_error("coordinate", "lock_unavailable").message,
+            error.message
+        );
+    }
 }

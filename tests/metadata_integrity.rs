@@ -13,6 +13,7 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
 };
 use uuid::Uuid;
+mod native_support;
 
 fn id(kind: Kind, owner: Option<Uuid>, member: Option<Uuid>) -> Identity {
     Identity {
@@ -465,6 +466,9 @@ fn unsigned_legacy_roots_are_rejected_unchanged_and_stale_snapshots_cannot_publi
 #[test]
 #[ignore = "explicit native credential-manager integration; creates and deletes one random test entry"]
 fn native_keyring_round_trip_and_cleanup() {
+    if native_support::worker("native_keyring_round_trip_and_cleanup") {
+        return;
+    }
     let store = Uuid::new_v4();
     let keys = NativeKeyring;
     assert!(keys.load(store).unwrap().is_none());
