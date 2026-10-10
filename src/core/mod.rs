@@ -88,7 +88,13 @@ impl Store {
         &self.root
     }
     pub fn create(root: &Path) -> Result<Self> {
-        Self::create_with_keys(root, &claim::security::NativeKeyring)
+        Self::create_with_integrity(root, crate::models::claim::security::IntegrityMode::Basic)
+    }
+    pub fn create_with_integrity(
+        root: &Path,
+        mode: crate::models::claim::security::IntegrityMode,
+    ) -> Result<Self> {
+        Self::create_with_integrity_and_keys(root, mode, &claim::security::NativeKeyring)
     }
     pub fn create_with_keys(root: &Path, keys: &dyn claim::security::KeyProvider) -> Result<Self> {
         Self::create_with_integrity_and_keys(

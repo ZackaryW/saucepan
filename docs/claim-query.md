@@ -24,7 +24,7 @@ binding. Missing/removing applications and missing claims fail.
 Keys contain 1–128 UTF-8 bytes; values contain 0–4096 bytes; each context has at
 most 64 entries. Values must be strings. Dotted keys are literal. Paths, case,
 whitespace, and Unicode are preserved: the consumer owns canonical project names.
-Omitting context on an acquisition request means empty metadata. Persisted signed
+Omitting context on an acquisition request means empty metadata. Persisted integrity-verified
 claim members require their context field; no older-record decoder or migration
 promise is implied.
 

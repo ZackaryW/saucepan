@@ -35,7 +35,7 @@ cannot publish a new binding. Both scans retain the entry lease without holding
 the global mutation lock. Publication, recovery, and compatible-output reuse
 keep their full integrity checks. Existing installed shims retain their old
 behavior in their separate historical roots. Rebuild and install shims for the
-current authenticated store contract; earlier roots are not migrated.
+current store integrity contract; earlier roots are not migrated.
 
 `path ENTRY_UUID` now defaults to `metadata`: it checks identity, ready state,
 and a real contained output directory, without walking or hashing its contents.
@@ -54,8 +54,8 @@ The existing `execution_lease(entry)` adapter retains full verification.
 
 Full access holds a temporary or retained lease while scanning once, without
 holding the global mutation lock. It detects missing, extra, and modified content
-against the recorded manifest. Payload comparison complements HMAC verification
-of the stored metadata; it is a point-in-time check and cannot prevent subsequent
+against the recorded manifest. Payload comparison complements the store-selected checksum or HMAC verification
+of metadata; it is a point-in-time check and cannot prevent subsequent
 external edits. Verification does not refresh sources or change stored requests,
 identities, creation order, retention, or claims. Bare resolution drops its
 temporary protection before returning, even in full mode.

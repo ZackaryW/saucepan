@@ -1,5 +1,6 @@
 use saucepan::core::claim::security::{KeyProvider, NativeKeyring, Secret};
 #[test]
+#[ignore = "explicit native keyring integration"]
 fn independent_native_store_keys_survive_concurrent_creation_and_retirement() {
     let identities: Vec<_> = (0..8).map(|_| uuid::Uuid::new_v4()).collect();
     let secrets: Vec<_> = identities
@@ -36,6 +37,7 @@ fn independent_native_store_keys_survive_concurrent_creation_and_retirement() {
 }
 
 #[test]
+#[ignore = "explicit native keyring integration"]
 fn independent_processes_initialize_distinct_stores_without_losing_keys() {
     let tmp = tempfile::tempdir().unwrap();
     let roots: Vec<_> = (0..6).map(|n| tmp.path().join(n.to_string())).collect();
@@ -46,6 +48,7 @@ fn independent_processes_initialize_distinct_stores_without_losing_keys() {
                 .arg("--root")
                 .arg(root)
                 .arg("init")
+                .args(["--integrity", "keyring"])
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())
                 .spawn()

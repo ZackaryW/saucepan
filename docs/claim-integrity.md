@@ -1,7 +1,10 @@
 # Claim integrity implementation notes
 
-The native persistence API now supports explicit `IntegrityMode::Basic` through
-`Store::create_with_integrity_and_keys`. Basic records use SHA-256 checksums with
+`saucepan init` and `Store::create` default to `IntegrityMode::Basic`. Select
+protected custody with `saucepan init --integrity keyring` or
+`Store::create_with_integrity(root, IntegrityMode::Keyring)`.
+`Store::create_with_integrity_and_keys` accepts an explicit test provider.
+Basic records use SHA-256 checksums with
 an explicit contract and mode, and never call the supplied key provider. Catalog
 membership, exact payload framing, identity/generation checks and journal replay
 remain mandatory. `Store::integrity_mode()` reports the opened mode. A checksum
@@ -10,9 +13,8 @@ The existing protected envelope is always interpreted as Keyring; opening never
 downgrades it or rewrites it just to add a mode. Initialization reserves identity
 and mode and rejects a retry selecting another mode.
 
-CLI initialization and `Store::create` still default to protected custody pending
-the basic-default integration. Explicit basic native stores support independently
-optional application credentials. The protected-mode details below remain valid.
+Both modes support independently optional application credentials. Routine commands
+and shims follow the persisted mode without flags. There is no in-place conversion.
 
 Native keyring operations are serialized across threads and Saucepan processes
 using a coordination lock in the user's temporary directory (UID-qualified on
@@ -21,28 +23,28 @@ initialization succeeds. This addresses an observed Windows concurrent-key
 creation failure; both thread and subprocess isolation tests are in
 `tests/native_keys.rs`. A missing existing key still fails without replacement.
 
-The record format is readable JSON with HMAC-SHA256 verification. The
+The protected record format is readable JSON with HMAC-SHA256 verification. The
 HMAC key lives separately in OS keyring. This detects changes made without the
 key; it does not conceal metadata or prevent filesystem edits. OS permissions
 remain responsible for file access. A key holder can generate valid tags, and
 replaying a complete earlier valid store requires an external anchor to detect.
 
-Fresh stores use a signed `root.json` catalog. Every source, app, output, registry,
-claim member and lifecycle receipt is signed. Claims live under
+Stores use a verified `root.json` catalog. Every source, app, output, registry,
+claim member and lifecycle receipt uses the store's integrity mode. Claims live under
 `claims/<app-uuid>/`; application records contain no embedded claim map.
-Initialization provisions one store key through native Rust keyring APIs. A
+Protected initialization provisions one store key through native Rust keyring APIs. A
 reserved initialization identity supports retry after key-service failure.
-Opening a live store never creates a replacement key or accepts unsigned data.
+Opening a live store never creates a replacement key or accepts earlier unsigned layouts.
 
 Each envelope binds store UUID, record kind, owner/member UUIDs and generation to
 its exact raw JSON payload. Header fields are length-delimited; verification uses
-constant-time HMAC comparison. Unknown/duplicate envelope fields and oversized
+SHA-256 in basic mode and constant-time HMAC comparison in protected mode. Unknown/duplicate envelope fields and oversized
 records are rejected. The bound is 16 MiB for each complete envelope, including a
 transaction journal. A registry lists member-envelope digests; the root catalog
 lists all live metadata references. Missing or changed records halt access and
 reclaim. JSON editing is not an administrative update API.
 
-A signed journal publishes member writes/deletions, app revision/binding, source
+A verified journal publishes member writes/deletions, app revision/binding, source
 and output state, and lifecycle receipts under one store lock. Content publication
 verifies its saved manifest before the metadata generation becomes live. Reopening
 replays interrupted publication idempotently. Readers take the same lock, including
@@ -52,9 +54,9 @@ power-loss durability guarantee.
 Application tokens are a separate opt-in control. `AppSession` carries identity
 and proof through operations; source/scope/action restrictions still apply when
 proof is disabled. Rotation invalidates old proof without revoking existing native
-leases. Signed maintenance and registered shims can finish committed intent without
+leases. Verified maintenance and registered shims can finish committed intent without
 client tokens. The shim verifies its owned launcher/configuration digests and the
-signed active binding before launch.
+verified active binding before launch.
 
 New credential policies use the `bearer` variant. Its verifier is HMAC-SHA256
 keyed by a random 32-byte bearer token over framed domain, store, app and credential
@@ -65,8 +67,9 @@ This is high-entropy bearer proof, not password hashing. In basic mode, credenti
 and policy restrictions enforce API behavior but cannot prevent a filesystem
 writer from replacing metadata and recomputing checksums.
 
-Production selects OS keyring. Tests explicitly inject `MemoryKeys` or native
-fixtures that retire their own keys. No plaintext key fallback, Python binding,
+Ordinary fixtures use basic stores and reject custody calls. Protected tests inject
+`MemoryKeys`; actual native custody tests require explicit selection and retire
+their own keys. Basic-mode results do not verify native custody. No plaintext key fallback, Python binding,
 legacy schema decoder, or schema-version inheritance is present. The earlier
 `mock/` installation is historical and is not opened or migrated during tests.
 

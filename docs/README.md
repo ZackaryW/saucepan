@@ -13,7 +13,7 @@ their original checkpoints; they are not alternative current contracts.
 | Registration, scoped claims, credentials and CLI errors | [Claim CLI](claim-cli.md) |
 | Permissions, retention, ensure and recovery | [Claim policies](claim-policies.md) |
 | Claim labels, exact scope and context matching | [Claim queries](claim-query.md) |
-| HMAC records and native key custody | [Claim integrity](claim-integrity.md) |
+| Basic checksums and optional native key custody | [Claim integrity](claim-integrity.md) |
 | Exact paths, native leases and child processes | [Resource access](resource-access.md) |
 | Rust application integration | [Scoped consumer](scoped-consumer.md) |
 | Managed install, update, rollback, shims and uninstall | [Application lifecycle](application-lifecycle.md) |
@@ -31,8 +31,9 @@ permissions, public claim exposure and public source exposure are independent.
 App integrations keep an `AppSession`; direct store-wide administration is a
 separate local trust boundary. App-specific `Store` convenience calls still
 enforce policies and cannot supply proof for protected apps. JSON payloads are
-readable and HMAC-authenticated, with native OS key custody. No older store
-decoder, migration or general schema-compatibility promise exists.
+readable and verified using basic checksums by default, or HMAC with explicitly
+selected native key custody. Existing current-format protected roots stay protected;
+earlier layouts are not migrated and old-reader compatibility is not promised.
 
 ## Verification evidence
 

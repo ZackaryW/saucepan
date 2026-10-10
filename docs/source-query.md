@@ -44,7 +44,7 @@ explicit scope, source and acquire permission.
 `Store::query_sources(&SourceQuery)` without an app session performs **anonymous**
 discovery and includes only sources with `public_discovery: true`. This does not
 depend on any application's public claims. New source records are private by
-default. An omitted flag in an authenticated source record also means private;
+default. An omitted flag in a supported source record also means private;
 unsigned legacy stores remain unsupported.
 
 Trusted administration can call `Store::set_source_visibility(uuid, bool)`.
@@ -85,7 +85,7 @@ as `https://github.com/owner/repo.git` and queried using `origin`.
 
 Results contain the observed catalogue `generation` and a `sources` array sorted
 by UUID. Each view includes `uuid`, `source` and `public_discovery`. Cached release
-assets are not returned. Source metadata is authenticated, including hidden source
+assets are not returned. Source metadata is verified under the store's selected integrity mode, including hidden source
 records; missing or tampered catalogue members fail rather than disappear from
 results. Returned views are snapshots, not ownership grants or leases. Ensure a
 claim and retain a lease before reading acquired content.

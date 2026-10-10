@@ -37,6 +37,32 @@ fn write(path: &Path, value: Value) {
 }
 
 #[test]
+fn initialization_reports_basic_and_rejects_invalid_mode_before_effects() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("root");
+    fail(
+        &root,
+        &["init", "--integrity", "unknown"],
+        "invalid_request",
+    );
+    assert!(!root.exists());
+    assert_eq!(ok(&root, &["init"])["integrity"], "basic");
+    assert_eq!(
+        native_root::open(&root).unwrap().integrity_mode(),
+        saucepan::models::claim::security::IntegrityMode::Basic
+    );
+    let before = fs::read(root.join("root.json")).unwrap();
+    let queried = ok(&root, &["query-sources"]);
+    assert!(queried["sources"].as_array().unwrap().is_empty());
+    assert_eq!(before, fs::read(root.join("root.json")).unwrap());
+    let explicit = tmp.path().join("explicit");
+    assert_eq!(
+        ok(&explicit, &["init", "--integrity", "basic"])["integrity"],
+        "basic"
+    );
+}
+
+#[test]
 fn credential_files_registration_ensure_recovery_rotation_and_json_errors() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().join("root");

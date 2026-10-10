@@ -1,7 +1,9 @@
 # Application claim CLI
 
-Use a fresh root. Signing keys live in the native OS keyring even when application
-credentials are disabled. This contract does not migrate older stores.
+Use a fresh root. Initialization defaults to basic checksum integrity without an
+OS keyring. Select `init --integrity keyring` for native-backed HMAC protection.
+Application credentials are independently optional in both modes. Earlier store
+layouts are not migrated.
 The examples select `./scratch` explicitly; omit `--root` to use the user-home
 `.saucepan` store.
 

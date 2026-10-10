@@ -19,6 +19,12 @@ enum SourceVisibility {
     Private,
 }
 
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum IntegrityChoice {
+    Basic,
+    Keyring,
+}
+
 #[derive(Parser)]
 #[command(version = concat!(env!("CARGO_PKG_VERSION"),"+",env!("SAUCEPAN_BUILD_ID")))]
 struct Args {
@@ -126,7 +132,11 @@ enum Commands {
         ready: PathBuf,
         release: PathBuf,
     },
-    Init,
+    /// Initialize a basic store; opt into native keyring protection explicitly.
+    Init {
+        #[arg(long, value_enum, default_value = "basic")]
+        integrity: IntegrityChoice,
+    },
     /// List durable lifecycle operations, including pending cleanup.
     Operations {
         #[arg(long)]
@@ -284,9 +294,13 @@ pub fn run() -> Result<()> {
     };
     let mut exit_code = 0;
     let value = match args.command {
-        Commands::Init => {
-            let store = Store::create(&root)?;
-            serde_json::json!({"root":store.root()})
+        Commands::Init { integrity } => {
+            let mode = match integrity {
+                IntegrityChoice::Basic => crate::models::claim::security::IntegrityMode::Basic,
+                IntegrityChoice::Keyring => crate::models::claim::security::IntegrityMode::Keyring,
+            };
+            let store = Store::create_with_integrity(&root, mode)?;
+            serde_json::json!({"root":store.root(),"integrity":store.integrity_mode()})
         }
         command => {
             root::require_existing(&root, explicit_root)?;
@@ -681,7 +695,7 @@ pub fn run() -> Result<()> {
                     )?,
                     &mut exit_code,
                 )?,
-                Commands::Init => unreachable!(),
+                Commands::Init { .. } => unreachable!(),
             }
         }
     };

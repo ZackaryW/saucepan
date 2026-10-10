@@ -14,6 +14,13 @@ cargo run -- query-sources
 cargo run -- query-sources --type github_release --repo owner/project
 ```
 
+New stores use basic checksum integrity and need no OS keyring setup. To opt into
+HMAC metadata protection, initialize a separate root with
+`saucepan --root ./protected init --integrity keyring`. Later commands and shims
+use the stored mode automatically. An unavailable protected key fails access;
+it never switches the store to basic mode. App credentials remain separately
+opt-in in either mode.
+
 Sources are private until explicitly published, so an empty anonymous query can be expected. Use `--root ./scratch` for a separate store; the override always wins and never falls back to the default. Queries do not initialize missing stores. The historical `mock/` installation remains an earlier acceptance fixture and is not migrated. The following acquisition examples use a fresh disposable root:
 
 ```powershell
@@ -31,7 +38,7 @@ Save a source definition and register it:
 cargo run -- --root ./scratch register-source source.json
 ```
 
-The returned source UUID identifies `source/<uuid>.json`. App/output records live at `index/<uuid>/index.json`; only outputs have `store/<uuid>/` contents. Claims now live in `claims/<app-uuid>/index.json` and `<claim-uuid>.json`. `root.json` authenticates catalog membership. Source, index, claim and lifecycle records are readable JSON with HMAC-SHA256 tags; the signing key lives in native OS keyring. Existing unsigned roots are rejected. Filesystem access follows the local OS user's trust boundary. See [integrity and custody](docs/claim-integrity.md).
+The returned source UUID identifies `source/<uuid>.json`. App/output records live at `index/<uuid>/index.json`; only outputs have `store/<uuid>/` contents. Claims live in `claims/<app-uuid>/index.json` and `<claim-uuid>.json`. `root.json` records verified catalog membership. Source, index, claim and lifecycle records use readable checksummed JSON in basic mode, or HMAC-SHA256 with a native OS keyring key in protected mode. Earlier unsigned layouts remain unsupported. Basic checksums detect inconsistency but cannot detect a writer who recomputes all checksums; filesystem access follows the local OS user's trust boundary. See [integrity and custody](docs/claim-integrity.md).
 
 Find registered sources before claiming with `query-sources`, optionally adding `--type github_release --repo owner/project`. A saved `query-sources query.json` remains supported instead of flags. Use `--as-app APP_UUID` for that application's permitted sources; without it, only explicitly published sources appear. See [source discovery and the simple app flow](docs/source-query.md).
 

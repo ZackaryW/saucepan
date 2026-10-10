@@ -1,36 +1,28 @@
-//! Explicit native-keyring fixtures; every successfully created test key is retired.
-use saucepan::core::{
-    Store,
-    claim::security::{Authenticator, NativeKeyring},
+//! Ordinary native Rust fixtures use basic integrity and forbid custody calls.
+use saucepan::{
+    core::{
+        Store,
+        claim::security::{KeyProvider, Secret},
+    },
+    error::Result,
+    models::claim::security::IntegrityMode,
 };
-use std::{ops::Deref, path::Path};
-pub struct NativeStore {
-    store: Store,
-    key: uuid::Uuid,
-}
-impl Deref for NativeStore {
-    type Target = Store;
-    fn deref(&self) -> &Store {
-        &self.store
+use std::path::Path;
+pub type NativeStore = Store;
+struct NoCustody;
+impl KeyProvider for NoCustody {
+    fn load(&self, _: uuid::Uuid) -> Result<Option<Secret>> {
+        panic!("ordinary fixture accessed native custody")
     }
-}
-impl Drop for NativeStore {
-    fn drop(&mut self) {
-        if let Err(error) = NativeKeyring.retire(self.key) {
-            eprintln!("native fixture key cleanup failed: {error}");
-        }
+    fn insert(&self, _: uuid::Uuid, _: &Secret) -> Result<()> {
+        panic!("ordinary fixture provisioned native custody")
     }
 }
 #[allow(dead_code)]
 pub fn create(root: &Path) -> anyhow::Result<NativeStore> {
-    let store = Store::create_with_keys(root, &NativeKeyring)?;
-    let key = Authenticator::store_hint(&std::fs::read(root.join("root.json"))?)?;
-    Ok(NativeStore { store, key })
+    Store::create_with_integrity_and_keys(root, IntegrityMode::Basic, &NoCustody)
 }
-
 #[allow(dead_code)]
 pub fn open(root: &Path) -> anyhow::Result<NativeStore> {
-    let store = Store::open_with_keys(root, &NativeKeyring)?;
-    let key = Authenticator::store_hint(&std::fs::read(root.join("root.json"))?)?;
-    Ok(NativeStore { store, key })
+    Store::open_with_keys(root, &NoCustody)
 }

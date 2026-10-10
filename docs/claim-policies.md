@@ -1,6 +1,6 @@
 # Application claim policies
 
-The Rust contracts live in `models::claim`; `core::claim` owns authenticated
+The Rust contracts live in `models::claim`; `core::claim` owns integrity-verified
 persistence, app sessions and the shared evaluator. App claims are stored in a
 separate registry. Create an app using `register_application` with an explicit
 registration key; retries return the same identity and never redisclose a token.
