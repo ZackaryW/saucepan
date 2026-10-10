@@ -9,11 +9,18 @@ use saucepan::{
     },
 };
 use std::{
+    fmt::Debug,
     fs,
     path::{Path, PathBuf},
     process::Command,
+    thread::ScopedJoinHandle,
     time::{Duration, Instant},
 };
+
+// Candidate copying/hashing happens before the process deadline starts. Give
+// that preparation its own budget, particularly for large Unix debug binaries.
+const PREPARATION_TIMEOUT: Duration = Duration::from_secs(120);
+const BARRIER_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[test]
 fn fixture_probe() {
@@ -34,11 +41,68 @@ fn until(path: &Path) {
     let start = Instant::now();
     while !path.exists() {
         assert!(
-            start.elapsed() < Duration::from_secs(10),
+            start.elapsed() < BARRIER_TIMEOUT,
             "timed out {}",
             path.display()
         );
         std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+struct ProbeBarrier<'a>(&'a Path);
+impl<'a> ProbeBarrier<'a> {
+    fn arm(root: &'a Path) -> Self {
+        fs::write(root.join("block-enabled"), b"enabled").unwrap();
+        Self(root)
+    }
+
+    fn wait<'scope, T: Debug>(
+        &self,
+        worker: ScopedJoinHandle<'scope, T>,
+    ) -> ScopedJoinHandle<'scope, T> {
+        let ready = self.0.join("probe-ready");
+        let start = Instant::now();
+        loop {
+            if worker.is_finished() {
+                panic!(
+                    "operation ended before the probe barrier: {:?}",
+                    worker.join()
+                );
+            }
+            if ready.exists() {
+                return worker;
+            }
+            assert!(
+                start.elapsed() < PREPARATION_TIMEOUT,
+                "candidate preparation did not reach {} within {PREPARATION_TIMEOUT:?}",
+                ready.display()
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    fn release(&self) {
+        fs::write(self.0.join("probe-release"), b"release").unwrap();
+    }
+}
+impl Drop for ProbeBarrier<'_> {
+    fn drop(&mut self) {
+        // The guard must live inside thread::scope so failed assertions release
+        // the child before scope waits for its worker, including late launches.
+        let _ = fs::write(self.0.join("probe-release"), b"release");
+    }
+}
+
+fn blocked_probe(input: &Installation) -> Probe {
+    Probe {
+        args: vec![
+            "--exact".into(),
+            "fixture_blocked_probe".into(),
+            "--nocapture".into(),
+        ],
+        // This clock starts at process launch, independently of preparation.
+        timeout_seconds: 120,
+        ..input.probe.clone()
     }
 }
 fn setup() -> (tempfile::TempDir, native_root::NativeStore, Installation) {
@@ -285,16 +349,9 @@ fn managed_update_detects_deactivation_during_probe() {
     let installed = store
         .install_application(&input, &shim(), &Default::default(), None)
         .unwrap();
-    fs::write(store.root().join("block-enabled"), b"enabled").unwrap();
-    let probe = Probe {
-        args: vec![
-            "--exact".into(),
-            "fixture_blocked_probe".into(),
-            "--nocapture".into(),
-        ],
-        ..input.probe.clone()
-    };
+    let probe = blocked_probe(&input);
     std::thread::scope(|scope| {
+        let barrier = ProbeBarrier::arm(store.root());
         let update = scope.spawn(|| {
             store
                 .update_application(
@@ -307,9 +364,9 @@ fn managed_update_detects_deactivation_during_probe() {
                 )
                 .unwrap()
         });
-        until(&store.root().join("probe-ready"));
+        let update = barrier.wait(update);
         store.deactivate(installed.app).unwrap();
-        fs::write(store.root().join("probe-release"), b"release").unwrap();
+        barrier.release();
         assert_eq!(update.join().unwrap().status, Phase::Conflict);
     });
     let app = store.application(installed.app).unwrap();
@@ -328,17 +385,10 @@ fn managed_transitions_detect_context_edits_during_probe() {
             .install_application(&input, &shim(), &Default::default(), None)
             .unwrap();
         let before = store.application(installed.app).unwrap();
-        fs::write(store.root().join("block-enabled"), b"enabled").unwrap();
-        let probe = Probe {
-            args: vec![
-                "--exact".into(),
-                "fixture_blocked_probe".into(),
-                "--nocapture".into(),
-            ],
-            ..input.probe.clone()
-        };
+        let probe = blocked_probe(&input);
         let context = [("project".into(), "changed".into())].into();
         std::thread::scope(|scope| {
+            let barrier = ProbeBarrier::arm(store.root());
             let update = scope.spawn(|| {
                 store
                     .update_application(
@@ -351,11 +401,11 @@ fn managed_transitions_detect_context_edits_during_probe() {
                     )
                     .unwrap()
             });
-            until(&store.root().join("probe-ready"));
+            let update = barrier.wait(update);
             store
                 .set_claim_context(installed.app, installed.claim, &context, before.revision)
                 .unwrap();
-            fs::write(store.root().join("probe-release"), b"release").unwrap();
+            barrier.release();
             assert_eq!(update.join().unwrap().status, Phase::Conflict);
         });
         let app = store.application(installed.app).unwrap();
@@ -544,16 +594,9 @@ fn uninstall_fences_both_managed_and_binding_only_inflight_probes() {
         let installed = store
             .install_application(&input, &shim(), &Default::default(), None)
             .unwrap();
-        fs::write(store.root().join("block-enabled"), b"enabled").unwrap();
-        let probe = Probe {
-            args: vec![
-                "--exact".into(),
-                "fixture_blocked_probe".into(),
-                "--nocapture".into(),
-            ],
-            ..input.probe.clone()
-        };
+        let probe = blocked_probe(&input);
         std::thread::scope(|scope| {
+            let barrier = ProbeBarrier::arm(store.root());
             let worker = scope.spawn(|| {
                 if managed {
                     store
@@ -579,12 +622,12 @@ fn uninstall_fences_both_managed_and_binding_only_inflight_probes() {
                         .is_err()
                 }
             });
-            until(&store.root().join("probe-ready"));
+            let worker = barrier.wait(worker);
             assert_eq!(
                 store.uninstall(installed.app, false, None).unwrap().status,
                 Phase::Complete
             );
-            fs::write(store.root().join("probe-release"), b"release").unwrap();
+            barrier.release();
             assert!(worker.join().unwrap());
         });
         assert!(store.application(installed.app).is_err());
