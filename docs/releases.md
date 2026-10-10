@@ -13,6 +13,9 @@ all-target tests, packaging checks and the explicit native keyring round trip on
 Windows, macOS and Linux. Linux tests run inside an isolated D-Bus/Secret Service
 session because store initialization needs native key custody. A separate
 Windows job checks all targets with the declared minimum Rust 1.89.
+Native test runs stream test output with `--nocapture` and enable Rust
+backtraces so early panic details remain in the log even if a later test hangs
+and the job is cancelled.
 
 For a manual run, select `platform` (`all`, `windows`, `macos`, or `linux`)
 and choose whether to include `check_msrv`. For example, selecting `linux`
