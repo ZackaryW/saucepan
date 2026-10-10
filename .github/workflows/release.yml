@@ -1,0 +1,164 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag matching Cargo.toml (for example v0.1.0)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Resolve and validate release tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.metadata.outputs.tag }}
+      commit: ${{ steps.metadata.outputs.commit }}
+      prerelease: ${{ steps.metadata.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - id: metadata
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: python scripts/release.py metadata
+
+  checks:
+    needs: prepare
+    uses: ./.github/workflows/core-platforms.yml
+    with:
+      ref: ${{ needs.prepare.outputs.commit }}
+
+  build:
+    name: Package ${{ matrix.target }}
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, target: x86_64-apple-darwin }
+          - { os: macos-latest, target: aarch64-apple-darwin }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+          - { os: windows-latest, target: aarch64-pc-windows-msvc }
+          - { os: windows-latest, target: i686-pc-windows-msvc }
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-musl }
+    runs-on: ${{ matrix.os }}
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      SAUCEPAN_BUILD_ID: ${{ needs.prepare.outputs.tag }}
+      RELEASE_TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Install musl tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Build both Rust binaries
+        shell: bash
+        run: cargo build --locked --release --bins --target "$RELEASE_TARGET"
+      - name: Package binaries with executable modes
+        shell: bash
+        run: python scripts/release.py package --target "$RELEASE_TARGET" --binary-dir "target/$RELEASE_TARGET/release"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ matrix.target }}
+          path: dist/*.zip
+          if-no-files-found: error
+          compression-level: 0
+
+  macos-universal:
+    name: Package macOS universal manager and shim
+    needs: [prepare, build]
+    runs-on: macos-latest
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-*-apple-darwin
+          path: artifacts
+          merge-multiple: true
+      - name: Combine both architectures
+        shell: bash
+        run: |
+          mkdir -p x86_64 aarch64 universal
+          unzip -q "artifacts/saucepan-$RELEASE_TAG-x86_64-apple-darwin.zip" -d x86_64
+          unzip -q "artifacts/saucepan-$RELEASE_TAG-aarch64-apple-darwin.zip" -d aarch64
+          for binary in saucepan saucepan-shim; do
+            lipo -create -output "universal/$binary" "x86_64/$binary" "aarch64/$binary"
+            lipo -verify_arch x86_64 arm64 "universal/$binary"
+            chmod +x "universal/$binary"
+          done
+          python scripts/release.py package --target universal-apple-darwin --binary-dir universal
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-universal-apple-darwin
+          path: dist/*.zip
+          if-no-files-found: error
+          compression-level: 0
+
+  release:
+    name: Publish complete release
+    needs: [prepare, checks, build, macos-universal]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+      - name: Validate complete asset set and generate checksums
+        run: python scripts/release.py checksums
+      - uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          target_commitish: ${{ needs.prepare.outputs.commit }}
+          name: ${{ needs.prepare.outputs.tag }}
+          prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}
+          files: |
+            dist/*.zip
+            dist/SHA256SUMS
+          fail_on_unmatched_files: true
+          overwrite_files: false
+          generate_release_notes: true

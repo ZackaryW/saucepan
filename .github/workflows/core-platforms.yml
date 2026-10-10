@@ -1,0 +1,72 @@
+name: Core platform checks
+
+on:
+  pull_request:
+    paths: ['src/**', 'tests/**', 'examples/**', 'scripts/release.py', 'scripts/test_release.py', 'Cargo.toml', 'Cargo.lock', 'build.rs', '.github/workflows/**']
+  push:
+    branches: [main]
+    paths: ['src/**', 'tests/**', 'examples/**', 'scripts/release.py', 'scripts/test_release.py', 'Cargo.toml', 'Cargo.lock', 'build.rs', '.github/workflows/**']
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: Exact commit to verify for a release
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: Native checks (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Install Linux credential service and Git LFS
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y gnome-keyring dbus-x11 git-lfs
+      - name: Verify Git LFS prerequisite
+        run: git lfs version
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: python -B -m unittest discover -s scripts -p test_release.py
+      - name: Windows and macOS tests with native key custody
+        if: runner.os != 'Linux'
+        shell: bash
+        run: |
+          cargo test --locked --all-targets
+          cargo test --locked --test metadata_integrity native_keyring_round_trip_and_cleanup -- --ignored --exact
+      - name: Linux tests with an isolated Secret Service session
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          dbus-run-session -- bash -euo pipefail -c '
+            printf "%s" "saucepan-ci-only" | gnome-keyring-daemon --unlock --components=secrets
+            cargo test --locked --all-targets
+            cargo test --locked --test metadata_integrity native_keyring_round_trip_and_cleanup -- --ignored --exact
+          '
+
+  msrv:
+    name: Minimum Rust 1.89 (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.89.0
+      - run: cargo check --locked --all-targets

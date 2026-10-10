@@ -17,6 +17,7 @@ their original checkpoints; they are not alternative current contracts.
 | Exact paths, native leases and child processes | [Resource access](resource-access.md) |
 | Rust application integration | [Scoped consumer](scoped-consumer.md) |
 | Managed install, update, rollback, shims and uninstall | [Application lifecycle](application-lifecycle.md) |
+| Platform builds, release ZIPs and publishing | [Releases](releases.md) |
 
 CLI roots default to the user's home `.saucepan`; `--root` explicitly selects an
 isolated store. Native `Store` callers still supply a root, and Saucepan shims

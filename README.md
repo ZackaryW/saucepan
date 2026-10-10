@@ -4,6 +4,8 @@ Rust source acquisition with separate source working data, immutable outputs, an
 
 See the [documentation map](docs/README.md) for current usage, specification ownership, and dated verification evidence.
 
+[Release workflows](docs/releases.md) build platform ZIPs containing both the manager and shim, with checksums and native CI checks before publication.
+
 Commands default to `%USERPROFILE%\.saucepan` on Windows or `~/.saucepan` on Unix. Initialize it once, then query publicly discoverable sources without an app UUID or query file:
 
 ```powershell
