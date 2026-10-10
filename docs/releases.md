@@ -14,6 +14,25 @@ Windows, macOS and Linux. Linux tests run inside an isolated D-Bus/Secret Servic
 session because store initialization needs native key custody. A separate
 Windows job checks all targets with the declared minimum Rust 1.89.
 
+For a manual run, select `platform` (`all`, `windows`, `macos`, or `linux`)
+and choose whether to include `check_msrv`. For example, selecting `linux`
+and clearing the MSRV checkbox runs only the Linux native job. The defaults
+retain the complete check suite. The equivalent GitHub CLI command is:
+
+```sh
+gh workflow run core-platforms.yml -f platform=linux -F check_msrv=false
+```
+
+These selectors apply only to standalone manual checks. Release calls expose
+only the revision to verify and always run all three platforms and MSRV,
+including when the release itself is dispatched manually. A selective run
+does not establish that omitted platforms pass on a new revision.
+
+To retry failures on the same revision, GitHub's
+[Re-run failed jobs](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/re-run-workflows-and-jobs?tool=cli)
+option avoids repeating successful jobs (`gh run rerun RUN_ID --failed`).
+Reruns use the original commit, so dispatch a new run to verify newly committed fixes.
+
 `release.yml` runs on a pushed `v*` tag or manual dispatch with an **existing** tag.
 The tag must equal `v` followed by the version in that tag's `Cargo.toml`, such as
 `v0.1.0` or `v0.2.0-rc.1`. Both paths check out the tag, resolve it to a commit,
