@@ -5,6 +5,32 @@ claimed or downloaded them. It is separate from claim context queries and remote
 release/ref discovery. It never fetches, refreshes, reads payloads, creates claims
 or retains a lease. Normal store-open recovery still applies.
 
+## Start with a query
+
+```powershell
+saucepan query-sources
+saucepan query-sources --type github_release --repo owner/project
+```
+
+No app UUID, scope, credentials or query file is required for anonymous discovery.
+Results include only explicitly public sources. An empty result can mean no
+sources have been published; it does not mean you need to register an app.
+
+Commands default to `.saucepan` in your home directory (`%USERPROFILE%` on Windows,
+`~` on Unix). If the store does not exist, run `saucepan init` once. Queries fail
+with initialization guidance and never create a missing store. A project-local
+`.saucepan` directory is not selected automatically. Override the location with
+`saucepan --root ./scratch query-sources`; an override never falls back to your
+default store. If a valid home cannot be resolved, supply `--root` explicitly.
+
+A trusted local administrator can publish a registered source with
+`saucepan set-source-visibility SOURCE_UUID public`, or withdraw it with `private`.
+Publication exposes the full source definition; it does not publish private claims.
+
+Use `saucepan --as-app APP_UUID query-sources` only when querying as a registered
+application. That app's permissions and optional credentials apply. Failure to
+authenticate never falls back to anonymous discovery.
+
 ## Native API
 
 Use `AppSession::query_sources(&SourceQuery)` to find sources permitted for the
@@ -30,11 +56,19 @@ coordinate with provider refreshes. App sessions cannot configure visibility.
 
 ## Query and result
 
-All fields are optional and combine with AND. `{}` finds every permitted source.
+All filters are optional and combine with AND. With no filters, `query-sources`
+finds every permitted source. Direct flags are `--uuid`, `--type`, `--repo`,
+`--origin` and `--url`, with the same meanings as the corresponding JSON fields.
+Saved queries remain optional: `saucepan query-sources query.json`, for example:
 
 ```json
 {"type":"github_release","repo":"owner/project"}
 ```
+
+Supply either a saved file or direct filter flags. Combining them is an error;
+there is no merge or override precedence. Repeated filter flags are also errors.
+Global `--root`, `--as-app`, `--credential-file` and `--error-format` options work
+with either form. An empty JSON object is equivalent to supplying no query inputs.
 
 - `uuid`: exact registered source UUID.
 - `type`: `local`, `url`, `git`, or `github_release`.
@@ -66,15 +100,15 @@ definition pointing to an existing file, for example
 {"registration_key":"simple-app","name":"Simple App"}
 ```
 
-Create `query.json` as `{}` to search all permitted sources, or
-`{"type":"local"}` to select only local sources. No credentials or scope
-restriction is needed. In PowerShell:
+For app-owned acquisition, register the app once and query with optional direct
+filters. No credentials or scope restriction is needed. This example deliberately
+uses a separate `./scratch` root. In PowerShell:
 
 ```powershell
 saucepan --root ./scratch init
 saucepan --root ./scratch register-source source.json
 $app = saucepan --root ./scratch register-application app.json | ConvertFrom-Json
-$found = saucepan --root ./scratch --as-app $app.uuid query-sources query.json | ConvertFrom-Json
+$found = saucepan --root ./scratch --as-app $app.uuid query-sources --type local | ConvertFrom-Json
 ```
 
 Choose a result explicitly; an empty result is valid and multiple results are
@@ -99,7 +133,7 @@ To expose a source to anonymous discovery, a trusted local administrator runs:
 
 ```powershell
 saucepan --root ./scratch set-source-visibility SOURCE_UUID public
-saucepan --root ./scratch query-sources query.json
+saucepan --root ./scratch query-sources
 saucepan --root ./scratch set-source-visibility SOURCE_UUID private
 ```
 

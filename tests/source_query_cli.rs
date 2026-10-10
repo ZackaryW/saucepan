@@ -171,6 +171,147 @@ fn source_query_child() {
 }
 
 #[test]
+fn direct_filters_match_saved_and_native_queries_without_application_registration() {
+    use saucepan::models::source::Source;
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("root");
+    let store = native_root::create(&root).unwrap();
+    let payload = tmp.path().join("file");
+    fs::write(&payload, "bytes").unwrap();
+    let definitions = [
+        Source::Local { path: payload },
+        Source::GithubRelease {
+            repo: "owner/repo".into(),
+        },
+        Source::GithubRepo {
+            repo: "owner/repo".into(),
+        },
+        Source::Url {
+            url: "https://example.invalid/archive.zip".into(),
+        },
+    ];
+    let mut ids = Vec::new();
+    for definition in definitions {
+        let source = store.register_source(definition).unwrap();
+        store.set_source_visibility(source.uuid, true).unwrap();
+        ids.push(source.uuid);
+    }
+    store
+        .register_source(Source::GithubRelease {
+            repo: "private/repo".into(),
+        })
+        .unwrap();
+    let before = fs::read(root.join("root.json")).unwrap();
+    let file = tmp.path().join("query.json");
+    let cases = [
+        (vec![], json!({})),
+        (vec!["--type", "local"], json!({"type":"local"})),
+        (
+            vec!["--type", "github_release", "--repo", "owner/repo"],
+            json!({"type":"github_release","repo":"owner/repo"}),
+        ),
+        (
+            vec![
+                "--type",
+                "git",
+                "--origin",
+                "https://github.com/owner/repo.git",
+            ],
+            json!({"type":"git","origin":"https://github.com/owner/repo.git"}),
+        ),
+        (
+            vec![
+                "--type",
+                "url",
+                "--url",
+                "https://example.invalid/archive.zip",
+            ],
+            json!({"type":"url","url":"https://example.invalid/archive.zip"}),
+        ),
+        (
+            vec!["--type", "git", "--repo", "owner/repo"],
+            json!({"type":"git","repo":"owner/repo"}),
+        ),
+        (vec!["--repo", "Owner/repo"], json!({"repo":"Owner/repo"})),
+        (vec!["--repo", "owner/*"], json!({"repo":"owner/*"})),
+    ];
+    for (flags, query) in cases {
+        write(&file, query.clone());
+        let mut args = vec!["query-sources"];
+        args.extend(flags);
+        let result = ok(&root, &args);
+        assert_eq!(
+            result,
+            ok(&root, &["query-sources", file.to_str().unwrap()])
+        );
+        assert_eq!(
+            result,
+            serde_json::to_value(
+                store
+                    .query_sources(&serde_json::from_value(query).unwrap())
+                    .unwrap()
+            )
+            .unwrap()
+        );
+    }
+    let id = ids[0].to_string();
+    write(&file, json!({"uuid":id}));
+    assert_eq!(
+        ok(&root, &["query-sources", "--uuid", &id]),
+        ok(&root, &["query-sources", file.to_str().unwrap()])
+    );
+    assert_eq!(
+        ok(&root, &["query-sources"])["sources"]
+            .as_array()
+            .unwrap()
+            .len(),
+        4
+    );
+    assert_eq!(fs::read(root.join("root.json")).unwrap(), before);
+
+    for invalid in [
+        vec!["--type", "github-release"],
+        vec!["--type", "github_repo"],
+        vec!["--uuid", "bad"],
+        vec!["--repo", ""],
+        vec!["--type", "git", "--type", "git"],
+        vec!["--repo", "a", "--repo", "b"],
+        vec!["--scope", "default"],
+    ] {
+        let mut args = vec!["query-sources"];
+        args.extend(invalid);
+        fail(&root, &args, "invalid_request");
+    }
+    fail(
+        &root,
+        &["query-sources", "--url", &"x".repeat(4097)],
+        "invalid_request",
+    );
+    for path in [file.as_path(), tmp.path().join("absent.json").as_path()] {
+        for (flag, value) in [
+            ("--uuid", id.as_str()),
+            ("--type", "local"),
+            ("--repo", "owner/repo"),
+            ("--origin", "origin"),
+            ("--url", "url"),
+        ] {
+            fail(
+                &root,
+                &["query-sources", path.to_str().unwrap(), flag, value],
+                "invalid_request",
+            );
+        }
+    }
+    assert_eq!(fs::read(root.join("root.json")).unwrap(), before);
+    let help = cli(&root, &["query-sources", "--help"]);
+    assert!(help.status.success());
+    let help = String::from_utf8_lossy(&help.stdout);
+    assert!(help.contains("saucepan query-sources\n"));
+    assert!(help.contains("github_release"));
+    assert!(help.contains("no sources have been published"));
+}
+
+#[test]
 fn cli_enforces_query_shape_credentials_and_source_permissions() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().join("root");
@@ -206,6 +347,11 @@ fn cli_enforces_query_shape_credentials_and_source_permissions() {
     fail(
         &root,
         &["--as-app", id, "query-sources", q],
+        "authentication_required",
+    );
+    fail(
+        &root,
+        &["--as-app", id, "query-sources"],
         "authentication_required",
     );
     let bad = tmp.path().join("wrong-credential");
@@ -244,6 +390,19 @@ fn cli_enforces_query_shape_credentials_and_source_permissions() {
     let source = ok(&root, &["register-source", source_file.to_str().unwrap()]);
     let source_id = source["uuid"].as_str().unwrap();
     ok(&root, &["set-source-visibility", source_id, "public"]);
+    assert_eq!(
+        ok(
+            &root,
+            &[
+                "--as-app",
+                id,
+                "--credential-file",
+                token.to_str().unwrap(),
+                "query-sources"
+            ]
+        )["sources"][0]["uuid"],
+        source_id
+    );
     write(
         &query_file,
         json!({"type":"github_release","repo":"owner/repo"}),
@@ -272,11 +431,19 @@ fn cli_enforces_query_shape_credentials_and_source_permissions() {
         let app_id = app["uuid"].as_str().unwrap();
         if let Some(error) = expected_error {
             fail(&root, &["--as-app", app_id, "query-sources", q], error);
+            fail(&root, &["--as-app", app_id, "query-sources"], error);
         } else {
             let sources = ok(&root, &["--as-app", app_id, "query-sources", q]);
             assert_eq!(
                 sources["sources"].as_array().unwrap().len(),
                 usize::from(key == "discover-only")
+            );
+            assert_eq!(
+                sources,
+                ok(
+                    &root,
+                    &["--as-app", app_id, "query-sources", "--repo", "owner/repo"]
+                )
             );
         }
         let ensure = tmp.path().join("ensure.json");

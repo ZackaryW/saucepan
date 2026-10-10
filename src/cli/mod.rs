@@ -4,6 +4,8 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 mod credentials;
+mod root;
+mod source_query;
 
 #[derive(Clone, Copy, clap::ValueEnum)]
 enum ErrorFormat {
@@ -28,6 +30,7 @@ struct Args {
     /// Use this application's policies for queries and resource operations.
     #[arg(long, global = true)]
     as_app: Option<uuid::Uuid>,
+    /// Store directory; defaults to .saucepan in the user's home directory.
     #[arg(long, global = true)]
     root: Option<PathBuf>,
     #[arg(long, global = true)]
@@ -140,10 +143,11 @@ enum Commands {
     RegisterSource {
         file: PathBuf,
     },
-    /// Find registered sources; anonymous unless --as-app is supplied.
-    QuerySources {
-        file: PathBuf,
-    },
+    /// Find registered sources; no app UUID or query file is required.
+    #[command(
+        after_help = "Examples:\n  saucepan query-sources\n  saucepan query-sources --type github_release --repo owner/project\n  saucepan --as-app APP_UUID query-sources\n  saucepan query-sources query.json\n  saucepan --root ./scratch query-sources\n\nWithout --as-app only explicitly public sources appear. An empty result can mean\nno sources have been published. Run saucepan init if the default store is absent."
+    )]
+    QuerySources(source_query::SourceQueryArgs),
     /// Trusted administration: publish or withdraw a source definition.
     SetSourceVisibility {
         source: uuid::Uuid,
@@ -270,10 +274,8 @@ pub fn run() -> Result<()> {
             .into());
         }
     };
-    let root = args.root.context(crate::error::Error::new(
-        crate::error::ErrorCode::InvalidRequest,
-        "--root is required",
-    ))?;
+    let explicit_root = args.root.is_some();
+    let root = root::resolve(args.root)?;
     let options = crate::core::source::AcquireOptions {
         force_refresh: args.force_refresh,
         allow_stale: args.allow_stale,
@@ -287,6 +289,7 @@ pub fn run() -> Result<()> {
             serde_json::json!({"root":store.root()})
         }
         command => {
+            root::require_existing(&root, explicit_root)?;
             let mut store = Store::open(&root)?;
             let app = command.application();
             anyhow::ensure!(
@@ -499,9 +502,9 @@ pub fn run() -> Result<()> {
                     let source: Source = serde_json::from_slice(&std::fs::read(file)?)?;
                     serde_json::to_value(store.register_source(source)?)?
                 }
-                Commands::QuerySources { file } => serde_json::to_value(
-                    store.query_sources(&serde_json::from_slice(&std::fs::read(file)?)?)?,
-                )?,
+                Commands::QuerySources(input) => {
+                    serde_json::to_value(store.query_sources(&input.into_query()?)?)?
+                }
                 Commands::SetSourceVisibility { source, visibility } => {
                     serde_json::to_value(store.set_source_visibility(
                         source,

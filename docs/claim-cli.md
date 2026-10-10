@@ -87,7 +87,9 @@ direct output access. This is not isolation from another process of the same OS 
 ```
 
 There is no success stdout on failure. Validly supplied JSON error mode also
-covers malformed arguments and missing `--root`. Help and version exit 0.
+covers malformed arguments and root-resolution failures. Omitting `--root` selects
+the user-home `.saucepan` store; a missing store reports initialization guidance.
+Help and version exit 0.
 Lifecycle results retain stdout receipts and exit 0 for complete or 2 for
 incomplete/failed/conflicted work; `reason` contains a structured code when work
 fails or needs reconciliation. A launched child's streams and exit code are

@@ -2,7 +2,15 @@
 
 Rust source acquisition with separate source working data, immutable outputs, and application claims. This is a new implementation; legacy stores and protocols are not migrated.
 
-Use an explicit root. Use a fresh disposable root for the authenticated claim-registry layout. The historical `mock/` installation remains an earlier acceptance fixture and is not migrated.
+Commands default to `%USERPROFILE%\.saucepan` on Windows or `~/.saucepan` on Unix. Initialize it once, then query publicly discoverable sources without an app UUID or query file:
+
+```powershell
+cargo run -- init
+cargo run -- query-sources
+cargo run -- query-sources --type github_release --repo owner/project
+```
+
+Sources are private until explicitly published, so an empty anonymous query can be expected. Use `--root ./scratch` for a separate store; the override always wins and never falls back to the default. Queries do not initialize missing stores. The historical `mock/` installation remains an earlier acceptance fixture and is not migrated. The following acquisition examples use a fresh disposable root:
 
 ```powershell
 cargo run -- --root ./scratch init
@@ -21,7 +29,7 @@ cargo run -- --root ./scratch register-source source.json
 
 The returned source UUID identifies `source/<uuid>.json`. App/output records live at `index/<uuid>/index.json`; only outputs have `store/<uuid>/` contents. Claims now live in `claims/<app-uuid>/index.json` and `<claim-uuid>.json`. `root.json` authenticates catalog membership. Source, index, claim and lifecycle records are readable JSON with HMAC-SHA256 tags; the signing key lives in native OS keyring. Existing unsigned roots are rejected. Filesystem access follows the local OS user's trust boundary. See [integrity and custody](docs/claim-integrity.md).
 
-Find registered sources before claiming with `query-sources query.json`, where the file can be `{}` or `{"type":"github_release","repo":"owner/project"}`. Use `--as-app APP_UUID` for that application's permitted sources; without it, only explicitly published sources appear. Sources are private by default. See [source discovery and the simple app flow](docs/source-query.md).
+Find registered sources before claiming with `query-sources`, optionally adding `--type github_release --repo owner/project`. A saved `query-sources query.json` remains supported instead of flags. Use `--as-app APP_UUID` for that application's permitted sources; without it, only explicitly published sources appear. See [source discovery and the simple app flow](docs/source-query.md).
 
 Save a request using the returned source UUID (replace the illustrative UUID):
 

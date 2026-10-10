@@ -242,12 +242,14 @@ fn credential_files_registration_ensure_recovery_rotation_and_json_errors() {
         assert!(cli(&root, &[flag]).status.success());
     }
     let missing_root = Command::new(env!("CARGO_BIN_EXE_saucepan"))
+        .env("USERPROFILE", tmp.path().join("isolated-home"))
+        .env("HOME", tmp.path().join("isolated-home"))
         .args(["--error-format=json", "claims", id])
         .output()
         .unwrap();
     assert_eq!(
         serde_json::from_slice::<Value>(&missing_root.stderr).unwrap()["error"]["code"],
-        "invalid_request"
+        "unsupported_store"
     );
 }
 
