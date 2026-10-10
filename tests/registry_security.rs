@@ -9,7 +9,11 @@ use saucepan::{
     },
     error::{Error, ErrorCode},
     models::{
-        claim::{Scope, policy::Action, security::Credential},
+        claim::{
+            Scope,
+            policy::Action,
+            security::{Credential, IntegrityMode},
+        },
         source::Source,
         store::{Request, Selector, VerificationMode},
     },
@@ -32,10 +36,11 @@ fn input(key: &str) -> ApplicationRegistration {
 fn code(error: anyhow::Error) -> ErrorCode {
     Error::from_anyhow(&error).code
 }
-fn setup() -> (tempfile::TempDir, MemoryKeys, Store, Request) {
+fn setup(mode: IntegrityMode) -> (tempfile::TempDir, MemoryKeys, Store, Request) {
     let tmp = tempfile::tempdir().unwrap();
     let keys = MemoryKeys::default();
-    let store = Store::create_with_keys(&tmp.path().join("root"), &keys).unwrap();
+    let store =
+        Store::create_with_integrity_and_keys(&tmp.path().join("root"), mode, &keys).unwrap();
     let file = tmp.path().join("file");
     fs::write(&file, "content").unwrap();
     let source = store.register_source(Source::Local { path: file }).unwrap();
@@ -50,7 +55,14 @@ fn setup() -> (tempfile::TempDir, MemoryKeys, Store, Request) {
 
 #[test]
 fn credentials_off_still_enforces_source_scope_action_and_owned_output_boundaries() {
-    let (_tmp, _keys, store, request) = setup();
+    for mode in [IntegrityMode::Basic, IntegrityMode::Keyring] {
+        credentials_off_still_enforces_source_scope_action_and_owned_output_boundaries_in(mode);
+    }
+}
+fn credentials_off_still_enforces_source_scope_action_and_owned_output_boundaries_in(
+    mode: IntegrityMode,
+) {
+    let (_tmp, _keys, store, request) = setup(mode);
     let mut registration = input("consumer");
     registration.access.sources = Some([request.source_uuid].into());
     registration.access.scopes = Some([scope("project-a")].into());
@@ -159,7 +171,14 @@ fn credentials_off_still_enforces_source_scope_action_and_owned_output_boundarie
 
 #[test]
 fn optional_proof_rotation_and_disable_are_atomic_and_do_not_revoke_existing_leases() {
-    let (_tmp, keys, store, request) = setup();
+    for mode in [IntegrityMode::Basic, IntegrityMode::Keyring] {
+        optional_proof_rotation_and_disable_are_atomic_and_do_not_revoke_existing_leases_in(mode);
+    }
+}
+fn optional_proof_rotation_and_disable_are_atomic_and_do_not_revoke_existing_leases_in(
+    mode: IntegrityMode,
+) {
+    let (_tmp, keys, store, request) = setup(mode);
     let mut registration = input("protected");
     registration.credentials_required = true;
     let registered = store.register_application(&registration, None).unwrap();
@@ -270,11 +289,17 @@ fn optional_proof_rotation_and_disable_are_atomic_and_do_not_revoke_existing_lea
         .load(
             Authenticator::store_hint(&fs::read(store.root().join("root.json")).unwrap()).unwrap(),
         )
-        .unwrap()
         .unwrap();
     for path in metadata_files(store.root()) {
         let bytes = fs::read(&path).unwrap();
-        for secret in [proof.expose(), new_proof.expose(), master.expose()] {
+        for secret in [
+            Some(proof.expose()),
+            Some(new_proof.expose()),
+            master.as_ref().map(|key| key.expose()),
+        ]
+        .into_iter()
+        .flatten()
+        {
             assert!(!bytes.windows(32).any(|window| window == secret));
             let encoded = serde_json::to_vec(secret).unwrap();
             assert!(!bytes.windows(encoded.len()).any(|window| window == encoded));
@@ -288,7 +313,16 @@ fn optional_proof_rotation_and_disable_are_atomic_and_do_not_revoke_existing_lea
 
 #[test]
 fn readable_registry_is_authoritative_and_missing_or_edited_members_stop_access_and_reclaim() {
-    let (_tmp, keys, store, request) = setup();
+    for mode in [IntegrityMode::Basic, IntegrityMode::Keyring] {
+        readable_registry_is_authoritative_and_missing_or_edited_members_stop_access_and_reclaim_in(
+            mode,
+        );
+    }
+}
+fn readable_registry_is_authoritative_and_missing_or_edited_members_stop_access_and_reclaim_in(
+    mode: IntegrityMode,
+) {
+    let (_tmp, keys, store, request) = setup(mode);
     let registered = store
         .register_application(&input("registry"), None)
         .unwrap();
@@ -336,7 +370,16 @@ fn readable_registry_is_authoritative_and_missing_or_edited_members_stop_access_
 
 #[test]
 fn registration_keys_are_idempotent_and_policy_changes_cannot_invalidate_surviving_claims() {
-    let (_tmp, _keys, store, request) = setup();
+    for mode in [IntegrityMode::Basic, IntegrityMode::Keyring] {
+        registration_keys_are_idempotent_and_policy_changes_cannot_invalidate_surviving_claims_in(
+            mode,
+        );
+    }
+}
+fn registration_keys_are_idempotent_and_policy_changes_cannot_invalidate_surviving_claims_in(
+    mode: IntegrityMode,
+) {
+    let (_tmp, _keys, store, request) = setup(mode);
     let registration = input("explicit-key");
     let first = store.register_application(&registration, None).unwrap();
     let same = store.register_application(&registration, None).unwrap();
@@ -384,7 +427,14 @@ fn registration_keys_are_idempotent_and_policy_changes_cannot_invalidate_survivi
 
 #[test]
 fn generic_discovery_only_exposes_public_permitted_scopes_and_grants_no_output_access() {
-    let (_tmp, _keys, store, request) = setup();
+    for mode in [IntegrityMode::Basic, IntegrityMode::Keyring] {
+        generic_discovery_only_exposes_public_permitted_scopes_and_grants_no_output_access_in(mode);
+    }
+}
+fn generic_discovery_only_exposes_public_permitted_scopes_and_grants_no_output_access_in(
+    mode: IntegrityMode,
+) {
+    let (_tmp, _keys, store, request) = setup(mode);
     let mut registration = input("discoverable");
     registration.access.public_scopes.insert(scope("public"));
     let registered = store.register_application(&registration, None).unwrap();
@@ -468,4 +518,89 @@ fn metadata_files(root: &std::path::Path) -> Vec<std::path::PathBuf> {
         }
     }
     files
+}
+
+#[test]
+fn current_protected_proof_survives_open_and_rotates_to_independent_proof() {
+    use saucepan::{
+        core::claim::{
+            persistence::Metadata,
+            security::{Identity, Kind},
+        },
+        models::claim::security::CredentialPolicy,
+        utils::crypto,
+    };
+    let (_tmp, keys, store, _) = setup(IntegrityMode::Keyring);
+    let registered = store
+        .register_application(&input("existing-proof"), None)
+        .unwrap();
+    let app = registered.application.uuid;
+    let token = Credential::generate().unwrap();
+    let store_id =
+        Authenticator::store_hint(&fs::read(store.root().join("root.json")).unwrap()).unwrap();
+    let master = keys.load(store_id).unwrap().unwrap();
+    let derived = crypto::derive_key::<32>(
+        master.expose(),
+        Some(store_id.as_bytes()),
+        b"saucepan/credentials/hmac-sha256",
+    )
+    .unwrap();
+    let mut framed = Vec::new();
+    framed.extend_from_slice(app.as_bytes());
+    framed.extend_from_slice(&1u64.to_be_bytes());
+    framed.extend_from_slice(token.expose());
+    let verifier = crypto::authenticate(derived.as_ref(), framed.as_slice()).unwrap();
+    let metadata = Metadata::open(store.root(), &keys).unwrap();
+    let snapshot = metadata.snapshot().unwrap();
+    let identity = Identity {
+        kind: Kind::Registry,
+        owner: Some(app),
+        member: None,
+    };
+    let mut registry: saucepan::models::claim::Registry =
+        snapshot.read(metadata.authenticator(), identity).unwrap();
+    registry.credential = CredentialPolicy::Required {
+        generation: 1,
+        verifier,
+    };
+    metadata
+        .publish(
+            &snapshot,
+            vec![(identity, serde_json::to_value(&registry).unwrap())],
+            vec![],
+        )
+        .unwrap();
+    let before = fs::read(store.root().join("root.json")).unwrap();
+    let reopened = Store::open_with_keys(store.root(), &keys).unwrap();
+    reopened
+        .session(app, Some(Credential::from_bytes(token.expose()).unwrap()))
+        .unwrap();
+    assert_eq!(before, fs::read(store.root().join("root.json")).unwrap());
+    let replacement = reopened
+        .configure_application(
+            app,
+            ApplicationConfiguration {
+                expected_revision: reopened.application(app).unwrap().revision,
+                access: Default::default(),
+                policies: Default::default(),
+                credential: Some(CredentialChange::Rotate),
+            },
+            Some(&token),
+        )
+        .unwrap()
+        .unwrap();
+    assert!(reopened.session(app, Some(token)).is_err());
+    reopened.session(app, Some(replacement)).unwrap();
+    let snapshot = metadata.snapshot().unwrap();
+    let changed: saucepan::models::claim::Registry =
+        snapshot.read(metadata.authenticator(), identity).unwrap();
+    assert!(matches!(
+        changed.credential,
+        CredentialPolicy::Bearer { generation: 2, .. }
+    ));
+    assert!(
+        Authenticator::basic(store_id)
+            .check_credential(app, &registry.credential, None)
+            .is_err()
+    );
 }

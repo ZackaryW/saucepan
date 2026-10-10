@@ -399,13 +399,10 @@ impl Authenticator {
         generation: u64,
         token: &Credential,
     ) -> Result<CredentialPolicy> {
-        let bytes = credential_input(app, generation, token);
-        let verifier = crypto::authenticate(
-            self.credentials.as_ref().ok_or_else(key_error)?.as_ref(),
-            bytes.as_slice(),
-        )
-        .map_err(Error::from)?;
-        Ok(CredentialPolicy::Required {
+        let bytes = bearer_input(self.store, app, generation);
+        let verifier =
+            crypto::authenticate(token.expose(), bytes.as_slice()).map_err(Error::from)?;
+        Ok(CredentialPolicy::Bearer {
             generation,
             verifier,
         })
@@ -417,12 +414,21 @@ impl Authenticator {
         policy: &CredentialPolicy,
         token: Option<&Credential>,
     ) -> Result<()> {
-        let CredentialPolicy::Required {
-            generation,
-            verifier,
-        } = policy
-        else {
-            return Ok(());
+        let (generation, verifier) = match policy {
+            CredentialPolicy::Disabled => return Ok(()),
+            CredentialPolicy::Required {
+                generation,
+                verifier,
+            } => {
+                if self.mode() == IntegrityMode::Basic {
+                    return Err(integrity_error());
+                }
+                (generation, verifier)
+            }
+            CredentialPolicy::Bearer {
+                generation,
+                verifier,
+            } => (generation, verifier),
         };
         let token = token.ok_or_else(|| {
             Error::new(
@@ -430,13 +436,20 @@ impl Authenticator {
                 "application credential required",
             )
         })?;
-        let bytes = credential_input(app, *generation, token);
-        crypto::verify(
-            self.credentials.as_ref().ok_or_else(key_error)?.as_ref(),
-            bytes.as_slice(),
-            verifier,
-        )
-        .map_err(|_| {
+        let verified = match policy {
+            CredentialPolicy::Bearer { .. } => crypto::verify(
+                token.expose(),
+                bearer_input(self.store, app, *generation).as_slice(),
+                verifier,
+            ),
+            CredentialPolicy::Required { .. } => crypto::verify(
+                self.credentials.as_ref().ok_or_else(key_error)?.as_ref(),
+                credential_input(app, *generation, token).as_slice(),
+                verifier,
+            ),
+            CredentialPolicy::Disabled => unreachable!(),
+        };
+        verified.map_err(|_| {
             Error::new(
                 ErrorCode::AuthenticationFailed,
                 "application credential rejected",
@@ -495,6 +508,19 @@ fn credential_input(app: Uuid, generation: u64, token: &Credential) -> Zeroizing
     bytes.extend_from_slice(app.as_bytes());
     bytes.extend_from_slice(&generation.to_be_bytes());
     bytes.extend_from_slice(token.expose());
+    bytes
+}
+fn bearer_input(store: Uuid, app: Uuid, generation: u64) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    for field in [
+        b"saucepan/bearer-proof".as_slice(),
+        store.as_bytes(),
+        app.as_bytes(),
+        &generation.to_be_bytes(),
+    ] {
+        bytes.extend_from_slice(&(field.len() as u64).to_be_bytes());
+        bytes.extend_from_slice(field);
+    }
     bytes
 }
 pub(crate) fn integrity_error() -> Error {

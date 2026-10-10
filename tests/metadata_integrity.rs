@@ -95,14 +95,30 @@ fn readable_records_bind_exact_bytes_to_store_app_member_kind_and_generation_in(
 
 #[test]
 fn proof_is_optional_bound_to_app_and_store_and_rotation_invalidates_previous_proof() {
+    for mode in [IntegrityMode::Basic, IntegrityMode::Keyring] {
+        proof_in(mode);
+    }
+}
+fn proof_in(mode: IntegrityMode) {
     let keys = MemoryKeys::default();
-    let auth = Authenticator::provision(Uuid::new_v4(), &keys).unwrap();
+    let auth = test_auth(mode, Uuid::new_v4(), &keys);
     let app = Uuid::new_v4();
     let first = Credential::generate().unwrap();
     let second = Credential::generate().unwrap();
     auth.check_credential(app, &CredentialPolicy::Disabled, None)
         .unwrap();
     let policy = auth.credential_policy(app, 1, &first).unwrap();
+    let CredentialPolicy::Bearer { verifier, .. } = &policy else {
+        panic!("expected independent proof")
+    };
+    assert!(
+        auth.check_credential(
+            app,
+            &policy,
+            Some(&Credential::from_bytes(verifier).unwrap())
+        )
+        .is_err()
+    );
     assert_eq!(
         auth.check_credential(app, &policy, None).unwrap_err().code,
         ErrorCode::AuthenticationRequired

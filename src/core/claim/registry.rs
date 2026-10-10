@@ -22,6 +22,11 @@ pub use crate::models::claim::RegistryState;
 impl RegistryState {
     pub fn load(metadata: &Metadata, snapshot: &Snapshot, app: Uuid) -> Result<Self> {
         let registry: Registry = snapshot.read(metadata.authenticator(), registry_identity(app))?;
+        if metadata.authenticator().mode() == crate::models::claim::security::IntegrityMode::Basic
+            && matches!(registry.credential, CredentialPolicy::Required { .. })
+        {
+            return Err(integrity_error());
+        }
         registry.validate().map_err(|_| integrity_error())?;
         if registry.app != app {
             return Err(integrity_error());
@@ -165,7 +170,7 @@ impl RegistryState {
     }
 
     pub fn credentials_required(&self) -> bool {
-        matches!(self.registry.credential, CredentialPolicy::Required { .. })
+        !matches!(self.registry.credential, CredentialPolicy::Disabled)
     }
 
     /// Called only by trusted registration administration. Verifies current proof
@@ -180,10 +185,15 @@ impl RegistryState {
         let policy = match (&self.registry.credential, change) {
             (CredentialPolicy::Disabled, CredentialChange::Disable) => return Ok(None),
             (CredentialPolicy::Disabled, CredentialChange::Enable) => 1,
-            (CredentialPolicy::Required { generation, .. }, CredentialChange::Rotate) => {
-                generation.checked_add(1).ok_or_else(integrity_error)?
-            }
-            (CredentialPolicy::Required { .. }, CredentialChange::Disable) => {
+            (
+                CredentialPolicy::Required { generation, .. }
+                | CredentialPolicy::Bearer { generation, .. },
+                CredentialChange::Rotate,
+            ) => generation.checked_add(1).ok_or_else(integrity_error)?,
+            (
+                CredentialPolicy::Required { .. } | CredentialPolicy::Bearer { .. },
+                CredentialChange::Disable,
+            ) => {
                 self.registry.credential = CredentialPolicy::Disabled;
                 return Ok(None);
             }

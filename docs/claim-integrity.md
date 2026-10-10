@@ -10,9 +10,9 @@ The existing protected envelope is always interpreted as Keyring; opening never
 downgrades it or rewrites it just to add a mode. Initialization reserves identity
 and mode and rejects a retry selecting another mode.
 
-At this foundation checkpoint, CLI initialization and `Store::create` still
-default to protected custody. Independent credentials and the basic CLI default
-are subsequent integration steps. The protected-mode details below remain valid.
+CLI initialization and `Store::create` still default to protected custody pending
+the basic-default integration. Explicit basic native stores support independently
+optional application credentials. The protected-mode details below remain valid.
 
 Native keyring operations are serialized across threads and Saucepan processes
 using a coordination lock in the user's temporary directory (UID-qualified on
@@ -55,6 +55,15 @@ proof is disabled. Rotation invalidates old proof without revoking existing nati
 leases. Signed maintenance and registered shims can finish committed intent without
 client tokens. The shim verifies its owned launcher/configuration digests and the
 signed active binding before launch.
+
+New credential policies use the `bearer` variant. Its verifier is HMAC-SHA256
+keyed by a random 32-byte bearer token over framed domain, store, app and credential
+generation fields. It needs no metadata signing key. The saved verifier cannot be
+presented as the token. Existing `required` policies keep their previous protected
+verification algorithm until explicit rotation; basic stores reject that variant.
+This is high-entropy bearer proof, not password hashing. In basic mode, credentials
+and policy restrictions enforce API behavior but cannot prevent a filesystem
+writer from replacing metadata and recomputing checksums.
 
 Production selects OS keyring. Tests explicitly inject `MemoryKeys` or native
 fixtures that retire their own keys. No plaintext key fallback, Python binding,

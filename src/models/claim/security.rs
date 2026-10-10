@@ -50,13 +50,22 @@ pub enum CredentialPolicy {
         generation: u64,
         verifier: [u8; 32],
     },
+    /// High-entropy bearer proof independent of metadata signing custody.
+    Bearer {
+        generation: u64,
+        verifier: [u8; 32],
+    },
 }
 impl fmt::Debug for CredentialPolicy {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Disabled => f.write_str("Disabled"),
-            Self::Required { generation, .. } => f
-                .debug_struct("Required")
+            Self::Required { generation, .. } | Self::Bearer { generation, .. } => f
+                .debug_struct(if matches!(self, Self::Bearer { .. }) {
+                    "Bearer"
+                } else {
+                    "Required"
+                })
                 .field("generation", generation)
                 .field("verifier", &"[REDACTED]")
                 .finish(),
