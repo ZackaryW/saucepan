@@ -421,6 +421,13 @@ impl AppSession {
         );
         self.store.query_claims(query)
     }
+    /// Find permitted registered sources before acquiring or creating claims.
+    pub fn query_sources(
+        &self,
+        query: &crate::core::query::SourceQuery,
+    ) -> Result<crate::core::query::SourceQueryResult> {
+        self.store.query_sources(query)
+    }
     pub fn lease_claim(&self, claim: Uuid, mode: VerificationMode) -> Result<ResourceLease> {
         self.store.lease_claim(self.app, claim, mode)
     }

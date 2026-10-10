@@ -33,6 +33,35 @@ pub struct Resource<'a> {
     pub scope: Option<&'a Scope>,
 }
 
+/// Source catalogue records have no claim scope. This projection is deliberately
+/// separate from claim authorization, where an omitted scope must still fail.
+pub(crate) fn authorize_source_discovery(
+    policy: &AccessPolicy,
+    app: Uuid,
+    source: Option<Uuid>,
+) -> Result<()> {
+    let mut projected = policy.clone();
+    projected.scopes = None;
+    // None is the initial action-only preflight, before iterating source records.
+    if source.is_none() {
+        projected.sources = None;
+    }
+    authorize(
+        &projected,
+        false, // Caller verifies current credentials before entering this helper.
+        Caller::Application {
+            app,
+            proof: Proof::Verified,
+        },
+        Action::Discover,
+        &Resource {
+            app,
+            source,
+            scope: None,
+        },
+    )
+}
+
 pub fn authorize(
     policy: &AccessPolicy,
     credentials_required: bool,

@@ -17,6 +17,9 @@ pub enum Source {
 pub struct SourceRecord {
     pub uuid: Uuid,
     pub source: Source,
+    /// Explicit anonymous catalogue visibility; independent of claim visibility.
+    #[serde(default)]
+    pub public_discovery: bool,
     #[serde(default)]
     pub refresh: Refresh,
     #[serde(default)]

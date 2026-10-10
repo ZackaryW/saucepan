@@ -252,6 +252,7 @@ impl Store {
         let record = SourceRecord {
             uuid: Uuid::new_v4(),
             source,
+            public_discovery: false,
             refresh: Default::default(),
             discovery: BTreeMap::new(),
         };
@@ -277,6 +278,30 @@ impl Store {
             vec![],
         )?;
         Ok(())
+    }
+    /// Trusted local administration. Publishing exposes the full source definition.
+    pub fn set_source_visibility(&self, id: Uuid, public: bool) -> Result<SourceRecord> {
+        ensure!(
+            self.session.is_none(),
+            Error::new(
+                ErrorCode::AccessDenied,
+                "source visibility requires administration"
+            )
+        );
+        // Providers hold this lock while fetching and later publishing a source
+        // snapshot. Share their lock order so a stale fetch cannot undo visibility.
+        let _source_lock = crate::utils::lock::LockGuard::acquire(
+            &self.root.join(format!(".locks/source-{id}")),
+            crate::utils::lock::LockMode::Exclusive,
+            std::time::Duration::from_secs(150),
+        )?;
+        let _lock = self.lock()?;
+        let mut source = self.source(id)?;
+        if source.public_discovery != public {
+            source.public_discovery = public;
+            self.save_source(&source)?;
+        }
+        Ok(source)
     }
     pub(crate) fn commit(&self, journal: Journal) -> Result<()> {
         self.commit_observed(journal, |_| Ok(()))

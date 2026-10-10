@@ -1,9 +1,13 @@
 //! Application-scoped claim discovery. Results carry no retained resource lifetime.
 mod matching;
 pub mod model;
+mod source;
 use crate::core::Store;
 use anyhow::Result;
-pub use model::{ClaimQuery, Condition, DiscoveryQuery, Operator, QueryResult};
+pub use model::{
+    ClaimQuery, Condition, DiscoveryQuery, Operator, QueryResult, SourceQuery, SourceQueryResult,
+    SourceType, SourceView,
+};
 
 impl Store {
     /// Read one coherent filtered application view, in claim UUID order.
