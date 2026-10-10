@@ -91,6 +91,18 @@ impl Store {
         Self::create_with_keys(root, &claim::security::NativeKeyring)
     }
     pub fn create_with_keys(root: &Path, keys: &dyn claim::security::KeyProvider) -> Result<Self> {
+        Self::create_with_integrity_and_keys(
+            root,
+            crate::models::claim::security::IntegrityMode::Keyring,
+            keys,
+        )
+    }
+    /// Explicit integrity selection; basic mode never invokes the key provider.
+    pub fn create_with_integrity_and_keys(
+        root: &Path,
+        mode: crate::models::claim::security::IntegrityMode,
+        keys: &dyn claim::security::KeyProvider,
+    ) -> Result<Self> {
         if root.exists() {
             ensure!(
                 plain_metadata(root)?.is_dir(),
@@ -142,7 +154,7 @@ impl Store {
         )?;
         Ok(Self {
             session: None,
-            metadata: claim::persistence::Metadata::initialize(&root, keys)?,
+            metadata: claim::persistence::Metadata::initialize_with_mode(&root, mode, keys)?,
             root,
             #[cfg(test)]
             before_claim_commit: None,
@@ -152,6 +164,9 @@ impl Store {
     }
     pub fn open(root: &Path) -> Result<Self> {
         Self::open_with_keys(root, &claim::security::NativeKeyring)
+    }
+    pub fn integrity_mode(&self) -> crate::models::claim::security::IntegrityMode {
+        self.metadata.authenticator().mode()
     }
     pub fn open_with_keys(root: &Path, keys: &dyn claim::security::KeyProvider) -> Result<Self> {
         ensure!(plain_metadata(root)?.is_dir(), "invalid store root");

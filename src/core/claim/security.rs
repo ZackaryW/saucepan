@@ -1,5 +1,6 @@
 //! Authenticated readable records and native secret custody. No encryption or
 //! policy decisions live here; callers supply the expected record identity.
+use crate::models::claim::security::IntegrityMode;
 use crate::{
     error::{Error, ErrorCode, Result},
     models::claim::security::{Credential, CredentialPolicy},
@@ -7,6 +8,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::value::RawValue;
+use sha2::{Digest, Sha256};
 use std::{fmt, sync::Mutex};
 use uuid::Uuid;
 use zeroize::Zeroizing;
@@ -172,11 +174,24 @@ struct Envelope {
     tag: [u8; 32],
 }
 
+const BASIC_CONTRACT: &str = "saucepan.checksummed-record";
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BasicEnvelope {
+    contract: String,
+    mode: IntegrityMode,
+    store: Uuid,
+    identity: Identity,
+    generation: u64,
+    payload: Box<RawValue>,
+    checksum: [u8; 32],
+}
+
 /// Derived keys are zeroized when the final store/session owner is dropped.
 pub struct Authenticator {
     store: Uuid,
-    signing: Zeroizing<[u8; 32]>,
-    credentials: Zeroizing<[u8; 32]>,
+    signing: Option<Zeroizing<[u8; 32]>>,
+    credentials: Option<Zeroizing<[u8; 32]>>,
 }
 impl fmt::Debug for Authenticator {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -186,6 +201,20 @@ impl fmt::Debug for Authenticator {
     }
 }
 impl Authenticator {
+    pub fn basic(store: Uuid) -> Self {
+        Self {
+            store,
+            signing: None,
+            credentials: None,
+        }
+    }
+    pub fn mode(&self) -> IntegrityMode {
+        if self.signing.is_some() {
+            IntegrityMode::Keyring
+        } else {
+            IntegrityMode::Basic
+        }
+    }
     pub fn load(store: Uuid, keys: &dyn KeyProvider) -> Result<Self> {
         Self::derive(store, &keys.load(store)?.ok_or_else(key_error)?)
     }
@@ -205,18 +234,22 @@ impl Authenticator {
     fn derive(store: Uuid, secret: &Secret) -> Result<Self> {
         Ok(Self {
             store,
-            signing: crypto::derive_key(
-                secret.expose(),
-                Some(store.as_bytes()),
-                b"saucepan/records/hmac-sha256",
-            )
-            .map_err(|_| key_error())?,
-            credentials: crypto::derive_key(
-                secret.expose(),
-                Some(store.as_bytes()),
-                b"saucepan/credentials/hmac-sha256",
-            )
-            .map_err(|_| key_error())?,
+            signing: Some(
+                crypto::derive_key(
+                    secret.expose(),
+                    Some(store.as_bytes()),
+                    b"saucepan/records/hmac-sha256",
+                )
+                .map_err(|_| key_error())?,
+            ),
+            credentials: Some(
+                crypto::derive_key(
+                    secret.expose(),
+                    Some(store.as_bytes()),
+                    b"saucepan/credentials/hmac-sha256",
+                )
+                .map_err(|_| key_error())?,
+            ),
         })
     }
     pub fn store(&self) -> Uuid {
@@ -233,9 +266,29 @@ impl Authenticator {
         if payload.len() > MAX_RECORD_BYTES {
             return Err(invalid_payload());
         }
+        if self.mode() == IntegrityMode::Basic {
+            let checksum = basic_checksum(self.store, identity, generation, payload.as_bytes())?;
+            let bytes = serde_json::to_vec_pretty(&BasicEnvelope {
+                contract: BASIC_CONTRACT.into(),
+                mode: IntegrityMode::Basic,
+                store: self.store,
+                identity,
+                generation,
+                payload: RawValue::from_string(payload).map_err(|_| invalid_payload())?,
+                checksum,
+            })
+            .map_err(|_| invalid_payload())?;
+            if bytes.len() > MAX_RECORD_BYTES {
+                return Err(invalid_payload());
+            }
+            return Ok(bytes);
+        }
         let input = signing_input(self.store, identity, generation, payload.as_bytes())?;
-        let tag =
-            crypto::authenticate(self.signing.as_ref(), input.as_slice()).map_err(Error::from)?;
+        let tag = crypto::authenticate(
+            self.signing.as_ref().ok_or_else(key_error)?.as_ref(),
+            input.as_slice(),
+        )
+        .map_err(Error::from)?;
         let bytes = serde_json::to_vec_pretty(&Envelope {
             store: self.store,
             identity,
@@ -260,6 +313,27 @@ impl Authenticator {
         if bytes.len() > MAX_RECORD_BYTES {
             return Err(integrity_error());
         }
+        if self.mode() == IntegrityMode::Basic {
+            let envelope: BasicEnvelope =
+                serde_json::from_slice(bytes).map_err(|_| integrity_error())?;
+            if envelope.contract != BASIC_CONTRACT
+                || envelope.mode != IntegrityMode::Basic
+                || envelope.store != self.store
+                || envelope.identity != identity
+                || envelope.checksum
+                    != basic_checksum(
+                        self.store,
+                        identity,
+                        envelope.generation,
+                        envelope.payload.get().as_bytes(),
+                    )?
+            {
+                return Err(integrity_error());
+            }
+            let value =
+                serde_json::from_str(envelope.payload.get()).map_err(|_| integrity_error())?;
+            return Ok((envelope.generation, value));
+        }
         let envelope: Envelope = serde_json::from_slice(bytes).map_err(|_| integrity_error())?;
         if envelope.store != self.store || envelope.identity != identity {
             return Err(integrity_error());
@@ -270,8 +344,12 @@ impl Authenticator {
             envelope.generation,
             envelope.payload.get().as_bytes(),
         )?;
-        crypto::verify(self.signing.as_ref(), input.as_slice(), &envelope.tag)
-            .map_err(|_| integrity_error())?;
+        crypto::verify(
+            self.signing.as_ref().ok_or_else(key_error)?.as_ref(),
+            input.as_slice(),
+            &envelope.tag,
+        )
+        .map_err(|_| integrity_error())?;
         let value = serde_json::from_str(envelope.payload.get()).map_err(|_| integrity_error())?;
         Ok((envelope.generation, value))
     }
@@ -279,14 +357,40 @@ impl Authenticator {
     /// Only used to select key custody before verifying the root envelope.
     /// No payload or policy may be accepted on the strength of this untrusted hint.
     pub fn store_hint(bytes: &[u8]) -> Result<Uuid> {
+        Self::root_hint(bytes).map(|(store, _)| store)
+    }
+    /// Classify a strict envelope; the caller must still verify before use.
+    pub fn root_hint(bytes: &[u8]) -> Result<(Uuid, IntegrityMode)> {
         if bytes.len() > MAX_RECORD_BYTES {
             return Err(integrity_error());
+        }
+        #[derive(Deserialize)]
+        struct Hint {
+            contract: Option<String>,
+            mode: Option<String>,
+        }
+        let hint: Hint = serde_json::from_slice(bytes).map_err(|_| integrity_error())?;
+        if hint.contract.is_some() || hint.mode.is_some() {
+            if hint.contract.as_deref() != Some(BASIC_CONTRACT)
+                || hint.mode.as_deref() != Some("basic")
+            {
+                return Err(Error::new(
+                    ErrorCode::UnsupportedStore,
+                    "unsupported metadata integrity contract",
+                ));
+            }
+            let envelope: BasicEnvelope =
+                serde_json::from_slice(bytes).map_err(|_| integrity_error())?;
+            if envelope.identity != Identity::catalog() {
+                return Err(integrity_error());
+            }
+            return Ok((envelope.store, IntegrityMode::Basic));
         }
         let envelope: Envelope = serde_json::from_slice(bytes).map_err(|_| integrity_error())?;
         if envelope.identity != Identity::catalog() {
             return Err(integrity_error());
         }
-        Ok(envelope.store)
+        Ok((envelope.store, IntegrityMode::Keyring))
     }
 
     pub fn credential_policy(
@@ -296,8 +400,11 @@ impl Authenticator {
         token: &Credential,
     ) -> Result<CredentialPolicy> {
         let bytes = credential_input(app, generation, token);
-        let verifier = crypto::authenticate(self.credentials.as_ref(), bytes.as_slice())
-            .map_err(Error::from)?;
+        let verifier = crypto::authenticate(
+            self.credentials.as_ref().ok_or_else(key_error)?.as_ref(),
+            bytes.as_slice(),
+        )
+        .map_err(Error::from)?;
         Ok(CredentialPolicy::Required {
             generation,
             verifier,
@@ -324,13 +431,44 @@ impl Authenticator {
             )
         })?;
         let bytes = credential_input(app, *generation, token);
-        crypto::verify(self.credentials.as_ref(), bytes.as_slice(), verifier).map_err(|_| {
+        crypto::verify(
+            self.credentials.as_ref().ok_or_else(key_error)?.as_ref(),
+            bytes.as_slice(),
+            verifier,
+        )
+        .map_err(|_| {
             Error::new(
                 ErrorCode::AuthenticationFailed,
                 "application credential rejected",
             )
         })
     }
+}
+
+fn basic_checksum(
+    store: Uuid,
+    identity: Identity,
+    generation: u64,
+    payload: &[u8],
+) -> Result<[u8; 32]> {
+    let header = serde_json::to_vec(&(
+        BASIC_CONTRACT,
+        IntegrityMode::Basic,
+        store,
+        identity,
+        generation,
+    ))
+    .map_err(|_| integrity_error())?;
+    let mut digest = Sha256::new();
+    for field in [
+        b"saucepan/checksummed-record".as_slice(),
+        header.as_slice(),
+        payload,
+    ] {
+        digest.update((field.len() as u64).to_be_bytes());
+        digest.update(field);
+    }
+    Ok(digest.finalize().into())
 }
 
 fn signing_input(
@@ -360,7 +498,10 @@ fn credential_input(app: Uuid, generation: u64, token: &Credential) -> Zeroizing
     bytes
 }
 pub(crate) fn integrity_error() -> Error {
-    Error::new(ErrorCode::IntegrityError, "metadata authentication failed")
+    Error::new(
+        ErrorCode::IntegrityError,
+        "metadata integrity verification failed",
+    )
 }
 fn key_error() -> Error {
     Error::new(

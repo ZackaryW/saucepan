@@ -1,5 +1,19 @@
 # Claim integrity implementation notes
 
+The native persistence API now supports explicit `IntegrityMode::Basic` through
+`Store::create_with_integrity_and_keys`. Basic records use SHA-256 checksums with
+an explicit contract and mode, and never call the supplied key provider. Catalog
+membership, exact payload framing, identity/generation checks and journal replay
+remain mandatory. `Store::integrity_mode()` reports the opened mode. A checksum
+detects inconsistency, not a writer who recomputes every affected checksum.
+The existing protected envelope is always interpreted as Keyring; opening never
+downgrades it or rewrites it just to add a mode. Initialization reserves identity
+and mode and rejects a retry selecting another mode.
+
+At this foundation checkpoint, CLI initialization and `Store::create` still
+default to protected custody. Independent credentials and the basic CLI default
+are subsequent integration steps. The protected-mode details below remain valid.
+
 Native keyring operations are serialized across threads and Saucepan processes
 using a coordination lock in the user's temporary directory (UID-qualified on
 Unix). The lock contains no secrets. New key writes are read back before store

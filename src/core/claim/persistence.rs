@@ -3,6 +3,7 @@
 use super::security::{
     Authenticator, Identity, KeyProvider, Kind, MAX_RECORD_BYTES, integrity_error,
 };
+use crate::models::claim::security::IntegrityMode;
 use crate::{
     error::{Error, ErrorCode, Result},
     utils::{
@@ -26,6 +27,32 @@ const CONTRACT: &str = "saucepan.claim-registry";
 const ROOT: &str = "root.json";
 const PENDING: &str = ".staging/metadata-transaction.json";
 const INITIALIZING: &str = ".staging/initializing.json";
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Reservation {
+    store: Uuid,
+    mode: IntegrityMode,
+}
+fn reservation(bytes: &[u8]) -> Result<Reservation> {
+    // The exact previous reservation format always meant protected custody.
+    if let Ok(store) = serde_json::from_slice::<Uuid>(bytes) {
+        return Ok(Reservation {
+            store,
+            mode: IntegrityMode::Keyring,
+        });
+    }
+    serde_json::from_slice(bytes).map_err(|_| integrity_error())
+}
+fn require_mode(actual: IntegrityMode, requested: IntegrityMode) -> Result<()> {
+    if actual != requested {
+        return Err(Error::new(
+            ErrorCode::InvalidRequest,
+            "store integrity mode cannot be changed",
+        ));
+    }
+    Ok(())
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -107,17 +134,27 @@ impl Metadata {
     /// Initialize an otherwise empty prepared root. A reserved UUID lets a retry
     /// reuse a key provisioned before a crash. Existing live roots are never reset.
     pub fn initialize(root: &Path, keys: &dyn KeyProvider) -> Result<Self> {
+        Self::initialize_with_mode(root, IntegrityMode::Keyring, keys)
+    }
+    pub fn initialize_with_mode(
+        root: &Path,
+        mode: IntegrityMode,
+        keys: &dyn KeyProvider,
+    ) -> Result<Self> {
         if root.join(ROOT).exists() {
             let metadata = Self::open(root, keys)?;
-            metadata.recover()?;
-            metadata.snapshot()?;
+            require_mode(metadata.auth.mode(), mode)?;
             let marker = beneath(root, INITIALIZING)?;
             if marker.exists() {
-                let reserved: Uuid = serde_json::from_slice(&bounded_read(&marker)?)
-                    .map_err(|_| integrity_error())?;
-                if reserved != metadata.auth.store() {
+                let reserved = reservation(&bounded_read(&marker)?)?;
+                require_mode(reserved.mode, mode)?;
+                if reserved.store != metadata.auth.store() {
                     return Err(integrity_error());
                 }
+            }
+            metadata.recover()?;
+            metadata.snapshot()?;
+            if marker.exists() {
                 fs::remove_file(marker)?;
             }
             return Ok(metadata);
@@ -133,16 +170,21 @@ impl Metadata {
         }
         let marker = beneath(root, INITIALIZING)?;
         let store = if marker.exists() {
-            serde_json::from_slice::<Uuid>(&bounded_read(&marker)?)
-                .map_err(|_| integrity_error())?
+            let reserved = reservation(&bounded_read(&marker)?)?;
+            require_mode(reserved.mode, mode)?;
+            reserved.store
         } else {
             let store = Uuid::new_v4();
             atomic_write(&marker, |file| {
-                serde_json::to_writer(file, &store).map_err(std::io::Error::other)
+                serde_json::to_writer(file, &Reservation { store, mode })
+                    .map_err(std::io::Error::other)
             })?;
             store
         };
-        let auth = Arc::new(Authenticator::initialize(store, keys)?);
+        let auth = Arc::new(match mode {
+            IntegrityMode::Basic => Authenticator::basic(store),
+            IntegrityMode::Keyring => Authenticator::initialize(store, keys)?,
+        });
         let metadata = Self {
             root: root.to_path_buf(),
             auth,
@@ -167,10 +209,11 @@ impl Metadata {
             ));
         }
         let bytes = bounded_read(&beneath(root, ROOT)?)?;
-        let auth = Arc::new(Authenticator::load(
-            Authenticator::store_hint(&bytes)?,
-            keys,
-        )?);
+        let (store, mode) = Authenticator::root_hint(&bytes)?;
+        let auth = Arc::new(match mode {
+            IntegrityMode::Basic => Authenticator::basic(store),
+            IntegrityMode::Keyring => Authenticator::load(store, keys)?,
+        });
         let metadata = Self {
             root: root.to_path_buf(),
             auth,

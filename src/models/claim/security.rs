@@ -3,6 +3,15 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use zeroize::Zeroizing;
 
+/// Integrity of store metadata, independent of app proof and access policy.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IntegrityMode {
+    #[default]
+    Basic,
+    Keyring,
+}
+
 /// Secret material deliberately has no Serialize, Deserialize, Clone, or revealing Debug.
 pub struct Credential(Zeroizing<[u8; 32]>);
 impl Credential {

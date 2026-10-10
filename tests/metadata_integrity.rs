@@ -4,7 +4,7 @@ use saucepan::{
         security::{Authenticator, Identity, KeyProvider, Kind, MemoryKeys, NativeKeyring, Secret},
     },
     error::{Error, ErrorCode, Result},
-    models::claim::security::{Credential, CredentialPolicy},
+    models::claim::security::{Credential, CredentialPolicy, IntegrityMode},
 };
 use serde_json::{Value, json};
 use std::{
@@ -29,8 +29,15 @@ fn root(path: &Path) {
 
 #[test]
 fn readable_records_bind_exact_bytes_to_store_app_member_kind_and_generation() {
+    for mode in [IntegrityMode::Basic, IntegrityMode::Keyring] {
+        readable_records_bind_exact_bytes_to_store_app_member_kind_and_generation_in(mode);
+    }
+}
+fn readable_records_bind_exact_bytes_to_store_app_member_kind_and_generation_in(
+    mode: IntegrityMode,
+) {
     let keys = MemoryKeys::default();
-    let auth = Authenticator::provision(Uuid::new_v4(), &keys).unwrap();
+    let auth = test_auth(mode, Uuid::new_v4(), &keys);
     let identity = id(Kind::Claim, Some(Uuid::new_v4()), Some(Uuid::new_v4()));
     let record = auth
         .sign(identity, 8, &json!({"context":{"project":"visible"}}))
@@ -47,7 +54,7 @@ fn readable_records_bind_exact_bytes_to_store_app_member_kind_and_generation() {
             ErrorCode::IntegrityError
         );
     }
-    let other = Authenticator::provision(Uuid::new_v4(), &keys).unwrap();
+    let other = test_auth(mode, Uuid::new_v4(), &keys);
     assert_eq!(
         other.verify::<Value>(identity, &record).unwrap_err().code,
         ErrorCode::IntegrityError
@@ -123,10 +130,15 @@ fn proof_is_optional_bound_to_app_and_store_and_rotation_invalidates_previous_pr
 
 #[test]
 fn catalog_detects_deletion_substitution_tampering_and_unknown_records() {
+    for mode in [IntegrityMode::Basic, IntegrityMode::Keyring] {
+        catalog_detects_deletion_substitution_tampering_and_unknown_records_in(mode);
+    }
+}
+fn catalog_detects_deletion_substitution_tampering_and_unknown_records_in(mode: IntegrityMode) {
     let tmp = tempfile::tempdir().unwrap();
     root(tmp.path());
     let keys = MemoryKeys::default();
-    let metadata = Metadata::initialize(tmp.path(), &keys).unwrap();
+    let metadata = Metadata::initialize_with_mode(tmp.path(), mode, &keys).unwrap();
     let app = Uuid::new_v4();
     let a = id(Kind::Application, Some(app), None);
     let registry = id(Kind::Registry, Some(app), None);
@@ -186,12 +198,19 @@ fn catalog_detects_deletion_substitution_tampering_and_unknown_records() {
 
 #[test]
 fn every_publication_boundary_recovers_one_generation_and_replays_idempotently() {
+    for mode in [IntegrityMode::Basic, IntegrityMode::Keyring] {
+        every_publication_boundary_recovers_one_generation_and_replays_idempotently_in(mode);
+    }
+}
+fn every_publication_boundary_recovers_one_generation_and_replays_idempotently_in(
+    mode: IntegrityMode,
+) {
     // Journal, three record replacements, a deletion, catalog, journal removal.
     for fail_at in 0..7 {
         let tmp = tempfile::tempdir().unwrap();
         root(tmp.path());
         let keys = MemoryKeys::default();
-        let metadata = Metadata::initialize(tmp.path(), &keys).unwrap();
+        let metadata = Metadata::initialize_with_mode(tmp.path(), mode, &keys).unwrap();
         let app = Uuid::new_v4();
         let a = id(Kind::Application, Some(app), None);
         let registry = id(Kind::Registry, Some(app), None);
@@ -245,10 +264,15 @@ fn every_publication_boundary_recovers_one_generation_and_replays_idempotently()
 
 #[test]
 fn journal_tampering_is_rejected_before_any_metadata_effect() {
+    for mode in [IntegrityMode::Basic, IntegrityMode::Keyring] {
+        journal_tampering_is_rejected_before_any_metadata_effect_in(mode);
+    }
+}
+fn journal_tampering_is_rejected_before_any_metadata_effect_in(mode: IntegrityMode) {
     let tmp = tempfile::tempdir().unwrap();
     root(tmp.path());
     let keys = MemoryKeys::default();
-    let metadata = Metadata::initialize(tmp.path(), &keys).unwrap();
+    let metadata = Metadata::initialize_with_mode(tmp.path(), mode, &keys).unwrap();
     let identity = id(Kind::Application, Some(Uuid::new_v4()), None);
     assert!(
         metadata
@@ -309,9 +333,14 @@ fn initialization_resumes_identity_but_open_never_replaces_a_missing_key() {
         Metadata::initialize(tmp.path(), &keys).err().unwrap().code,
         ErrorCode::KeyUnavailable
     );
-    let reserved: Uuid =
-        serde_json::from_slice(&fs::read(tmp.path().join(".staging/initializing.json")).unwrap())
-            .unwrap();
+    let reserved: Uuid = serde_json::from_value(
+        serde_json::from_slice::<Value>(
+            &fs::read(tmp.path().join(".staging/initializing.json")).unwrap(),
+        )
+        .unwrap()["store"]
+            .clone(),
+    )
+    .unwrap();
     keys.failing.store(false, Ordering::SeqCst);
     // Simulate a crash after key provisioning but before root publication.
     Authenticator::provision(reserved, &keys).unwrap();
@@ -350,9 +379,14 @@ fn store_initialization_retry_reuses_reserved_identity_after_key_service_failure
         .code,
         ErrorCode::KeyUnavailable
     );
-    let reserved: Uuid =
-        serde_json::from_slice(&fs::read(root.join(".staging/initializing.json")).unwrap())
-            .unwrap();
+    let reserved: Uuid = serde_json::from_value(
+        serde_json::from_slice::<Value>(
+            &fs::read(root.join(".staging/initializing.json")).unwrap(),
+        )
+        .unwrap()["store"]
+            .clone(),
+    )
+    .unwrap();
     keys.failing.store(false, Ordering::SeqCst);
     let store = saucepan::core::Store::create_with_keys(&root, &keys).unwrap();
     assert_eq!(
@@ -375,6 +409,13 @@ fn store_initialization_retry_reuses_reserved_identity_after_key_service_failure
 
 #[test]
 fn unsigned_legacy_roots_are_rejected_unchanged_and_stale_snapshots_cannot_publish() {
+    for mode in [IntegrityMode::Basic, IntegrityMode::Keyring] {
+        unsigned_legacy_roots_are_rejected_unchanged_and_stale_snapshots_cannot_publish_in(mode);
+    }
+}
+fn unsigned_legacy_roots_are_rejected_unchanged_and_stale_snapshots_cannot_publish_in(
+    mode: IntegrityMode,
+) {
     let tmp = tempfile::tempdir().unwrap();
     root(tmp.path());
     fs::write(tmp.path().join("index/legacy.json"), b"old-format").unwrap();
@@ -384,7 +425,10 @@ fn unsigned_legacy_roots_are_rejected_unchanged_and_stale_snapshots_cannot_publi
         ErrorCode::UnsupportedStore
     );
     assert_eq!(
-        Metadata::initialize(tmp.path(), &keys).err().unwrap().code,
+        Metadata::initialize_with_mode(tmp.path(), mode, &keys)
+            .err()
+            .unwrap()
+            .code,
         ErrorCode::UnsupportedStore
     );
     assert!(!tmp.path().join("root.json").exists());
@@ -393,7 +437,7 @@ fn unsigned_legacy_roots_are_rejected_unchanged_and_stale_snapshots_cannot_publi
         b"old-format"
     );
     fs::remove_file(tmp.path().join("index/legacy.json")).unwrap();
-    let metadata = Metadata::initialize(tmp.path(), &keys).unwrap();
+    let metadata = Metadata::initialize_with_mode(tmp.path(), mode, &keys).unwrap();
     let old = metadata.snapshot().unwrap();
     metadata.publish(&old, vec![], vec![]).unwrap();
     assert_eq!(
@@ -416,4 +460,137 @@ fn native_keyring_round_trip_and_cleanup() {
     result.unwrap();
     cleanup.unwrap();
     assert!(keys.load(store).unwrap().is_none());
+}
+fn test_auth(mode: IntegrityMode, store: Uuid, keys: &dyn KeyProvider) -> Authenticator {
+    match mode {
+        IntegrityMode::Basic => Authenticator::basic(store),
+        IntegrityMode::Keyring => Authenticator::provision(store, keys).unwrap(),
+    }
+}
+
+struct NoCustody;
+impl KeyProvider for NoCustody {
+    fn load(&self, _: Uuid) -> Result<Option<Secret>> {
+        panic!("unexpected key load")
+    }
+    fn insert(&self, _: Uuid, _: &Secret) -> Result<()> {
+        panic!("unexpected key insertion")
+    }
+}
+
+#[test]
+fn basic_initialization_open_and_recovery_never_access_custody() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = saucepan::core::Store::create_with_integrity_and_keys(
+        tmp.path(),
+        IntegrityMode::Basic,
+        &NoCustody,
+    )
+    .unwrap();
+    assert_eq!(store.integrity_mode(), IntegrityMode::Basic);
+    let bytes = fs::read(tmp.path().join("root.json")).unwrap();
+    let reopened = saucepan::core::Store::open_with_keys(tmp.path(), &NoCustody).unwrap();
+    assert_eq!(reopened.integrity_mode(), IntegrityMode::Basic);
+    assert_eq!(fs::read(tmp.path().join("root.json")).unwrap(), bytes);
+    let reserved = Uuid::new_v4();
+    let fresh = tempfile::tempdir().unwrap();
+    root(fresh.path());
+    fs::write(
+        fresh.path().join(".staging/initializing.json"),
+        serde_json::to_vec(&json!({"store":reserved,"mode":"basic"})).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        Metadata::initialize_with_mode(fresh.path(), IntegrityMode::Keyring, &NoCustody)
+            .err()
+            .unwrap()
+            .code,
+        ErrorCode::InvalidRequest
+    );
+    let basic =
+        Metadata::initialize_with_mode(fresh.path(), IntegrityMode::Basic, &NoCustody).unwrap();
+    assert_eq!(basic.authenticator().store(), reserved);
+    assert_eq!(
+        Metadata::initialize_with_mode(fresh.path(), IntegrityMode::Keyring, &NoCustody)
+            .err()
+            .unwrap()
+            .code,
+        ErrorCode::InvalidRequest
+    );
+}
+
+#[test]
+fn codecs_reject_cross_mode_records_and_journals_without_effects() {
+    for mode in [IntegrityMode::Basic, IntegrityMode::Keyring] {
+        let tmp = tempfile::tempdir().unwrap();
+        root(tmp.path());
+        let keys = MemoryKeys::default();
+        let metadata = Metadata::initialize_with_mode(tmp.path(), mode, &keys).unwrap();
+        let store = metadata.authenticator().store();
+        let other = if mode == IntegrityMode::Basic {
+            Authenticator::provision(store, &keys).unwrap()
+        } else {
+            Authenticator::basic(store)
+        };
+        let identity = Identity::catalog();
+        let record = other.sign(identity, 0, &json!({})).unwrap();
+        assert!(
+            metadata
+                .authenticator()
+                .verify::<Value>(identity, &record)
+                .is_err()
+        );
+        let pending = tmp.path().join(".staging/metadata-transaction.json");
+        fs::write(
+            &pending,
+            other
+                .sign(id(Kind::Transaction, None, None), 1, &json!({}))
+                .unwrap(),
+        )
+        .unwrap();
+        let before = fs::read(tmp.path().join("root.json")).unwrap();
+        assert_eq!(
+            metadata.recover().unwrap_err().code,
+            ErrorCode::IntegrityError
+        );
+        assert_eq!(before, fs::read(tmp.path().join("root.json")).unwrap());
+        assert!(pending.exists());
+    }
+}
+
+#[test]
+fn basic_checksum_has_independent_framed_digest_and_rejects_unknown_contracts() {
+    use sha2::{Digest, Sha256};
+    let store = Uuid::nil();
+    let identity = Identity::catalog();
+    let auth = Authenticator::basic(store);
+    let bytes = auth.sign(identity, 7, &json!("hello")).unwrap();
+    let envelope: Value = serde_json::from_slice(&bytes).unwrap();
+    let header = format!(
+        "[\"saucepan.checksummed-record\",\"basic\",\"{store}\",{{\"kind\":\"catalog\",\"owner\":null,\"member\":null}},7]"
+    );
+    let mut input = Vec::new();
+    for field in [
+        b"saucepan/checksummed-record".as_slice(),
+        header.as_bytes(),
+        b"\"hello\"",
+    ] {
+        input.extend_from_slice(&(field.len() as u64).to_be_bytes());
+        input.extend_from_slice(field);
+    }
+    let expected: [u8; 32] = Sha256::digest(input).into();
+    assert_eq!(envelope["checksum"], json!(expected));
+    for field in ["mode", "contract"] {
+        let mut changed = envelope.clone();
+        changed[field] = json!("unknown");
+        assert_eq!(
+            Authenticator::root_hint(&serde_json::to_vec(&changed).unwrap())
+                .unwrap_err()
+                .code,
+            ErrorCode::UnsupportedStore
+        );
+    }
+    let oversized = vec![b' '; saucepan::core::claim::security::MAX_RECORD_BYTES + 1];
+    assert!(Authenticator::root_hint(&oversized).is_err());
+    assert!(auth.verify::<Value>(identity, &oversized).is_err());
 }
