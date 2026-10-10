@@ -40,12 +40,12 @@ An interrupted activation SHALL recover a complete old or new binding, never a p
 - **THEN** future shim launches resolve that entry and its active protection applies
 
 ### Requirement: The built application completes the simulated installation flow
-Acceptance verification SHALL use the actual built Saucepan executable and built shim with an explicit repository-local simulated root. The initial reimplementation recipe SHALL support `mock/` directly; subsequent lifecycle regression runs SHALL preserve that existing installation and use a fresh isolated root, as defined in [lifecycle-recovery](../lifecycle-recovery/spec.md). The built application SHALL be packaged and acquired through the release provider using a controlled release fixture, indexed, claimed, activated with `useable_app`, and launched through the stable shim. Manually authored success records or stand-in executables SHALL NOT substitute for this flow. Test endpoint selection SHALL be explicit and SHALL NOT change the production provider default.
+Acceptance verification SHALL use the actual built Saucepan executable and built shim with an explicit isolated simulated root. The initial reimplementation used `mock/` directly; current regression runs SHALL preserve that historical installation and use a fresh root under the current authenticated contract, as defined in [lifecycle-recovery](../lifecycle-recovery/spec.md). The built application SHALL be packaged and acquired through the release provider using a controlled release fixture, indexed, claimed, activated with `useable_app`, and launched through the stable shim. Manually authored success records or stand-in executables SHALL NOT substitute for this flow. Test endpoint selection SHALL be explicit and SHALL NOT change the production provider default. Historical release-flow results SHALL NOT by themselves establish that this combined flow has been verified against a later store contract.
 
 #### Scenario: A local build is acquired and launched as a managed release
-- **WHEN** the initial mock recipe runs simulated bootstrap against a loopback release fixture serving the packaged local build
-- **THEN** `mock/store/<entry-uuid>/` contains executable bytes matching that build's digest, `mock/index/` records the entry and application binding, and `mock/bin/saucepan` or `mock/bin/saucepan.exe` launches that selected output
-- **AND** the resulting simulated installation remains available for inspection
+- **WHEN** a fresh-root recipe runs simulated bootstrap against a loopback release fixture serving the packaged local build
+- **THEN** that root's `store/<entry-uuid>/` contains executable bytes matching the build's digest, its `index/` and `claims/` record the output, application binding and claim, and its stable shim launches that selected output
+- **AND** verification records the resulting identities and preserves the historical `mock/` installation
 
 #### Scenario: The simulated installation updates between real builds
 - **WHEN** a second distinguishable build is acquired and activated through the same simulated flow

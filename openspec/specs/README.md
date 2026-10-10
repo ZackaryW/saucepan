@@ -1,7 +1,7 @@
 # Specification map
 
-These main specs describe the synchronized Saucepan baseline. Archived changes record
-historical decisions and are not alternative versions to inherit at runtime.
+These main specs describe the synchronized Saucepan baseline. [Archived changes](../changes/archive/README.md)
+record historical decisions and are not alternative versions to inherit at runtime.
 Adding a provider or policy type does not establish backward schema compatibility.
 
 The synchronized baseline includes authenticated application claim registries,
@@ -19,6 +19,9 @@ as the default. Current usage and verification:
 | Source discovery, visibility and CLI filters | [Source query](../../docs/source-query.md) |
 | Integrated acceptance and host limitations | [Verification](../../docs/claim-verification.md) |
 
+See the [documentation map](../../docs/README.md) for the distinction between
+current contracts, dated execution evidence and remaining verification gaps.
+
 This implementation accepts only its current authenticated contract. Historical
 references to inline claims or older record defaults do not imply a decoder or
 migration path for those stores.
@@ -33,7 +36,7 @@ Read overlapping requirements together using these responsibility boundaries:
 | [output-acquisition](output-acquisition/spec.md) | Immutable output identity, acquisition and reuse |
 | [output-policies](output-policies/spec.md) | Retention demand, protection and reclaim eligibility |
 | [application-claims](application-claims/spec.md) | Request-bearing associations, context metadata and primitive claim operations |
-| [claim-query](claim-query/spec.md) | Application-scoped context matching and consistent metadata snapshots |
+| [claim-query](claim-query/spec.md) | Application-scoped context matching, public claim discovery and consistent snapshots |
 | [claim-recovery](claim-recovery/spec.md) | Explicit unavailable-content recovery and exact restoration |
 | [claim-security](claim-security/spec.md) | Record integrity, optional credentials and application access policies |
 | [consumer-errors](consumer-errors/spec.md) | Stable native and CLI failure codes and structured diagnostics |
@@ -47,6 +50,18 @@ Read overlapping requirements together using these responsibility boundaries:
 | [lease-marker-cleanup](lease-marker-cleanup/spec.md) | Process-marker creation and safe stale-marker cleanup |
 
 ## Shared meanings
+
+Root selection is owned by store-layout: direct CLI use defaults to the home
+`.saucepan`, explicit overrides win, and native callers and managed Saucepan
+shims retain explicit roots. Examples using an explicit root do not make it a
+required CLI flag.
+
+Source queries search registered definitions, without claim scope. Claim queries
+search owned context and optionally an exact scope; anonymous claim discovery
+requires public scope exposure. Public source visibility is a separate setting.
+Credentials are opt-in and never replace source, scope or action permissions.
+App sessions enforce those permissions; trusted store-wide administration is a
+separate boundary, not a fallback after a denied application call.
 
 An application claim associates a request with an output; it is not a deletion
 pin. An active binding selects what a managed launcher runs. A resource lease

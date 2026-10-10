@@ -6,10 +6,14 @@ for the current implementation and runnable acceptance commands.
 
 Verified on Windows x86_64 on 2026-10-08. The coordinated change covers managed
 install, update, rollback, launcher ownership/maintenance, uninstall and explicit
-reconciliation. Earlier changes remain unarchived; planning artifacts are kept
-outside implementation commits.
+reconciliation. At that checkpoint, earlier changes were unarchived and planning
+artifacts were kept outside implementation commits. They have since been synced
+and archived; use [current specs](../openspec/specs/README.md) for the baseline.
 
 ## Executed checks
+
+These commands record that historical run. The Python acceptance harnesses below
+use earlier record contracts; they are not current-store setup instructions.
 
 ```powershell
 cargo fmt --all -- --check

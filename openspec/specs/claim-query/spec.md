@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Find an application's existing claims by caller-defined context without changing resource selection, creating claims, or retaining resource lifetimes.
+Find existing claims by caller-defined context through an application-scoped query or explicitly public discovery, without changing selections or retaining resource lifetimes.
 
 ## Requirements
 
@@ -56,7 +56,7 @@ Queries SHALL return the selected application UUID, its observed revision, and a
 - **THEN** its view remains in the result with reclaimed availability
 
 ### Requirement: Search does not mutate selections or grant a resource lifetime
-The native and CLI query interfaces SHALL implement the same contract. The CLI SHALL accept `query-claims FILE` with an explicit store root and a JSON object containing `app` and `where`, and SHALL emit one JSON result on stdout with exit zero for valid queries, including zero matches. Invalid input or store errors SHALL exit nonzero without a successful result. Queries SHALL NOT acquire, refresh, probe, hash payloads, create claims, update application revisions, or retain leases. Existing store-open transaction recovery SHALL remain permitted. Query results SHALL NOT be authentication grants. Mutation and leased access SHALL continue requiring concrete UUIDs; searching followed by access SHALL NOT promise an atomic search-and-lease operation.
+The native and CLI query interfaces SHALL implement the same contract. The CLI SHALL accept `query-claims FILE` with a JSON object containing `app`, `where`, and optional `scope`, using the default or overridden root defined in [store-layout](../store-layout/spec.md). It SHALL emit one JSON result on stdout with exit zero for valid queries, including zero matches. Invalid input or store errors SHALL exit nonzero without a successful result. Queries SHALL NOT acquire, refresh, probe, hash payloads, create claims, update application revisions, or retain leases. Existing store-open transaction recovery SHALL remain permitted. Query results SHALL NOT be authentication grants. Mutation and leased access SHALL continue requiring concrete UUIDs; searching followed by access SHALL NOT promise an atomic search-and-lease operation.
 
 #### Scenario: Search remains independent of network and payload access
 - **WHEN** a valid query runs while a source is unreachable or its discovery cache is expired

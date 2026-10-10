@@ -4,11 +4,11 @@ This is historical checkpoint evidence. Its earlier record layout and scripts do
 not define current schema compatibility. Use [claim registry verification](claim-verification.md)
 for the current implementation and runnable acceptance commands.
 
-For the current coordinated lifecycle, use `uv run --no-project python scripts/lifecycle_acceptance.py`. It installs two real release builds in a fresh `target/lifecycle-acceptance/<uuid>/root`, covers update failure, rollback, launcher maintenance and recoverable uninstall, and compares every existing mock file's digest. See [lifecycle verification](lifecycle-verification.md). The older `mock` recipe below intentionally writes `mock`; it was not rerun for the lifecycle change. Do not run an old manager against newly written lifecycle metadata.
+For current authenticated-store acceptance, use `cargo test --offline --test claim_acceptance`. It uses real built binaries and local source inputs in a disposable root while preserving `mock/`. It is not a rerun of the historical two-build release recipe. See the [documentation map](README.md) for that evidence gap. The historical `scripts/lifecycle_acceptance.py` run is recorded in [lifecycle verification](lifecycle-verification.md); its earlier-layout harness is not a current setup recipe.
 
-Run `uv run --no-project python scripts/acceptance.py` (or Python 3.11+ directly) from the repository. The harness builds actual release executables with build IDs `acceptance-a` and `acceptance-b`, packages them as ZIP assets, and serves them through an explicit loopback GitHub-compatible fixture. It uses the real provider and public CLI for every source, acquisition, claim, activation, and reclaim operation.
+The original run used `uv run --no-project python scripts/acceptance.py` from the repository. That harness built actual release executables with build IDs `acceptance-a` and `acceptance-b`, packaged them as ZIP assets, and served them through an explicit loopback GitHub-compatible fixture. It used the provider and CLI of that checkpoint for every source, acquisition, claim, activation, and reclaim operation. Do not rerun this old-layout recipe against the preserved mock or a current store.
 
-The target is `mock/` itself. The harness inspects and reuses an existing compatible root; it never recursively wipes it. Each run adds a distinct fixture source and keeps prior provenance. Recipes and packaged builds live in `target/acceptance/<run-uuid>/`. `target/acceptance/latest.json` records the latest successful run, build digests, UUIDs, process results, and active binding. Both `target/` and `mock/` are ignored by Git.
+The historical target was `mock/` itself. The harness inspected and reused a root compatible with that build; it did not recursively wipe it. Each run added a distinct fixture source and kept prior provenance. Recipes and packaged builds lived in `target/acceptance/<run-uuid>/`. `target/acceptance/latest.json` recorded the latest successful run at that checkpoint. These ignored local reports may be absent from a fresh checkout. Both `target/` and `mock/` are ignored by Git. The layout below is historical; current claims live separately under `claims/<app-uuid>/`.
 
 ```text
 mock/
@@ -24,7 +24,7 @@ mock/
 
 On Unix executable names omit `.exe`. The harness checks exact executable SHA-256 against each packaged local build. A real build-A process keeps running through activation of build B. It checks rollback, a non-executable failed candidate, non-sliding 24-hour discovery, explicit failed-check/stale behavior, independent app claims, duplicate/reuse policies, eleven-entry reclaim, and reclaimed-item reacquisition. The original output UUID remains a tombstone; reacquisition selects another live entry.
 
-Inspect the installation on Windows:
+The historical installation was inspected on Windows using its own retained binary:
 
 ```powershell
 $root = (Resolve-Path ./mock).Path
@@ -36,7 +36,7 @@ $report = Get-Content ./target/acceptance/latest.json -Raw | ConvertFrom-Json
 
 The fixture HTTP server exists only during the harness run. Its cached discovery can still be inspected afterward, and the installed executable runs offline. A new live acquisition after expiry needs a running fixture or a production source. Rerunning the harness creates a fresh fixture source instead of changing the production GitHub API default.
 
-For a real release definition, register `github_release`, save its UUID in a request with explicit ZIP/raw format, platform filter, `bin`, and `useable_app` protection, then run:
+For current real-release usage, choose a freshly initialized root as `$root` and follow [application lifecycle](application-lifecycle.md). Register `github_release` and save its UUID in a request with ZIP/raw format, platform selection, `bin`, and `useable_app` protection. The commands are:
 
 ```powershell
 saucepan --root $root bootstrap request.json ./target/release/saucepan-shim.exe
@@ -52,17 +52,17 @@ Windows x86_64 execution is verified. Linux and macOS code paths have not been e
 
 ## Isolated resource-access acceptance
 
-Run `uv run --no-project python scripts/access_acceptance.py`. This builds a
-fresh application, shim, and external consumer, then installs under a unique
-`target/access-acceptance/<uuid>/root`. It does not change the existing mock
+The historical run used `uv run --no-project python scripts/access_acceptance.py`.
+It built a fresh application, shim, and external consumer, then installed under a
+unique `target/access-acceptance/<uuid>/root`. It did not change the existing mock
 installation. The report records binary digests, a fresh shim launch, lightweight
 lookup, explicit corruption detection, native claim access, leased consumption
 after claim release and retention, and subsequent reclaim. Per-test payload IO
 observations are saved alongside the report; these measure the shared native
 lookup and pre-spawn boundary, not a system-wide trace of the release binary.
 
-The latest result is `target/access-acceptance/latest.json`. Use
-`uv run --no-project python scripts/verify_windows_console.py` on Windows to
+That checkpoint's latest result was `target/access-acceptance/latest.json`.
+The recorded run also used `scripts/verify_windows_console.py` on Windows to
 exercise hidden-console interruption for both shims and leased `run` consumers.
 Linux/macOS process behavior requires execution on those hosts; compilation is
 not evidence of runtime parity.

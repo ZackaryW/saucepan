@@ -14,7 +14,7 @@ successful old-process inherited-marker protection and unchanged mock launchers.
 The old reader starts against an isolated copy of its original record shape;
 the recipe restores current metadata after the target has started. This is
 process-lifetime compatibility, not old-writer/new-metadata compatibility.
-See [lifecycle verification](lifecycle-verification.md) for current whole-change
+See [lifecycle verification](lifecycle-verification.md) for that checkpoint's whole-change
 evidence. All counts and binary identities in the sections below are historical.
 
 ## Application deactivation follow-up
@@ -138,5 +138,6 @@ this host. The earlier Linux cross-check was blocked by the missing
 Final diff review found no changes to persisted requests, source/index/policy
 schemas, source providers, dependencies, retention rules, SDKs, or production
 root selection. The intentional behavior change is metadata-default access;
-full verification remains explicit and available. Planning artifacts stay local
-under `openspec/changes`; the original baseline and this change are not archived.
+full verification remains explicit and available. At that checkpoint planning
+artifacts remained local under `openspec/changes`; the baseline and this change
+have since been synced and archived. See [current specs](../openspec/specs/README.md).

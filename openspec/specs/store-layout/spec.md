@@ -37,10 +37,10 @@ Saucepan SHALL use a newly defined data contract without inheriting the old FORM
 - **THEN** it reports that a separate new-format root is required and leaves the legacy store unchanged
 
 ### Requirement: An explicit root isolates the full application flow
-Saucepan SHALL accept an explicit root for initialization and subsequent operations, and SHALL preserve that root through shim launch and child application execution. Explicit-root operations SHALL NOT silently read or mutate the production root. The repository's `mock/` directory SHALL be usable directly as a simulated `.saucepan` root without an additional nested `.saucepan` directory.
+Saucepan SHALL accept an explicit root for initialization and subsequent operations, and SHALL preserve that root through its managed Saucepan shim and child Saucepan execution. Explicit-root operations SHALL NOT silently read or mutate the production root. A fresh simulated root SHALL be usable directly without an additional nested `.saucepan` directory. The repository's existing `mock/` is historical evidence under an earlier contract; current acceptance SHALL preserve it and use a separate fresh root rather than treating explicit root selection as migration permission.
 
 #### Scenario: The simulated installation launches its managed executable
-- **WHEN** the caller invokes the shim from `mock/bin/` with the explicit mock root
+- **WHEN** the caller invokes the shim from a fresh simulated root's `bin/` directory with that explicit root
 - **THEN** source, index, store, claim, activation, and reclaim operations resolve within that root
 - **AND** the user's production installation is not used as a fallback
 

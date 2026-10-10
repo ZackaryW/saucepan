@@ -1,5 +1,10 @@
 # Application lifecycle
 
+CLI commands use the user-home `.saucepan` store by default. Examples below use
+`--root ROOT` to keep a selected installation isolated. Commands identifying an
+application apply its registered policies; supply `--credential-file FILE` when
+that app requires proof. Global reconciliation is trusted local maintenance.
+
 Application metadata includes readiness/removing state, a monotonic mutation
 revision and an owned-shim list. Only the current authenticated store contract is
 supported; earlier layouts are rejected without migration. Removing applications reject claims,
@@ -19,7 +24,10 @@ saucepan --root ROOT operations --app APP_UUID
 saucepan --root ROOT reconcile --operation OPERATION_UUID
 ```
 
-Inspection does not resume work. Reconciliation reports a JSON list of operation
+Inspection does not resume work. `operations --app APP_UUID` is app-scoped and
+requires a live registration and its applicable credentials/policies. After
+uninstall, use administrative `operations` without `--app` to inspect retained
+receipts. Reconciliation reports a JSON list of operation
 results; all complete results exit 0, while pending/failure/conflict results exit
 2. Unknown operation identifiers are errors. Interrupted preparation requires
 retrying its original command so candidate validation is performed again.

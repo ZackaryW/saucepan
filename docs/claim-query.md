@@ -4,14 +4,17 @@ Context is a plain map of caller-defined string labels on a claim. It never
 changes output identity, deduplication, source refresh, or retention. Two projects
 can have distinct claims and contexts while sharing the same cached output.
 
-Native callers use `Store::acquire_for_with_context(app, scope, request, context, options)`
-to ensure a scoped claim and its labels together. `acquire_for` supplies empty
-context. Failed acquisition does not publish partial labels. A compatible retry
+Native app callers use `session.ensure(&EnsureRequest, &AcquireOptions)` to apply
+registered defaults, or `session.acquire(scope, request, context, options)` for a
+complete acquisition request. The lower-level
+`Store::acquire_for_with_context(app, scope, request, context, options)` is also
+available without caller proof; `acquire_for` supplies empty context. Those
+app-specific Store calls still enforce policies and fail if credentials are
+required. Failed acquisition does not publish partial labels. A compatible retry
 in the same explicit scope returns the existing claim; changed context requires
 revision-checked replacement. Different scopes retain independent ownership.
-Prefer `AppSession::ensure` to apply registered defaults for omitted policies.
 
-`Store::set_claim_context(app, claim, context, expected_revision)` replaces the
+`session.set_context(claim, context, expected_revision)` replaces the
 whole map and returns the committed claim. Read the application's revision first.
 A stale revision fails, including for a replacement equal to current labels.
 An equal replacement at the expected revision is a no-op; `{}` clears labels.
@@ -35,12 +38,16 @@ bootstrap start with empty context; use explicit replacement to label them.
 ## Native queries
 
 `core::query` exports `ClaimQuery`, `Condition`, `Operator`, and `QueryResult`.
-`Store::query_claims(&query)` reads one application's filtered claims under the
-metadata lock. The JSON form is:
+Create `Store::session(app, optional_credential)` and call `session.query(&query)`
+to read that application's permitted, filtered claims under the metadata lock.
+The query's app UUID must match the session. Direct `Store::query_claims` is
+available for credential-free apps and still applies their policies. The JSON
+form is:
 
 ```json
 {
   "app": "00000000-0000-4000-8000-000000000001",
+  "scope": "project-a",
   "where": [
     {"key": "project", "op": "eq", "value": "C:/work/project-a"},
     {"key": "source.alias", "op": "glob", "value": "skills-*"}
@@ -49,13 +56,15 @@ metadata lock. The JSON form is:
 ```
 
 All conditions must match. A missing key fails even `glob: "*"`. An explicit
-empty `where` returns all claims visible through the app's source filter. Up to
+empty `where` returns all claims permitted by the app's access policies, optional
+exact scope and source view filter. Omit `scope` to search all permitted scopes
+within that app. Credentials are checked even when no claims match. Up to
 64 conditions are allowed; key/value limits match context. Unknown fields,
 operators, missing required fields, and malformed patterns fail even when there
 are no candidate claims. A missing/removing/non-application UUID is an error.
 
 Results contain `app`, `revision`, and `claims` (the existing claim/availability
-views, now including context). Every match is returned in UUID order, including
+views, including each claim's scope and context). Every match is returned in UUID order, including
 duplicate labels and unavailable outputs. Zero matches succeeds with an empty
 array. Referenced output metadata corruption fails the query. Results do not
 automatically follow later edits.
@@ -81,7 +90,7 @@ provide neither authentication nor standing ownership of future matches.
 
 ## CLI flow
 
-All commands require `--root`. After registering an application and creating a
+Commands default to the user-home `.saucepan` store. After registering an application and creating a
 request as described in the README, use these PowerShell commands. `$root` is
 your explicit test store path and `$app` is the registered application's UUID.
 
@@ -96,6 +105,7 @@ cargo run -- --root $root set-claim-context $app $a.claim.uuid examples/claim-qu
 cargo run -- --root $root query-claims query.json
 ```
 
+The example query file omits `scope`, so it searches both permitted scopes.
 The first search returns project A's claim. Replacement labels it as project B;
 the last search succeeds with no matches. Searching project B then returns both
 claims. With identical inputs and reuse policy, their output UUIDs are equal.
@@ -105,6 +115,13 @@ Successful queries print one JSON object and exit zero, including zero matches.
 Invalid input, missing applications, and revision conflicts exit nonzero with
 an error on stderr. The JSON query file contains the exact app UUID; there is
 no second application argument and no wildcard update/release operation.
+
+For a credential-protected app, add `--credential-file FILE`. An optional
+`--as-app` must agree with the query's app UUID. Anonymous `discover-claims FILE`
+instead accepts `{"where":[]}` with an optional exact `scope` and returns only
+explicitly public, permitted, credential-free claims. It neither publishes
+source definitions nor grants acquisition rights; [source queries](source-query.md)
+have a separate visibility setting and do not filter by claim scope.
 
 `cargo test --test query_cli` runs this acquisition/search/replacement flow using
 the example JSON files and a fresh temporary root, also checking native parity,

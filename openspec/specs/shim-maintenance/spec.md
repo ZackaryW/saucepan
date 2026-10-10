@@ -40,7 +40,7 @@ Uninstall cleanup SHALL delete only expected owned regular files after recheckin
 - **THEN** ordinary reclaim continues to defer that output until the final lease ends
 
 ### Requirement: Existing unregistered shims require explicit adoption or exclusion
-Current launchers SHALL read existing sidecar configurations for ready applications with an active binding; sidecar readability SHALL NOT imply registered file ownership or compatibility of old binaries with newly written app records. Destructive maintenance SHALL NOT infer ownership solely from filenames or sidecar app UUIDs. Explicit adoption SHALL verify the supplied expected launcher build and matching sidecar before registering ownership. Uninstall encountering a recognizable unregistered pair SHALL require adoption or an explicit choice to leave it unmanaged, and report any files left behind.
+Current launchers SHALL require a ready application, an active binding, and authenticated ownership matching the launcher and sidecar digests before execution, as defined in [claim-security](../claim-security/spec.md). Readable sidecar configuration alone SHALL NOT authorize launch, establish ownership, or imply compatibility of old binaries with newly written app records. Destructive maintenance SHALL NOT infer ownership solely from filenames or sidecar app UUIDs. Explicit adoption SHALL verify the supplied expected launcher build and matching sidecar before registering ownership. Uninstall encountering a recognizable unregistered pair SHALL require adoption or an explicit choice to leave it unmanaged, and report any files left behind.
 
 #### Scenario: Adopt a copied existing shim
 - **WHEN** an existing regular launcher exactly matches the supplied build and its sidecar identifies the selected live app

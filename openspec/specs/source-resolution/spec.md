@@ -45,7 +45,7 @@ Git and `github_repo` sources SHALL maintain reusable repository data separately
 - **THEN** the new output records that exact commit and the previous output remains unchanged
 
 ### Requirement: URL and local sources use the same output contract
-Saucepan SHALL support HTTP(S) file/ZIP and local file/directory inputs under the new acquisition contract. URL acquisitions SHALL record actual content identity; local acquisitions SHALL inspect the local input on use without applying a remote-discovery TTL. Raw download and supported extraction modes SHALL be explicit; unsupported formats SHALL fail clearly.
+Saucepan SHALL support HTTP(S) file/ZIP and local file/directory inputs under the current acquisition contract. URL acquisitions SHALL record actual content identity; acquisition preparation from a local source SHALL inspect the input without applying a remote-discovery TTL. Ensuring an already available claim under `reuse` SHALL retain its selected output without implicitly preparing a new acquisition, as defined in [application-claims](../application-claims/spec.md). Raw download and supported extraction modes SHALL be explicit; unsupported formats SHALL fail clearly.
 
 #### Scenario: Local content changes
 - **WHEN** a local input is changed between acquisitions

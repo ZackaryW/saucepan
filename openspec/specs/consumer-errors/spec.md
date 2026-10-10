@@ -9,6 +9,8 @@ Give Rust library and command-line consumers stable failure identities without r
 ### Requirement: Consumer failures have stable codes
 Public failures SHALL expose a stable code, human-readable message, and bounded structured details. The contract SHALL distinguish `invalid_request`, `authentication_required`, `authentication_failed`, `key_unavailable`, `integrity_error`, `unknown_application`, `unknown_claim`, `unknown_output`, `content_unavailable`, `exact_content_unavailable`, `revision_conflict`, `claim_context_conflict`, `claim_overlap`, `policy_conflict`, `access_denied`, `source_error`, `io_error`, and `unsupported_store`. Equivalent Rust library and CLI failures SHALL have the same code; clients SHALL NOT need English substring matching. Error details SHALL redact credentials and protected metadata for unauthorized callers. Authentication SHALL precede disclosures about a protected application's private claims.
 
+Unclassified failures SHALL use `internal_error` with a generic message rather than exposing arbitrary internal error text.
+
 #### Scenario: A consumer handles reclaimed content
 - **WHEN** an authorized consumer attempts to lease an unavailable claimed output
 - **THEN** it can branch on `content_unavailable` independently of the message wording

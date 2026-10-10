@@ -7,7 +7,7 @@ Provide efficient exact-output lookup and explicit resource lifetimes so applica
 ## Requirements
 
 ### Requirement: Bare paths are addresses without a retained lifetime
-The existing `path ENTRY_UUID` command SHALL continue to return an absolute directory within the explicitly selected store. It SHALL resolve the exact output UUID and report the selected verification mode. It SHALL NOT select a newer entry, acquire content, refresh a source, create a claim, or retain protection after the operation ends. The native API and documentation SHALL distinguish bare lookup from leased access and explain that reclaim can invalidate an unleased returned path.
+The `path ENTRY_UUID` command SHALL return an absolute directory within the store selected by the default or overridden root in [store-layout](../store-layout/spec.md). It SHALL resolve the exact output UUID and report the selected verification mode. It SHALL NOT select a newer entry, acquire content, refresh a source, create a claim, or retain protection after the operation ends. The native API and documentation SHALL distinguish bare lookup from leased access and explain that reclaim can invalidate an unleased returned path.
 
 #### Scenario: Reading an old entry after a newer acquisition
 - **WHEN** a caller resolves an older ready entry UUID after a newer version has been acquired
@@ -42,7 +42,7 @@ A caller SHALL be able to acquire a resource lease using an app UUID and claim U
 - **THEN** a later reclaim can delete its content without changing retained claim provenance
 
 ### Requirement: External processes have a leased resource workflow
-The CLI SHALL support `run ENTRY_UUID [--verification metadata|full] -- PROGRAM ARG...` with an explicit store root. It SHALL resolve and protect the entry before starting the program, set `SAUCEPAN_RESOURCE_DIR` to the resolved directory in the child's environment, preserve literal arguments and inherited standard streams, and propagate exit status and supported platform interruption. It SHALL NOT expand a shell command, change the working directory implicitly, or inject Saucepan arguments into arbitrary programs. A missing program or failed validation SHALL leave no live orphan lease.
+The CLI SHALL support `run ENTRY_UUID [--verification metadata|full] -- PROGRAM ARG...` using the default or overridden root in [store-layout](../store-layout/spec.md). It SHALL resolve and protect the entry before starting the program, set `SAUCEPAN_RESOURCE_DIR` to the resolved directory in the child's environment, preserve literal arguments and inherited standard streams, and propagate exit status and supported platform interruption. It SHALL NOT expand a shell command, change the working directory implicitly, or inject Saucepan arguments into arbitrary programs. A missing program or failed validation SHALL leave no live orphan lease.
 
 #### Scenario: A tool consumes data while reclaim runs
 - **WHEN** a caller starts a tool through `run` and the tool reads a file through `SAUCEPAN_RESOURCE_DIR`

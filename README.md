@@ -2,6 +2,8 @@
 
 Rust source acquisition with separate source working data, immutable outputs, and application claims. This is a new implementation; legacy stores and protocols are not migrated.
 
+See the [documentation map](docs/README.md) for current usage, specification ownership, and dated verification evidence.
+
 Commands default to `%USERPROFILE%\.saucepan` on Windows or `~/.saucepan` on Unix. Initialize it once, then query publicly discoverable sources without an app UUID or query file:
 
 ```powershell
@@ -61,7 +63,7 @@ Run `cargo test --all-targets` for the currently implemented contracts and porta
 For release assets, register `{"type":"github_release","repo":"owner/project"}` and use a request with `selector: {"type":"latest_stable"}` (or `{"type":"tag","tag":"v1.0"}`). A raw executable selection is:
 
 ```json
-{"format":"raw","filters":[{"platform":{"os":"windows","arch":"x86_64"},"asset_patterns":["*-windows-x64.exe"]}],"bin":["tool.exe"],"filename":"tool.exe"}
+{"format":"raw","platform":{"os":"windows","arch":"x86_64"},"filters":[{"platform":{"os":"windows","arch":"x86_64"},"asset_patterns":["*-windows-x64.exe"]}],"bin":["tool.exe"],"filename":"tool.exe"}
 ```
 
 Put that object in the request's `selection`. For ZIP assets use `format: "zip"` with optional `folder` and binary-relative paths. Multiple matches in the winning filter are errors. URL sources (`{"type":"url","url":"https://example.com/tool.zip"}`) use selector `{"type":"url"}`, explicit format, and `filename`.
@@ -74,7 +76,7 @@ Attach project or alias labels with `acquire request.json --app APP_UUID --scope
 
 Every acquisition evaluates latest-ten retention for its source/selector/selection item. `policies.eviction` can override the positive count. Coexisting attached counts use the maximum; claims preserve their policy demand but ordinary claims do not prevent reclaim. Reuse preserves creation order. `reclaim` reports effective counts, deferred protected/in-use entries, and failed deletions as pending. Provenance remains after content deletion. `path` refuses unavailable entries; `reacquire ENTRY_UUID` gets a live output, while `update-claim` also moves the application's claim.
 
-Managed executables declare `selection.bin`, a matching `selection.platform`, and `policies.protection: {"type":"useable_app"}`. Save a probe such as `{"args":["--version"],"stdout_contains":"saucepan ","timeout_seconds":10}`. Run `activate APP_UUID ENTRY_UUID saucepan.exe probe.json`, then `install-shim APP_UUID saucepan.exe PATH_TO_BUILT_SHIM --saucepan`. Activation validates and probes before atomically switching the binding. Downloading alone never switches it. Activating a retained older entry performs rollback. Routine updates leave the stable shim untouched; launcher replacement is a separate maintenance operation.
+Managed executables declare `selection.bin`, a matching `selection.platform`, and `policies.protection: {"type":"useable_app"}`. First ensure or acquire the executable as a claim owned by the app in an allowed scope. Save a probe such as `{"args":["--version"],"stdout_contains":"saucepan ","timeout_seconds":10}`. Run `activate APP_UUID ENTRY_UUID saucepan.exe probe.json`, then `install-shim APP_UUID saucepan.exe PATH_TO_BUILT_SHIM --saucepan`. Activation validates and probes before atomically switching the binding. Downloading alone never switches it. Activating a retained older entry accessible through an authorized claim performs binding-only rollback; use managed `rollback` for the coordinated claim/binding transition below. Routine updates leave the stable shim untouched; launcher replacement is a separate maintenance operation.
 
 Active useable_app bindings and native execution leases can exceed the retention count. The dedicated shim inherits a lifetime handle into its target: Windows checks sharing conflicts, Unix checks the inherited file lock. Launcher death does not make a still-running target reclaimable. Targets must preserve the inherited lifetime handle; intentionally closing inherited handles or daemonizing outside this lifetime contract is unsupported. Windows console interruption reaches the target's console group; Unix replaces the shim with the target, preserving normal signals. Supported execution evidence is recorded separately for each OS.
 
@@ -82,9 +84,9 @@ Use `deactivate APP_UUID` to clear an application's active binding. Claims, cach
 
 For a coordinated application install, use `install NAME request.json probe.json PATH_TO_BUILT_SHIM --shim NAME.exe --scope APPLICATION_KEY`. `update-app APP_UUID CLAIM_UUID probe.json` and `rollback APP_UUID CLAIM_UUID ENTRY_UUID probe.json` validate the candidate before committing the claim and binding together. Failed validation preserves both selections; an intervening app mutation reports a conflict. The primitive `activate` and `update-claim` commands retain their separate meanings.
 
-Saucepan's own release request can be installed with `bootstrap request.json PATH_TO_BUILT_SHIM`; `self-update APP_UUID CLAIM_UUID` uses the same coordinated update flow. Multi-step commands return an operation record with `operation`, `app`, `claim`, `candidate`, `status` and pending reasons. Retrying with the same `--operation UUID` and inputs resumes work or returns its recorded result. Pending, failed and conflicted results exit 2. All commands require `--root`; Saucepan's shim propagates its root and rejects a conflicting one.
+Saucepan's own release request can be installed with `bootstrap request.json PATH_TO_BUILT_SHIM`; `self-update APP_UUID CLAIM_UUID` uses the same coordinated update flow. Multi-step commands return an operation record with `operation`, `app`, `claim`, `candidate`, `status` and pending reasons. Retrying with the same `--operation UUID` and inputs resumes work or returns its recorded result. Pending, failed and conflicted results exit 2. Direct CLI commands default to the user-home `.saucepan` store; `--root` overrides it. Saucepan's shim propagates its installed root and rejects a conflicting one.
 
-`replace-shim` maintains a registered launcher, while `adopt-shim` explicitly registers a verified existing pair. `uninstall APP_UUID` releases claims and disables new launches before cleaning verified owned files; cached outputs and existing consumers remain subject to normal retention and leases. Busy or changed files leave inspectable pending work. Use `operations --app APP_UUID` and `reconcile --operation OPERATION_UUID` from a directly invoked binary to finish cleanup after the launcher exits.
+`replace-shim` maintains a registered launcher, while `adopt-shim` explicitly registers a verified existing pair. `uninstall APP_UUID` releases claims and disables new launches before cleaning verified owned files; cached outputs and existing consumers remain subject to normal retention and leases. Busy or changed files leave inspectable pending work. Use administrative `operations` and `reconcile --operation OPERATION_UUID` from a directly invoked binary to inspect receipts and finish cleanup after the launcher exits. `operations --app APP_UUID` is available while the app registration remains usable and applies its policies and optional credentials.
 
 See [application lifecycle](docs/application-lifecycle.md) for commands, ownership and recovery rules, and [verification evidence](docs/lifecycle-verification.md) for executed scenarios. Earlier script reports describe historical checkpoints. Earlier layouts are rejected without migration. Current claim-registry acceptance is covered by `cargo test --offline --test claim_acceptance`; it uses the built binary and shim in a disposable root.
 

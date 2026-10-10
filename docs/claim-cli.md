@@ -2,6 +2,8 @@
 
 Use a fresh root. Signing keys live in the native OS keyring even when application
 credentials are disabled. This contract does not migrate older stores.
+The examples select `./scratch` explicitly; omit `--root` to use the user-home
+`.saucepan` store.
 
 Create `registration.json`:
 
@@ -33,7 +35,7 @@ Register a source, then place its UUID in `ensure.json`:
 saucepan --root ./scratch register-source source.json
 saucepan --root ./scratch ensure-claim APP_UUID ensure.json
 saucepan --root ./scratch recover-claim APP_UUID CLAIM_UUID
-saucepan --root ./scratch run-claim APP_UUID CLAIM_UUID --relative packages/example -- consumer.exe
+saucepan --root ./scratch run-claim APP_UUID CLAIM_UUID -- consumer.exe
 saucepan --root ./scratch --as-app APP_UUID path OUTPUT_UUID
 ```
 
@@ -43,6 +45,9 @@ child uses `SAUCEPAN_RESOURCE_DIR`. Ordinary paths and JSON results do not retai
 a lease. `acquire --app APP_UUID --scope SCOPE` remains supported for complete
 acquisition requests with explicit policy values; it does not introduce an older
 persisted schema. Prefer `ensure-claim` for registered defaults.
+For a directory claim, add `--relative packages/example` only when that folder
+exists in the owning output; a whole-output or single-file claim needs no relative
+view.
 
 `query-claims FILE` accepts `{"app":"APP_UUID","scope":"project-a","where":[]}`;
 omitting scope searches permitted scopes within that app. `discover-claims FILE`
@@ -51,7 +56,10 @@ Discovery does not grant ownership or direct-output access.
 
 ## Optional credentials and administration
 
-Set `credentials_required` to true and choose a new secret destination:
+For a new protected registration, use a new registration key, set
+`credentials_required` to true and choose a new secret destination. To enable
+credentials on the app registered above, use `configure-application` as described
+below; retrying registration with changed settings is a conflict.
 
 ```powershell
 saucepan --root ./scratch register-application registration.json --credential-out ./consumer.credential
@@ -76,7 +84,9 @@ revision or a policy that invalidates a surviving claim fails without mutation.
 `--as-app` cannot be used to turn an app operation into configuration or global
 maintenance. Commands without an app that inspect/maintain global store state are
 trusted administration; integrations use app-scoped commands or `--as-app` for
-direct output access. This is not isolation from another process of the same OS user.
+direct output access. Discovery is the exception: `query-sources` without
+`--as-app` and `discover-claims` expose only their explicitly public candidates,
+not an administrative list. This is not isolation from another process of the same OS user.
 
 ## Machine errors
 

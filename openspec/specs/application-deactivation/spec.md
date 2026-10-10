@@ -7,7 +7,7 @@ Allow applications to relinquish their active executable binding without releasi
 ## Requirements
 
 ### Requirement: Explicit deactivation clears only the selected binding
-Native and CLI callers SHALL be able to deactivate a ready application by UUID within an explicit store. Deactivation SHALL atomically clear its active binding and report the removed binding, preserving application identity, name, settings, claims, other applications, sources, outputs and installed shims. An actual binding change SHALL advance the application's mutation revision. It SHALL NOT require valid old payload bytes, refresh sources, kill processes or invoke content reclaim.
+Native and CLI callers SHALL be able to deactivate a ready application by UUID within the selected store, subject to the application access contract in [claim-security](../claim-security/spec.md). CLI root selection SHALL follow [store-layout](../store-layout/spec.md). Deactivation SHALL atomically clear its active binding and report the removed binding, preserving application identity, name, settings, claims, other applications, sources, outputs and installed shims. An actual binding change SHALL advance the application's mutation revision. It SHALL NOT require valid old payload bytes, refresh sources, kill processes or invoke content reclaim.
 
 #### Scenario: Deactivate a bound application
 - **WHEN** a caller deactivates an application with an active binding

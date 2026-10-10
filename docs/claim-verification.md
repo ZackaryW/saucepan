@@ -4,6 +4,10 @@ Verified on Windows x86_64 with Rust 1.98.1 on 2026-10-09. The package remains
 Rust-only: native keyring, HKDF/HMAC, serde and native lifetime guards; no Python
 runtime binding or metadata encryption was introduced.
 
+The counts and digests below belong to the claim-registry checkpoint, before
+source discovery and its CLI improvements. See the [documentation map](README.md)
+for subsequent capabilities, current check commands and remaining evidence gaps.
+
 ## Integrated fresh-root acceptance
 
 Run `cargo test --offline --test claim_acceptance -- --nocapture`. The test uses
@@ -32,12 +36,17 @@ Its temporary fixtures were removed after verification.
 | Historical mock | All 96 files retained identical SHA-256 hashes |
 
 The same root covers exact/covered retries, scoped shared outputs, context lookup,
-public/private discovery, forbidden-source and unowned cached-UUID denial, native
+public/private claim discovery, forbidden-source and unowned cached-UUID denial, native
 lease reclaim deferral, readable-member tampering, opt-in credentials, exact and
 refresh recovery, unattended protected shim launch, managed update/rollback and
 uninstall. An authenticated source publication interrupted after its journal was
 written replays on open to the intended TTL of 43,200 seconds. The normal source
 default remains 86,400 seconds; that value is changed only in the crash fixture.
+
+This fixture uses local source inputs, including the actual built executables.
+It does not rerun the historical two-build GitHub release/bootstrap harness.
+Current source-definition discovery and default-root behavior have separate
+fixtures in `tests/source_query_cli.rs` and `tests/cli.rs`.
 
 ## Scenario evidence
 

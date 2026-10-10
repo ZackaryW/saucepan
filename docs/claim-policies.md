@@ -28,8 +28,11 @@ metadata rather than permission or identity.
 
 Credentials prove app identity when enabled. A valid credential does not override
 a denied source/action/scope; disabling credentials does not remove restrictions.
-Public discovery requires explicit public exposure and discovery permission and
-cannot acquire or mutate a claim. Changing registered permissions is an explicit
+Public claim discovery requires explicit public scope exposure and discovery
+permission and cannot acquire or mutate a claim. Public source discovery has a
+separate per-source visibility flag; app source queries check discovery and source
+allowances without requiring a claim scope. See [source discovery](source-query.md).
+Changing registered permissions is an explicit
 trusted local administration operation, not a grant an app can assign itself.
 
 The evaluator receives a verified caller context from the session boundary. Its
@@ -70,8 +73,9 @@ The CLI supports the same codes with `--error-format json`.
 
 `tests/errors.rs` executes actual store calls to verify representative codes for
 validation, missing identities, reclaimed output, failed source acquisition and
-malformed stored JSON. New registry/auth/recovery-specific codes become reachable
-when those operations are integrated. Unclassified errors use `internal_error`
+malformed stored JSON. Registry, credential and recovery codes are exercised by
+`tests/registry_security.rs`, `tests/claim_cli.rs` and `tests/claim_recovery.rs`.
+Unclassified errors use `internal_error`
 with a generic message rather than leaking arbitrary error text.
 
 `query_claims` accepts an optional exact `scope`; omission searches permitted
@@ -90,8 +94,9 @@ are subject to the same app claim policy when leased through a session.
 
 `AppSession::ensure(&EnsureRequest, &AcquireOptions)` uses registered defaults
 for omitted overrides. Its explicit `scope` identifies the project independently
-of searchable context. An exact retry returns the existing claim and cached output
-without refreshing its source. Another scope gets an independent claim and can
+of searchable context. With the default `reuse` policy, an exact available retry
+returns the existing claim and cached output without refreshing its source.
+Another scope gets an independent claim and can
 share the same output bytes. Use `update` to refresh a selected claim explicitly.
 
 A natural local/Git claim for the whole tree can cover `folder: "packages/tool"`
