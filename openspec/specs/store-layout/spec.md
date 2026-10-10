@@ -7,11 +7,11 @@ Separate source working data, acquisition metadata, and stored outputs so their 
 ## Requirements
 
 ### Requirement: Source metadata and output content have separate locations
-Saucepan SHALL keep source definitions under `source/<source-uuid>.json`, optional provider working data under `source/<source-uuid>/`, live application and output metadata under `index/<uuid>/index.json`, and available acquired content under `store/<entry-uuid>/`. App and output records SHALL have distinguishable record types. Completed uninstall SHALL retire the live app record while retaining its operation receipt as specified by [application-lifecycle](../application-lifecycle/spec.md); output reclaim SHALL retain provenance as specified by [output-policies](../output-policies/spec.md). UUID and path validation SHALL prevent access outside the owning root.
+Saucepan SHALL keep source definitions under `source/<source-uuid>.json`, optional provider working data under `source/<source-uuid>/`, live application and output metadata under `index/<uuid>/index.json`, application claim registries under `claims/<app-uuid>/index.json`, separate claim envelopes under `claims/<app-uuid>/<claim-uuid>.json`, and available acquired content under `store/<entry-uuid>/`. Claims and registered policies SHALL NOT remain embedded as a second mutable copy in the application index. Claim JSON files SHALL contain readable payloads with HMAC integrity tags as specified by claim-security. App and output records SHALL have distinguishable record types. Completed uninstall SHALL retire the live app record while retaining its operation receipt as specified by [application-lifecycle](../application-lifecycle/spec.md); output reclaim SHALL retain provenance as specified by [output-policies](../output-policies/spec.md). UUID and path validation SHALL prevent access outside the owning root.
 
 #### Scenario: Application and output records coexist
 - **WHEN** an application acquires content from a registered source
-- **THEN** its app index references an output index whose entry UUID resolves to the corresponding store directory
+- **THEN** its app index identifies its claim registry, whose claim references an output index with an entry UUID resolving to the corresponding store directory
 - **AND** the application does not require a store directory of its own
 
 ### Requirement: Stored contents preserve the acquisition structure
@@ -30,7 +30,7 @@ Saucepan SHALL publish an output as ready only after acquisition and required va
 - **AND** no path lookup reports a partial output as ready
 
 ### Requirement: Legacy data is not implicitly accepted or migrated
-Saucepan SHALL use a newly defined data contract without inheriting the old FORMAT_VERSION or compatibility decoders. Opening a legacy store SHALL fail explicitly without changing its data.
+Saucepan SHALL use a newly defined data contract without inheriting the old FORMAT_VERSION or compatibility decoders. Opening a legacy store or an earlier inline-claim layout SHALL fail explicitly with `unsupported_store` without changing its data. New stores SHALL have an explicit store UUID and contract discriminator. Missing or corrupt required claim metadata SHALL NOT be treated as an empty new store.
 
 #### Scenario: An old encrypted central index is present
 - **WHEN** initialization or opening detects a legacy Saucepan store
@@ -43,3 +43,27 @@ Saucepan SHALL accept an explicit root for initialization and subsequent operati
 - **WHEN** the caller invokes the shim from `mock/bin/` with the explicit mock root
 - **THEN** source, index, store, claim, activation, and reclaim operations resolve within that root
 - **AND** the user's production installation is not used as a fallback
+
+### Requirement: CLI operations default to the user-home store
+When `--root` is omitted, CLI operations SHALL resolve the operating-system user's home directory and append `.saucepan`. On Windows the default SHALL use USERPROFILE and on Unix HOME, with the standard operating-system home lookup fallback. An explicit `--root PATH` SHALL take precedence without requiring home resolution; relative overrides SHALL remain relative to the working directory. The CLI SHALL NOT search working-directory ancestors or fall back to another store after an error. Unavailable, empty or relative home resolution SHALL produce `invalid_request` with guidance to pass `--root`. Native APIs and shim-carried explicit roots SHALL retain their existing contracts.
+
+#### Scenario: Default location is independent of working directory
+- **WHEN** a caller omits --root while working in a project with a local .saucepan folder
+- **THEN** the operation uses the user-home .saucepan store
+- **AND** the project-local store is not read or modified
+
+#### Scenario: Override remains isolated
+- **WHEN** an explicit root is supplied and the default home store exists or home lookup is unavailable
+- **THEN** only the explicit root is used
+
+### Requirement: Read commands do not implicitly initialize a missing store
+`saucepan init` SHALL initialize the resolved default or explicit root. Other commands encountering a missing root directory SHALL fail with `unsupported_store`, no success stdout, and guidance to initialize the selected root; they SHALL NOT create it or its signing key. Existing corrupt, legacy or incomplete stores SHALL retain existing error handling without an implicit reset. Help and version SHALL succeed without home lookup or store initialization.
+
+#### Scenario: First query precedes initialization
+- **WHEN** a caller runs saucepan query-sources before the default root exists
+- **THEN** the command fails with guidance to run saucepan init
+- **AND** the root remains absent
+
+#### Scenario: Initialization followed by querying
+- **WHEN** a caller initializes a disposable user-home store and then queries without --root
+- **THEN** both commands use the same .saucepan directory

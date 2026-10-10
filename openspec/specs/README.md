@@ -4,10 +4,11 @@ These main specs describe the synchronized Saucepan baseline. Archived changes r
 historical decisions and are not alternative versions to inherit at runtime.
 Adding a provider or policy type does not establish backward schema compatibility.
 
-The implemented `secure-application-claim-registry` change remains active until
-separate sync/archive is requested. It replaces embedded claims with authenticated
-app registries and adds explicit scopes, covered ensure, optional credentials,
-registered recovery and consumer error codes. Current usage and verification:
+The synchronized baseline includes authenticated application claim registries,
+explicit scopes, covered ensure, optional credentials, registered recovery and
+consumer error codes. Source discovery supports anonymous public lookup, optional
+application identity and direct CLI filters, with the user-home `.saucepan` store
+as the default. Current usage and verification:
 
 | Implemented responsibility | Documentation |
 | --- | --- |
@@ -15,11 +16,12 @@ registered recovery and consumer error codes. Current usage and verification:
 | Readable HMAC records and native key custody | [Claim integrity](../../docs/claim-integrity.md) |
 | CLI registration, credentials, recovery and machine errors | [Claim CLI](../../docs/claim-cli.md) |
 | Native scoped/view lifetime integration | [Scoped consumer](../../docs/scoped-consumer.md) |
+| Source discovery, visibility and CLI filters | [Source query](../../docs/source-query.md) |
 | Integrated acceptance and host limitations | [Verification](../../docs/claim-verification.md) |
 
-This implementation accepts only its current authenticated contract. Main-spec
-or historical references to inline claims or older record defaults do not imply
-a decoder or migration path for those stores.
+This implementation accepts only its current authenticated contract. Historical
+references to inline claims or older record defaults do not imply a decoder or
+migration path for those stores.
 
 Read overlapping requirements together using these responsibility boundaries:
 
@@ -27,10 +29,14 @@ Read overlapping requirements together using these responsibility boundaries:
 | --- | --- |
 | [store-layout](store-layout/spec.md) | Root layout, current data contract and rejection of pre-reimplementation stores |
 | [source-resolution](source-resolution/spec.md) | Provider resolution, discovery freshness and asset selection |
+| [source-query](source-query/spec.md) | Source metadata discovery, public visibility and optional CLI filters |
 | [output-acquisition](output-acquisition/spec.md) | Immutable output identity, acquisition and reuse |
 | [output-policies](output-policies/spec.md) | Retention demand, protection and reclaim eligibility |
 | [application-claims](application-claims/spec.md) | Request-bearing associations, context metadata and primitive claim operations |
 | [claim-query](claim-query/spec.md) | Application-scoped context matching and consistent metadata snapshots |
+| [claim-recovery](claim-recovery/spec.md) | Explicit unavailable-content recovery and exact restoration |
+| [claim-security](claim-security/spec.md) | Record integrity, optional credentials and application access policies |
+| [consumer-errors](consumer-errors/spec.md) | Stable native and CLI failure codes and structured diagnostics |
 | [application-deactivation](application-deactivation/spec.md) | Binding-only deactivation and later reactivation |
 | [application-lifecycle](application-lifecycle/spec.md) | Coordinated install/update/rollback and logical uninstall |
 | [lifecycle-recovery](lifecycle-recovery/spec.md) | Operation identity, phases, retries, recovery and integrated acceptance |

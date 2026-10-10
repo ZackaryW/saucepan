@@ -7,7 +7,7 @@ Find an application's existing claims by caller-defined context without changing
 ## Requirements
 
 ### Requirement: Queries explicitly select one application's visible claims
-A query SHALL require one exact application UUID and a `where` array of zero to 64 conditions. Each condition SHALL contain exactly `key`, `op`, and `value`; `key` and `value` SHALL be strings and `op` SHALL be `eq` or `glob`. Keys SHALL be nonempty, and the key and value byte limits SHALL match claim context. Query objects SHALL reject unknown fields, unknown operators, invalid UUIDs, and invalid conditions. All conditions SHALL be combined with AND. A missing context key SHALL fail a condition, even when its pattern is `*`. Empty `where` SHALL match all claims visible through that application's existing source filters. Conditions SHALL address only literal context keys, not claim fields, UUIDs, or other applications. An unknown, non-application, or removing application SHALL produce an error, not an empty successful result.
+A query SHALL require one exact application UUID and a `where` array of zero to 64 conditions. An optional `scope` SHALL restrict candidates to one literal explicit scope; omission SHALL include all visible scopes in that app. Scope SHALL obey the claim scope constraints. The application's configured credential requirement and source/claim policy SHALL be checked before restricted candidate access, including empty results. Each condition SHALL contain exactly `key`, `op`, and `value`; `key` and `value` SHALL be strings and `op` SHALL be `eq` or `glob`. Keys SHALL be nonempty, and the key and value byte limits SHALL match claim context. Query objects SHALL reject unknown fields, unknown operators, invalid UUIDs, and invalid conditions. All conditions SHALL be combined with AND. A missing context key SHALL fail a condition, even when its pattern is `*`. Empty `where` SHALL match claims permitted by that application's access policies, optional exact scope, and existing source filters. Conditions SHALL address only literal context keys, not claim fields, UUIDs, or other applications. An unknown, non-application, or removing application SHALL produce an error, not an empty successful result.
 
 #### Scenario: Find project-specific aliases
 - **WHEN** the query requires `project eq C:/work/project-a` and `source_alias glob skills-*`
@@ -41,7 +41,7 @@ Exact equality SHALL compare complete strings case-sensitively without normaliza
 - **THEN** the query fails with a condition-specific validation error before producing results
 
 ### Requirement: Query results are deterministic metadata snapshots
-Queries SHALL return the selected application UUID, its observed revision, and all matching claim views ordered by claim UUID. Each view SHALL include claim identity, request, selected output UUID, context, and current indexed availability. Zero matches SHALL be a successful empty list; multiple matches SHALL all be returned without silently selecting one. Application revision, filters, claim selections, context, and output availability SHALL be read as one coordinated metadata snapshot. A later mutation SHALL NOT alter an already returned result. Corrupt or missing output metadata referenced by a matching claim SHALL fail the query rather than silently omit that claim.
+Queries SHALL return the selected application UUID, its observed revision, and all matching claim views ordered by claim UUID. Each view SHALL include claim identity, request, selected output UUID, explicit scope, context, and current indexed availability. A covered request view SHALL NOT appear as a second stored claim. Zero matches SHALL be a successful empty list; multiple matches SHALL all be returned without silently selecting one. Application revision, filters, claim selections, context, and output availability SHALL be read from the authenticated registry and index as one coordinated metadata snapshot. Missing or corrupt required registry/member data SHALL fail rather than silently omit claims. A later mutation SHALL NOT alter an already returned result. Corrupt or missing output metadata referenced by a matching claim SHALL fail the query rather than silently omit that claim.
 
 #### Scenario: Multiple matching claims remain distinct
 - **WHEN** two claims have identical matching context
@@ -66,3 +66,14 @@ The native and CLI query interfaces SHALL implement the same contract. The CLI S
 - **WHEN** a claim changes after a query returns
 - **THEN** exact-output leasing addresses the returned output UUID while claim-based leasing selects the claim's then-current output
 - **AND** either access operation still performs its existing availability and lease checks
+
+### Requirement: Generic discovery includes only explicitly public scopes
+A separate generic discovery operation SHALL search only claims in explicitly public registered scopes that also satisfy applicable source/claim discovery permissions. Absence of public exposure SHALL exclude that scope, even with credentials disabled. Anonymous generic lookup SHALL omit candidates whose configured proof requirement cannot be satisfied. The existing explicit-app query SHALL retain its app boundary and SHALL NOT become an unrestricted fallback. Generic conditions SHALL use the same context validation and matching semantics as app queries. Results SHALL identify their owning apps, claims and scopes, be ordered by app then claim UUID, and report per-app revisions from a coordinated snapshot. Discovery SHALL NOT create a claim, acquire content, grant mutation rights, or retain a resource lease.
+
+#### Scenario: App has one non-public scope
+- **WHEN** an app is registered for `project-a` with no public scope and credentials disabled
+- **THEN** generic discovery excludes its claims while explicit app operations remain subject to registered permissions
+
+#### Scenario: Public discovery does not grant claiming rights
+- **WHEN** generic discovery finds a public claim but the requesting app is forbidden to acquire its source
+- **THEN** the subsequent app acquisition fails with `access_denied`
