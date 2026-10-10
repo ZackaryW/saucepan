@@ -21,6 +21,8 @@ cargo run -- --root ./scratch register-source source.json
 
 The returned source UUID identifies `source/<uuid>.json`. App/output records live at `index/<uuid>/index.json`; only outputs have `store/<uuid>/` contents. Claims now live in `claims/<app-uuid>/index.json` and `<claim-uuid>.json`. `root.json` authenticates catalog membership. Source, index, claim and lifecycle records are readable JSON with HMAC-SHA256 tags; the signing key lives in native OS keyring. Existing unsigned roots are rejected. Filesystem access follows the local OS user's trust boundary. See [integrity and custody](docs/claim-integrity.md).
 
+Find registered sources before claiming with `query-sources query.json`, where the file can be `{}` or `{"type":"github_release","repo":"owner/project"}`. Use `--as-app APP_UUID` for that application's permitted sources; without it, only explicitly published sources appear. Sources are private by default. See [source discovery and the simple app flow](docs/source-query.md).
+
 Save a request using the returned source UUID (replace the illustrative UUID):
 
 ```json

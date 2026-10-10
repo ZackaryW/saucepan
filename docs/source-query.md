@@ -55,3 +55,60 @@ assets are not returned. Source metadata is authenticated, including hidden sour
 records; missing or tampered catalogue members fail rather than disappear from
 results. Returned views are snapshots, not ownership grants or leases. Ensure a
 claim and retain a lease before reading acquired content.
+
+## Simple application flow
+
+Use a fresh root for this example. Create `source.json` with a local provider
+definition pointing to an existing file, for example
+`{"type":"local","path":"C:/resources/payload.txt"}`. Create `app.json`:
+
+```json
+{"registration_key":"simple-app","name":"Simple App"}
+```
+
+Create `query.json` as `{}` to search all permitted sources, or
+`{"type":"local"}` to select only local sources. No credentials or scope
+restriction is needed. In PowerShell:
+
+```powershell
+saucepan --root ./scratch init
+saucepan --root ./scratch register-source source.json
+$app = saucepan --root ./scratch register-application app.json | ConvertFrom-Json
+$found = saucepan --root ./scratch --as-app $app.uuid query-sources query.json | ConvertFrom-Json
+```
+
+Choose a result explicitly; an empty result is valid and multiple results are
+returned without choosing one. Put its UUID in `ensure.json`:
+
+```json
+{"scope":"default","source_uuid":"SOURCE_UUID","selector":{"type":"local"}}
+```
+
+```powershell
+$claimed = saucepan --root ./scratch ensure-claim $app.uuid ensure.json | ConvertFrom-Json
+saucepan --root ./scratch run-claim $app.uuid $claimed.claim.uuid -- consumer.exe
+```
+
+`consumer.exe` reads from `SAUCEPAN_RESOURCE_DIR` while the command retains a
+lease. The `default` scope is an explicit ownership label for this simple app;
+it does not limit source searching. Different source types need their respective
+acquisition selectors. Ensuring again reuses a compatible claim. Querying and
+then ensuring are separate operations, so acquisition rechecks current policy.
+
+To expose a source to anonymous discovery, a trusted local administrator runs:
+
+```powershell
+saucepan --root ./scratch set-source-visibility SOURCE_UUID public
+saucepan --root ./scratch query-sources query.json
+saucepan --root ./scratch set-source-visibility SOURCE_UUID private
+```
+
+Without `--as-app`, queries use anonymous visibility, not administrative listing.
+With `--as-app`, they use that application's allowed sources regardless of public
+visibility. Add `--credential-file FILE` only if that app requires credentials.
+`set-source-visibility` rejects `--as-app`. `--error-format json` uses the existing
+structured error contract; errors exit nonzero without success stdout.
+
+Run `cargo test --offline --test source_query_cli` for the executable fixture,
+and `cargo test --offline --lib core::query` for native semantics and refresh
+coordination. Fixtures use fresh roots without rewriting historical mock content.

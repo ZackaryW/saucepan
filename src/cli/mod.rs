@@ -11,6 +11,12 @@ enum ErrorFormat {
     Json,
 }
 
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum SourceVisibility {
+    Public,
+    Private,
+}
+
 #[derive(Parser)]
 #[command(version = concat!(env!("CARGO_PKG_VERSION"),"+",env!("SAUCEPAN_BUILD_ID")))]
 struct Args {
@@ -19,7 +25,7 @@ struct Args {
     /// Read a 32-byte application credential from this file.
     #[arg(long, global = true)]
     credential_file: Option<PathBuf>,
-    /// Restrict direct output operations to this application's owned claims.
+    /// Use this application's policies for queries and resource operations.
     #[arg(long, global = true)]
     as_app: Option<uuid::Uuid>,
     #[arg(long, global = true)]
@@ -133,6 +139,16 @@ enum Commands {
     },
     RegisterSource {
         file: PathBuf,
+    },
+    /// Find registered sources; anonymous unless --as-app is supplied.
+    QuerySources {
+        file: PathBuf,
+    },
+    /// Trusted administration: publish or withdraw a source definition.
+    SetSourceVisibility {
+        source: uuid::Uuid,
+        #[arg(value_enum)]
+        visibility: SourceVisibility,
     },
     Inspect {
         uuid: uuid::Uuid,
@@ -483,6 +499,15 @@ pub fn run() -> Result<()> {
                     let source: Source = serde_json::from_slice(&std::fs::read(file)?)?;
                     serde_json::to_value(store.register_source(source)?)?
                 }
+                Commands::QuerySources { file } => serde_json::to_value(
+                    store.query_sources(&serde_json::from_slice(&std::fs::read(file)?)?)?,
+                )?,
+                Commands::SetSourceVisibility { source, visibility } => {
+                    serde_json::to_value(store.set_source_visibility(
+                        source,
+                        matches!(visibility, SourceVisibility::Public),
+                    )?)?
+                }
                 Commands::Inspect { uuid } => serde_json::to_value(store.record(uuid)?)?,
                 Commands::Acquire {
                     file,
@@ -694,6 +719,7 @@ impl Commands {
                 | Self::ConfigureApplication { .. }
                 | Self::RegisterApp { .. }
                 | Self::RegisterSource { .. }
+                | Self::SetSourceVisibility { .. }
                 | Self::Install { .. }
                 | Self::Bootstrap { .. }
                 | Self::Reconcile { .. }
