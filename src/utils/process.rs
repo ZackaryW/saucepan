@@ -114,10 +114,10 @@ fn execute(mut command: Command, timeout: Duration, limit: usize) -> io::Result<
     let status = result?;
     // On Unix ESRCH simply means the complete group already exited.
     #[cfg(unix)]
-    if let Err(error) = cleanup {
-        if error.raw_os_error() != Some(3) {
-            return Err(error);
-        }
+    if let Err(error) = cleanup
+        && error.raw_os_error() != Some(3)
+    {
+        return Err(error);
     }
     #[cfg(not(unix))]
     cleanup?;
