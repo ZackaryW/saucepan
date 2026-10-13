@@ -4,9 +4,11 @@ Rust source acquisition with separate source working data, immutable outputs, an
 
 See the [documentation map](docs/README.md) for current usage, specification ownership, and dated verification evidence.
 
+[Composable retrieval and acquisition](docs/composition.md) separates original source material from copied results. `retrieve` and `source-path` expose source material; `acquire-retrieved` copies or extracts it. `run-retrieved` and `run-acquired` retain paths for child processes. Inline temporary/no-store requests need no home, store, app or keyring. Cached retrieval, acquisition updates and revision history have independent policies.
+
 [Release workflows](docs/releases.md) build platform ZIPs containing both the manager and shim, with checksums and native CI checks before publication.
 
-Commands default to `%USERPROFILE%\.saucepan` on Windows or `~/.saucepan` on Unix. Initialize it once, then query publicly discoverable sources without an app UUID or query file:
+Managed commands default to `%USERPROFILE%\.saucepan` on Windows or `~/.saucepan` on Unix. Initialize it once, then query publicly discoverable sources without an app UUID or query file:
 
 ```powershell
 cargo run -- init
@@ -57,7 +59,7 @@ Acquisition returns `entry`, `directory`, `reused`, `update_checked`, `stale`, a
 
 `path` defaults to metadata checks without hashing payloads. Use `path OUTPUT_UUID --verification full` or `verify OUTPUT_UUID` for explicit integrity verification. Bare paths have no retained reclaim protection; native consumers hold `ResourceLease` guards. See [resource access](docs/resource-access.md) for ownership and verification contracts.
 
-`models/{source,index,store,policy,claim}` defines the contract, matching `core` modules own behavior, `cli` adapts commands, and `utils` contains domain-independent mechanics. `saucepan-shim` is a separate binary that reads its sibling `.shim.json` app identifier and the application's committed binding.
+`models/{source,retrieval,index,store,policy,claim}` defines the contract, matching `core` modules own behavior, `cli` adapts commands, and `utils` contains domain-independent mechanics. `saucepan-shim` is a separate binary that reads its sibling `.shim.json` app identifier and the application's committed binding.
 
 Portable helpers require caller-owned stable roots. Atomic file replacement does not imply a multi-file transaction or power-loss directory durability; native locks coordinate cooperating callers. Path validation rejects unsafe/ambiguous names; it does not isolate hostile processes running as the same user.
 
@@ -83,7 +85,7 @@ To associate a request with an application, use `acquire request.json --app APP_
 
 Attach project or alias labels with `acquire request.json --app APP_UUID --scope PROJECT_KEY --context context.json`, where the context file is a plain string map. Search with `query-claims query.json` using `{ "app": "APP_UUID", "where": [{ "key": "project", "op": "eq", "value": "my-project" }] }`. Operators are `eq` and explicit string `glob`; all conditions must match. Results include the application revision and every matching claim in UUID order. `set-claim-context APP_UUID CLAIM_UUID context.json --expected-revision N` replaces labels without moving the claim. See [claim context and queries](docs/claim-query.md) for complete examples, wildcard syntax, and lease boundaries. Run `cargo test --test query_cli` for the isolated two-project CLI flow.
 
-Every acquisition evaluates latest-ten retention for its source/selector/selection item. `policies.eviction` can override the positive count. Coexisting attached counts use the maximum; claims preserve their policy demand but ordinary claims do not prevent reclaim. Reuse preserves creation order. `reclaim` reports effective counts, deferred protected/in-use entries, and failed deletions as pending. Provenance remains after content deletion. `path` refuses unavailable entries; `reacquire ENTRY_UUID` gets a live output, while `update-claim` also moves the application's claim.
+Every managed convenience acquisition evaluates latest-ten retention for its source/selector/selection item. `policies.eviction` can override the positive count. Coexisting attached counts use the maximum; claims preserve their policy demand but ordinary claims do not prevent reclaim. Reuse preserves creation order. `reclaim` reports effective counts, deferred protected/in-use entries, and failed deletions as pending. Provenance remains after content deletion. `path` refuses unavailable entries; `reacquire ENTRY_UUID` gets a live output, while `update-claim` also moves the application's claim.
 
 Managed executables declare `selection.bin`, a matching `selection.platform`, and `policies.protection: {"type":"useable_app"}`. First ensure or acquire the executable as a claim owned by the app in an allowed scope. Save a probe such as `{"args":["--version"],"stdout_contains":"saucepan ","timeout_seconds":10}`. Run `activate APP_UUID ENTRY_UUID saucepan.exe probe.json`, then `install-shim APP_UUID saucepan.exe PATH_TO_BUILT_SHIM --saucepan`. Activation validates and probes before atomically switching the binding. Downloading alone never switches it. Activating a retained older entry accessible through an authorized claim performs binding-only rollback; use managed `rollback` for the coordinated claim/binding transition below. Routine updates leave the stable shim untouched; launcher replacement is a separate maintenance operation.
 

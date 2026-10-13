@@ -1,6 +1,7 @@
 //! Execution leases are persisted as markers whose open native handles outlive
 //! launcher failure. No PID or elapsed-time heuristic grants reclaim permission.
 use crate::error::{Error, ErrorCode};
+use crate::utils::lifetime::marker_held;
 use crate::{
     core::Store,
     models::store::{OutputEntry, ResolvedResource, VerificationMode},
@@ -11,7 +12,7 @@ use crate::{
 };
 use anyhow::Result;
 use std::{
-    fs::{self, File, OpenOptions},
+    fs::{self, File},
     io,
     path::{Path, PathBuf},
     time::Duration,
@@ -77,42 +78,7 @@ impl ResourceLease {
     pub(crate) fn inherit(&mut self) -> io::Result<()> {
         // The shared coordination guard excludes reclaim throughout creation
         // and inheritance, including the interval before the native marker locks.
-        let mut options = OpenOptions::new();
-        options.read(true).write(true).create_new(true);
-        #[cfg(windows)]
-        {
-            use std::os::windows::fs::OpenOptionsExt;
-            options.share_mode(3);
-        }
-        let file = options.open(&self.marker_path)?;
-        #[cfg(unix)]
-        file.lock_shared()?;
-        #[cfg(windows)]
-        {
-            use std::os::windows::io::AsRawHandle;
-            use windows::Win32::Foundation::{HANDLE, HANDLE_FLAG_INHERIT, SetHandleInformation};
-            // SAFETY: the borrowed file handle remains valid for this call.
-            unsafe {
-                SetHandleInformation(
-                    HANDLE(file.as_raw_handle()),
-                    HANDLE_FLAG_INHERIT.0,
-                    HANDLE_FLAG_INHERIT,
-                )
-            }
-            .map_err(io::Error::other)?;
-        }
-        #[cfg(unix)]
-        {
-            use std::os::fd::AsRawFd;
-            let fd = file.as_raw_fd();
-            // SAFETY: fcntl operates on this guard's valid file descriptor.
-            unsafe {
-                let flags = libc::fcntl(fd, libc::F_GETFD);
-                if flags < 0 || libc::fcntl(fd, libc::F_SETFD, flags & !libc::FD_CLOEXEC) < 0 {
-                    return Err(io::Error::last_os_error());
-                }
-            }
-        }
+        let file = crate::utils::lifetime::inheritable_marker(&self.marker_path)?;
         self.file = Some(file);
         Ok(())
     }
@@ -253,28 +219,4 @@ fn marker_entry(name: &str) -> Option<Uuid> {
     let entry = Uuid::parse_str(parts.get(..36)?).ok()?;
     let marker = Uuid::parse_str(parts.get(37..)?).ok()?;
     (name == format!("live-{entry}-{marker}")).then_some(entry)
-}
-
-fn marker_held(path: &Path) -> io::Result<bool> {
-    let mut options = OpenOptions::new();
-    options.read(true).write(true);
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::OpenOptionsExt;
-        options.share_mode(0);
-        match options.open(path) {
-            Ok(_file) => Ok(false),
-            Err(e) if e.raw_os_error() == Some(32) => Ok(true),
-            Err(e) => Err(e),
-        }
-    }
-    #[cfg(unix)]
-    {
-        let file = options.open(path)?;
-        match file.try_lock() {
-            Ok(()) => Ok(false),
-            Err(std::fs::TryLockError::WouldBlock) => Ok(true),
-            Err(std::fs::TryLockError::Error(e)) => Err(e),
-        }
-    }
 }

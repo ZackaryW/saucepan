@@ -270,3 +270,21 @@ fn changed_policy_has_independent_proof_and_failed_materialization_does_not_adva
     assert_eq!(serde_json::to_value(states(&store)).unwrap(), before);
     assert_eq!(fs::read(second.path().join("file")).unwrap(), b"first");
 }
+
+#[test]
+fn owned_refresh_releases_source_guard_and_preserves_prior_output() {
+    let (root, store, retrieval, acquisition) = setup();
+    let prior = store
+        .acquire_composed_with(&retrieval, &acquisition, &at(100))
+        .unwrap();
+    let held = store.retrieve_with(&retrieval, &at(110)).unwrap();
+    let origin = root.path().join("origin");
+    fs::write(origin.join("selected/file"), b"updated").unwrap();
+    git(&origin, &["commit", "-am", "updated"]);
+    let updated =
+        saucepan::core::store::Acquirer::refresh_with(held, &acquisition, &at(160)).unwrap();
+    assert_ne!(id(&prior), id(&updated));
+    assert_eq!(fs::read(prior.path().join("file")).unwrap(), b"first");
+    assert_eq!(fs::read(updated.path().join("file")).unwrap(), b"updated");
+    assert_eq!(states(&store)[0].last_success, Some(160));
+}

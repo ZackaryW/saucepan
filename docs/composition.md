@@ -2,8 +2,7 @@
 
 The new request models separate three policy decisions. Native inline fresh
 retrieval is available through `Retriever`, and managed retrieval through `Store`.
-Offline acquisition and scoped automatic updates are available. New CLI commands
-are still being integrated.
+Offline acquisition, scoped automatic updates and CLI consumers use the same native contracts.
 
 | Policy | Responsibility | Managed default |
 | --- | --- | --- |
@@ -187,3 +186,78 @@ restrictions. Both accept only registered temporary/no_store requests. Basic
 integrity needs no keyring. Pending metadata transactions return
 `recovery_required`; reconcile through a normal store operation separately.
 Successful fresh calls leave source caches and catalog contents unchanged.
+
+## CLI composition
+
+`retrieve request.json` returns `{ "request": ..., "descriptor": ... }`.
+Cached receipts identify a managed retrieval UUID; no-store receipts describe a
+caller-owned file, directory or bare Git repository. Inline fresh commands do not
+resolve a home or store, even if `--root` is supplied. Cached and registered-source
+commands use the ordinary default `.saucepan` root or an explicit `--root`.
+
+For a cached receipt, `acquire-retrieved selection.json` accepts:
+
+```json
+{
+  "retrieval": { "mode": "managed", "uuid": "RETRIEVAL_UUID" },
+  "acquisition": { "folder": "plugins/first" }
+}
+```
+
+For a no-store receipt, set `retrieval.mode` to `caller` and include its `request`
+and `descriptor` fields. Set the acquisition destination to a new directory.
+`Retriever::open_caller` is the corresponding native operation. Reopening checks
+representation, path, Git objects/dependencies and requested digests; it discards
+serialized check/verification evidence. Caller-supplied provenance and expected
+digests remain caller assertions, not independently authenticated origin proof.
+A caller receipt cannot grant managed ownership or create a managed output.
+
+`source-path RETRIEVAL_UUID` returns an address without fetching or retaining a
+lease. `configure-source SOURCE_UUID freshness.json` accepts, for example,
+`{"mode":"max_age","seconds":86400}`. `purge-retrieval RETRIEVAL_UUID` retires
+source material only when no source consumers are live. It preserves acquired
+outputs and source registration; Git objects shared with other retrievals remain.
+
+`run-retrieved request.json -- PROGRAM ARG...` retains source material for a child.
+It sets `SAUCEPAN_SOURCE_PATH`, `SAUCEPAN_SOURCE_KIND` (`file`, `directory` or
+`git_repository`), and, for Git, `SAUCEPAN_SOURCE_COMMIT`. Repository consumers
+must treat that path as read-only repository data, not a working checkout.
+
+`run-acquired composition.json -- PROGRAM ARG...` accepts a `retrieval` request
+and an `acquisition` request and sets `SAUCEPAN_RESOURCE_DIR` to copied results.
+For example, this file fetches a Git repository fresh and copies one folder for
+as long as the consumer needs it:
+
+```json
+{
+  "retrieval": {
+    "source": { "kind": "inline", "source": { "type": "github_repo", "repo": "owner/project" } },
+    "selector": { "type": "ref", "reference": "main" },
+    "cache": { "mode": "temporary" }
+  },
+  "acquisition": {
+    "destination": { "mode": "temporary" },
+    "folder": "plugins/first"
+  }
+}
+```
+
+Arguments are passed literally without a shell; standard streams and child exit
+codes are preserved. Inherited native markers protect temporary and managed data
+even after wrapper death. Children must preserve those handles. Temporary crash
+leftovers are swept by later consumer commands only when native liveness checks
+prove the handles closed. A bare temporary path is rejected; use a consumer or a
+caller-owned destination. Failed launches clean up their temporary results.
+
+`acquire-retrieved` consumes/releases its source guard before an automatic update;
+prior output leases can remain alive. No-store destinations are create-new: use a
+new source/output destination in a new composition to fetch another revision.
+Configured app restrictions still apply with `--as-app APP_UUID --scope KEY`;
+these composition commands create no claim. Use `ensure` for claimed selection.
+Credentials are needed only when required by that application's registration.
+The older `acquire`, query and application lifecycle commands remain convenience
+interfaces. Their `--force-refresh`/`--allow-stale` flags are not accepted by the
+new commands, which express these decisions in typed request policies.
+
+`tests/composition_cli.rs` executes these flows using disposable roots and no
+home-directory environment, including native child survival and failed launches.

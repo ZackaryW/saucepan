@@ -3,6 +3,7 @@ use crate::{core::Store, models::source::Source};
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
+mod composition;
 mod credentials;
 mod root;
 mod source_query;
@@ -52,6 +53,8 @@ struct Args {
 }
 #[derive(Subcommand)]
 enum Commands {
+    #[command(flatten)]
+    Composition(composition::CompositionCommand),
     /// Register by explicit key using a JSON application registration.
     RegisterApplication {
         file: PathBuf,
@@ -284,6 +287,9 @@ pub fn run() -> Result<()> {
             .into());
         }
     };
+    if let Commands::Composition(command) = &args.command {
+        return composition::run(command, &args);
+    }
     let explicit_root = args.root.is_some();
     let root = root::resolve(args.root)?;
     let options = crate::core::source::AcquireOptions {
@@ -695,7 +701,7 @@ pub fn run() -> Result<()> {
                     )?,
                     &mut exit_code,
                 )?,
-                Commands::Init { .. } => unreachable!(),
+                Commands::Init { .. } | Commands::Composition(_) => unreachable!(),
             }
         }
     };

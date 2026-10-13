@@ -7,6 +7,7 @@ use crate::{
     },
     utils::tree::IoEvent,
 };
+use std::fs::OpenOptions;
 use std::sync::{Arc, Mutex, mpsc};
 
 #[test]

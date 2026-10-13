@@ -1,6 +1,7 @@
 pub mod archive;
 pub mod crypto;
 pub mod fs;
+pub mod lifetime;
 pub mod links;
 pub mod lock;
 pub mod path;

@@ -207,3 +207,65 @@ impl AppSession {
         store.acquire_composed_authorized(retrieval, acquisition, options, Some(authorization))
     }
 }
+
+impl AppSession {
+    pub fn lease_retrieval(&self, id: Uuid, scope: Option<&Scope>) -> Result<RetrievedResource> {
+        let record = self.store.retrieval_record(id)?;
+        let authorization =
+            self.store
+                .begin_composition(self.app, scope, record.source_uuid, None)?;
+        self.store
+            .lease_retrieval_authorized(id, Some(authorization))
+    }
+    pub fn source_path(&self, id: Uuid, scope: Option<&Scope>) -> Result<std::path::PathBuf> {
+        let _lock = self.store.lock()?;
+        self.store.application(self.app)?;
+        let record = self.store.retrieval_record(id)?;
+        self.store.authorize_resource(
+            &self.store.registry(self.app)?,
+            Action::Read,
+            Some(record.source_uuid),
+            scope,
+        )?;
+        self.store.source_path(id)
+    }
+}
+
+impl Store {
+    pub(crate) fn open_caller_authorized(
+        &self,
+        request: &RetrieveRequest,
+        descriptor: &crate::models::retrieval::RetrievedDescriptor,
+        authorization: Option<Authorization>,
+    ) -> Result<RetrievedResource> {
+        ensure!(
+            self.metadata_only,
+            "caller material reads require metadata-only access"
+        );
+        let SourceInput::Registered { source_uuid } = request.source else {
+            return Err(Error::new(ErrorCode::InvalidRequest, "registered source required").into());
+        };
+        if let Some(authorization) = &authorization {
+            authorization.check(self, source_uuid, None)?;
+        }
+        let _lock = self.lock()?;
+        let source = self.source(source_uuid)?.source;
+        ensure!(
+            descriptor.source == request.source,
+            Error::new(ErrorCode::InvalidRequest, "caller source identity mismatch")
+        );
+        let mut inline = request.clone();
+        inline.source = SourceInput::Inline { source };
+        let mut supplied = descriptor.clone();
+        supplied.source = inline.source.clone();
+        let mut result = Retriever::open_caller(&inline, &supplied)?;
+        if let Some(authorization) = &authorization {
+            authorization.check(self, source_uuid, None)?;
+        }
+        result.request = request.clone();
+        result.descriptor.source = request.source.clone();
+        result.store = Some(self.clone());
+        result.authorization = authorization;
+        Ok(result)
+    }
+}

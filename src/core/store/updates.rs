@@ -64,6 +64,7 @@ impl Store {
             );
         }
         crate::core::policy::composition::validate_composition(retrieval, acquisition, false)?;
+        composition::preflight_destination(retrieval, acquisition)?;
         if !matches!(acquisition.destination, Destination::Managed {}) {
             let mut retrieval = retrieval.clone();
             let due = acquisition.update_policy.due(None, 0);

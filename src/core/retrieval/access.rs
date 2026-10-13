@@ -53,7 +53,17 @@ impl Store {
             self.session.is_none(),
             Error::new(ErrorCode::AccessDenied, "use scoped source access")
         );
+        self.lease_retrieval_authorized(id, None)
+    }
+    pub(crate) fn lease_retrieval_authorized(
+        &self,
+        id: Uuid,
+        authorization: Option<crate::core::claim::composition::Authorization>,
+    ) -> Result<RetrievedResource> {
         let source = self.retrieval_record(id)?.source_uuid;
+        if let Some(authorization) = &authorization {
+            authorization.check(self, source, None)?;
+        }
         let guard = LockGuard::acquire(
             &self.root.join(format!(".locks/source-{source}")),
             LockMode::Shared,
@@ -61,7 +71,13 @@ impl Store {
         )?;
         let record = self.retrieval_record(id)?;
         self.verify_retrieval(&record, &record.request)?;
-        self.retrieved_handle(&record, &record.request, guard, true, false, false)
+        let mut result =
+            self.retrieved_handle(&record, &record.request, guard, true, false, false)?;
+        if let Some(authorization) = &authorization {
+            authorization.check(self, source, None)?;
+        }
+        result.authorization = authorization;
+        Ok(result)
     }
 
     pub(crate) fn retrieval_path(&self, record: &RetrievalRecord) -> Result<PathBuf> {
@@ -252,6 +268,9 @@ impl Store {
             Err(error) if error.kind() == std::io::ErrorKind::TimedOut => return Ok(false),
             Err(error) => return Err(error.into()),
         };
+        if crate::core::consumer::has_source_consumers(self, record.source_uuid)? {
+            return Ok(false);
+        }
         let _lock = self.lock()?;
         record = self.retrieval_record(id)?;
         if record.state == RetrievalState::Purged {

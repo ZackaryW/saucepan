@@ -84,7 +84,7 @@ impl Retriever {
             Some(path) => {
                 tempfile::tempdir_in(path.parent().expect("resolved destination parent"))?
             }
-            None => tempfile::tempdir()?,
+            None => crate::core::consumer::temporary_workspace(None)?,
         };
         let normalized_source = crate::core::source::git::normalize(source.clone())?;
         let scratch = tempfile::tempdir()?;
@@ -139,15 +139,22 @@ impl Retriever {
             (material.path, Ownership::Temporary {}, Some(Rc::new(work)))
         };
         Ok(RetrievedResource {
-            request: request.clone(),
-            source: normalized_source,
+            request: RetrieveRequest {
+                source: SourceInput::Inline {
+                    source: normalized_source.clone(),
+                },
+                ..request.clone()
+            },
+            source: normalized_source.clone(),
             store: None,
             authorization: None,
             descriptor: RetrievedDescriptor {
                 ownership,
                 path,
                 kind: material.kind,
-                source: request.source.clone(),
+                source: SourceInput::Inline {
+                    source: normalized_source,
+                },
                 resolved: material.resolved,
                 dependencies: material.dependencies,
                 verification: material.verification,
@@ -175,30 +182,7 @@ fn destination_path(source: &Source, destination: &Path) -> Result<PathBuf> {
                 .map_err(|_| Error::new(ErrorCode::InvalidRequest, "invalid Git file origin"))?;
             Ok(disjoint_destination(&path, destination)?)
         }
-        _ => {
-            // A remote source has no local tree to overlap. Use an existing
-            // sibling solely to reuse occupied-destination validation.
-            let parent = destination
-                .parent()
-                .filter(|path| !path.as_os_str().is_empty())
-                .unwrap_or(Path::new("."));
-            let parent = parent.canonicalize()?;
-            let name = destination.file_name().ok_or_else(|| {
-                Error::new(ErrorCode::InvalidRequest, "destination requires a name")
-            })?;
-            let target = parent.join(name);
-            ensure!(
-                !target.try_exists()?,
-                Error::new(ErrorCode::InvalidRequest, "destination occupied")
-            );
-            ensure!(
-                target
-                    .symlink_metadata()
-                    .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound),
-                Error::new(ErrorCode::InvalidRequest, "destination unavailable")
-            );
-            Ok(target)
-        }
+        _ => Ok(crate::utils::path::new_destination(destination)?),
     }
 }
 

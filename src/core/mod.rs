@@ -1,6 +1,7 @@
 pub mod activation;
 pub mod bootstrap;
 pub mod claim;
+pub(crate) mod consumer;
 pub mod index;
 pub mod launch;
 pub mod lifecycle;

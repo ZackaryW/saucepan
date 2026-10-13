@@ -24,8 +24,16 @@ impl Acquirer {
         retrieval: &crate::models::retrieval::RetrieveRequest,
         request: &AcquisitionRequest,
     ) -> Result<AcquiredResource> {
+        Self::retrieve_and_acquire_with(retrieval, request, &Default::default())
+    }
+    pub fn retrieve_and_acquire_with(
+        retrieval: &crate::models::retrieval::RetrieveRequest,
+        request: &AcquisitionRequest,
+        options: &crate::core::retrieval::RetrieveOptions,
+    ) -> Result<AcquiredResource> {
         validate_composition(retrieval, request, request.update_policy.due(None, 0))?;
-        let retrieved = crate::core::retrieval::Retriever::retrieve(retrieval)?;
+        preflight_destination(retrieval, request)?;
+        let retrieved = crate::core::retrieval::Retriever::retrieve_with(retrieval, options)?;
         Self::materialize_checked(&retrieved, request)
     }
 
@@ -35,18 +43,23 @@ impl Acquirer {
         retrieved: RetrievedResource,
         request: &AcquisitionRequest,
     ) -> Result<AcquiredResource> {
+        Self::refresh_with(retrieved, request, &Default::default())
+    }
+
+    pub fn refresh_with(
+        retrieved: RetrievedResource,
+        request: &AcquisitionRequest,
+        options: &crate::core::retrieval::RetrieveOptions,
+    ) -> Result<AcquiredResource> {
         let retrieval = retrieved.request.clone();
         let store = retrieved.store.clone();
         let authorization = retrieved.authorization.clone();
         drop(retrieved);
         match store {
-            Some(store) => store.acquire_composed_authorized(
-                &retrieval,
-                request,
-                &Default::default(),
-                authorization,
-            ),
-            None => Self::retrieve_and_acquire(&retrieval, request),
+            Some(store) => {
+                store.acquire_composed_authorized(&retrieval, request, options, authorization)
+            }
+            None => Self::retrieve_and_acquire_with(&retrieval, request, options),
         }
     }
 
@@ -186,6 +199,26 @@ impl Acquirer {
     }
 }
 
+pub(crate) fn preflight_destination(
+    retrieval: &crate::models::retrieval::RetrieveRequest,
+    request: &AcquisitionRequest,
+) -> Result<()> {
+    if let Destination::Directory { path } = &request.destination {
+        let output = crate::utils::path::new_destination(path)?;
+        if let crate::models::retrieval::CachePolicy::NoStore { destination } = &retrieval.cache {
+            let source = crate::utils::path::new_destination(destination)?;
+            ensure!(
+                !source.starts_with(&output) && !output.starts_with(&source),
+                Error::new(
+                    ErrorCode::InvalidRequest,
+                    "source and output destinations overlap"
+                )
+            );
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn prepare(
     retrieved: &RetrievedResource,
     request: &AcquisitionRequest,
@@ -193,7 +226,7 @@ pub(crate) fn prepare(
 ) -> Result<Prepared> {
     let temp = match staging {
         Some(path) => tempfile::tempdir_in(path)?,
-        None => tempfile::tempdir()?,
+        None => crate::core::consumer::temporary_workspace(None)?,
     };
     super::materialize::copy(retrieved, request, temp.path())?;
     Ok(Prepared {

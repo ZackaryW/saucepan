@@ -193,6 +193,13 @@ impl Store {
         policy: Freshness,
         previous: Option<&RetrievalRecord>,
     ) -> Result<(RetrievalRecord, bool, bool)> {
+        ensure!(
+            !crate::core::consumer::has_source_consumers(self, source.uuid)?,
+            Error::new(
+                ErrorCode::ContentUnavailable,
+                "source is in use by a child consumer"
+            )
+        );
         let stage = tempfile::tempdir_in(self.root.join(".staging"))?;
         let content = stage.path().join("content");
         fs::create_dir(&content)?;

@@ -76,3 +76,62 @@ fn validate(store: &Store, request: &RetrieveRequest) -> Result<()> {
     }
     Ok(())
 }
+
+impl RegisteredRetriever {
+    pub fn open_caller(
+        &self,
+        request: &RetrieveRequest,
+        descriptor: &crate::models::retrieval::RetrievedDescriptor,
+    ) -> Result<RetrievedResource> {
+        self.store.open_caller_authorized(request, descriptor, None)
+    }
+}
+impl RegisteredAppRetriever {
+    pub fn open_caller(
+        &self,
+        request: &RetrieveRequest,
+        descriptor: &crate::models::retrieval::RetrievedDescriptor,
+        scope: Option<&Scope>,
+    ) -> Result<RetrievedResource> {
+        let SourceInput::Registered { source_uuid } = request.source else {
+            return Err(Error::new(
+                ErrorCode::AccessDenied,
+                "application material requires a registered source",
+            )
+            .into());
+        };
+        let authorization =
+            self.session
+                .store
+                .begin_composition(self.session.app, scope, source_uuid, None)?;
+        self.session
+            .store
+            .open_caller_authorized(request, descriptor, Some(authorization))
+    }
+}
+
+impl RegisteredRetriever {
+    pub fn acquire_composed(
+        &self,
+        retrieval: &RetrieveRequest,
+        acquisition: &crate::models::store::AcquisitionRequest,
+        options: &RetrieveOptions,
+    ) -> Result<crate::core::store::AcquiredResource> {
+        validate(&self.store, retrieval)?;
+        self.store
+            .acquire_composed_authorized(retrieval, acquisition, options, None)
+    }
+}
+impl RegisteredAppRetriever {
+    pub fn acquire_composed(
+        &self,
+        retrieval: &RetrieveRequest,
+        acquisition: &crate::models::store::AcquisitionRequest,
+        scope: Option<&Scope>,
+        options: &RetrieveOptions,
+    ) -> Result<crate::core::store::AcquiredResource> {
+        validate(&self.session.store, retrieval)?;
+        self.session
+            .acquire_composed(retrieval, acquisition, scope, options)
+    }
+}
