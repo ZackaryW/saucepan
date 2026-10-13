@@ -87,6 +87,7 @@ impl Store {
             let (candidate, _guard) = self.acquire_candidate(&input.request, options)?;
             let lease = self.validate_candidate(candidate.entry.uuid, &binary, &input.probe)?;
             let claim = Claim {
+                policy_refs: Default::default(),
                 scope: input.scope.clone(),
                 overrides: crate::models::claim::policy::Overrides {
                     identical: Some(input.request.policies.identical),

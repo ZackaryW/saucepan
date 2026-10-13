@@ -343,6 +343,7 @@ fn registry_and_claim_round_trip_validate_the_new_contract() {
         store::{Request, Selector},
     };
     let mut registry = Registry {
+        policy_refs: Default::default(),
         app: Uuid::new_v4(),
         revision: 0,
         registration_key: scope("integration"),
@@ -366,6 +367,7 @@ fn registry_and_claim_round_trip_validate_the_new_contract() {
         ErrorCode::IntegrityError
     );
     let mut claim = Claim {
+        policy_refs: Default::default(),
         uuid: Uuid::new_v4(),
         scope: scope("project-a"),
         entry_uuid: Uuid::new_v4(),

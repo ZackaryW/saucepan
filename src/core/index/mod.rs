@@ -232,6 +232,7 @@ impl Store {
     pub(crate) fn new_registry(app: Uuid, revision: u64) -> Result<RegistryState> {
         Ok(RegistryState {
             registry: crate::models::claim::Registry {
+                policy_refs: Default::default(),
                 app,
                 revision,
                 registration_key: app.to_string().try_into()?,
@@ -255,6 +256,8 @@ impl Store {
             return Ok(existing);
         }
         let record = SourceRecord {
+            policy_refs: Default::default(),
+            policy_revision: 0,
             uuid: Uuid::new_v4(),
             source,
             public_discovery: false,

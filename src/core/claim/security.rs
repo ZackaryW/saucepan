@@ -180,6 +180,7 @@ pub enum Kind {
     Retrieval,
     Acquisition,
     Source,
+    Policy,
     Registry,
     Claim,
     Operation,

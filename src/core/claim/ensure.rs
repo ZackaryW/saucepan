@@ -188,6 +188,10 @@ impl Store {
             )
             .into());
         }
+        let policy_refs = existing
+            .as_ref()
+            .map(|existing| existing.claim.policy_refs.clone())
+            .unwrap_or_default();
         let (id, relative, mut overrides) = if let Some(existing) = existing {
             (
                 existing.claim.uuid,
@@ -205,6 +209,7 @@ impl Store {
         lease.project(&acquired.entry, relative.as_deref())?;
         acquired.directory = lease.directory().to_path_buf();
         let claim = Claim {
+            policy_refs,
             uuid: id,
             scope: input.scope.clone(),
             request,

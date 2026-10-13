@@ -4,10 +4,10 @@ The flat policy contract gives each definition its own immutable UUID. Applicati
 sources and claims associate those records through `policy_refs`; release selection
 uses an ordered `filter_refs` list. Policy definitions never reference other policies.
 
-Implementation status: the typed records, in-memory catalog and pure evaluator are
-available. Persistent registration, CLI lookup and operation integration are being
-implemented under `flatten-policy-resources`; the examples below are contract examples,
-not commands supported by the current CLI.
+Implementation status: typed records, in-memory and persistent catalogs, the pure
+evaluator and native association adoption are available. CLI lookup and the complete
+operation-contract cutover are being implemented under `flatten-policy-resources`;
+the examples below are contract examples, not commands supported by the current CLI.
 
 ```json
 [
@@ -53,3 +53,21 @@ The pure evaluator returns derived values and UUID/digest evidence. It does not 
 a store, fetch content, authenticate credentials or grant application ownership.
 Those checks remain at the operation/session boundary. Integrity mode and optional
 application credentials are independent of reusable policy definitions.
+
+Persistent definitions live at `policies/<uuid>.json` inside the existing verified
+metadata catalog. `Store::register_policies` publishes a batch atomically; an identical
+retry does not advance the catalog. `Store::policy(uuid)` returns the full verified
+definition. App-bound lookup additionally requires a readable association and current
+optional credentials. A UUID alone does not change caller authority.
+
+`adopt_application_policies` and `adopt_claim_policies` require the expected application
+revision; `adopt_source_policies` requires the source's `policy_revision`. Claims keep
+their selection and context. Source changes retain provider data and discovery state.
+The transition implementation translates references into existing execution settings;
+removing those nested public inputs remains part of the pending contract cutover.
+
+Definitions are retained after detachment, reclaim and uninstall so historical
+references remain meaningful. There is no definition deletion or overwrite operation.
+Journal recovery verifies definitions using the selected basic/keyring mode. Unknown
+caller UUIDs report `invalid_request`; missing or corrupt expected catalog members
+report `integrity_error` rather than becoming default policies.

@@ -310,6 +310,12 @@ impl Metadata {
             content,
         };
         for identity in deletes {
+            if identity.kind == Kind::Policy {
+                return Err(Error::new(
+                    ErrorCode::PolicyConflict,
+                    "policy definitions cannot be deleted",
+                ));
+            }
             let path = record_path(identity)?;
             let existing = next
                 .records
@@ -320,6 +326,15 @@ impl Metadata {
             }
         }
         for (identity, value) in writes {
+            if identity.kind == Kind::Policy && snapshot.contains(identity)? {
+                let previous: serde_json::Value = snapshot.read(&self.auth, identity)?;
+                if previous != value {
+                    return Err(Error::new(
+                        ErrorCode::PolicyConflict,
+                        "policy definitions are immutable",
+                    ));
+                }
+            }
             let path = record_path(identity)?;
             if transaction.deletes.contains(&path) || transaction.writes.contains_key(&path) {
                 return Err(integrity_error());
@@ -524,6 +539,7 @@ pub fn record_path(identity: Identity) -> Result<String> {
             Ok(format!("index/{id}/index.json"))
         }
         (Kind::Source, None, Some(id)) => Ok(format!("source/{id}.json")),
+        (Kind::Policy, None, Some(id)) => Ok(format!("policies/{id}.json")),
         (Kind::Registry, Some(app), None) => Ok(format!("claims/{app}/index.json")),
         (Kind::Claim, Some(app), Some(id)) => Ok(format!("claims/{app}/{id}.json")),
         (Kind::Operation, _, Some(id)) => Ok(format!(".staging/lifecycle/{id}/index.json")),

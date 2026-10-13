@@ -272,9 +272,15 @@ impl Store {
             })
             .unwrap_or_else(|| request_overrides(request));
         let effective = registry.registry.policies.evaluate(&overrides)?;
+        let policy_refs = registry
+            .claims
+            .get(&target.id)
+            .map(|claim| claim.policy_refs.clone())
+            .unwrap_or_default();
         registry.claims.insert(
             target.id,
             Claim {
+                policy_refs,
                 uuid: target.id,
                 scope: target.scope.clone(),
                 overrides,

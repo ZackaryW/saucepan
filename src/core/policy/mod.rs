@@ -3,8 +3,11 @@ use crate::{
     utils::path::relative_path,
 };
 use anyhow::{Result, ensure};
+mod adopt;
 pub mod catalog;
 pub mod composition;
+pub mod fence;
+pub(crate) mod persistence;
 pub mod resolve;
 pub fn validate(request: &Request) -> Result<()> {
     let Eviction::Latest { keep } = request.policies.eviction;

@@ -149,6 +149,10 @@ impl Store {
         // live claim afterwards. Its descriptor and content are immutable.
         let entry = self.output(uuid)?;
         let claim = Claim {
+            policy_refs: existing
+                .as_ref()
+                .map(|existing| existing.claim.policy_refs.clone())
+                .unwrap_or_default(),
             uuid: claim_id,
             scope: input.scope.clone(),
             request,

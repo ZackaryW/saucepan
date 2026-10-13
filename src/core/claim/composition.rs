@@ -21,6 +21,7 @@ use uuid::Uuid;
 
 #[derive(Clone)]
 pub(crate) struct Authorization {
+    pub policy_fence: crate::core::policy::fence::PolicyFence,
     pub owner: AcquisitionOwner,
     pub revision: u64,
     pub update: bool,
@@ -32,6 +33,7 @@ impl Authorization {
         source: Uuid,
         acquisition: Option<&AcquisitionRequest>,
     ) -> Result<()> {
+        self.policy_fence.check(store)?;
         let application = store.application(self.owner.app)?;
         let registry = store.registry(self.owner.app)?;
         store.authorize_resource(
@@ -85,6 +87,11 @@ impl Store {
     ) -> Result<Authorization> {
         let _lock = self.lock()?;
         let authorization = Authorization {
+            policy_fence: crate::core::policy::fence::PolicyFence::capture(
+                self,
+                Some(source),
+                Some(app),
+            )?,
             owner: AcquisitionOwner {
                 app,
                 scope: scope.cloned(),

@@ -15,6 +15,10 @@ pub enum Source {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SourceRecord {
+    #[serde(default)]
+    pub policy_refs: super::policy::PolicyRefs,
+    #[serde(default)]
+    pub policy_revision: u64,
     pub uuid: Uuid,
     pub source: Source,
     /// Explicit anonymous catalogue visibility; independent of claim visibility.
