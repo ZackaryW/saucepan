@@ -15,9 +15,7 @@ pub enum Source {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SourceRecord {
-    #[serde(default)]
     pub policy_refs: super::policy::PolicyRefs,
-    #[serde(default)]
     pub policy_revision: u64,
     pub uuid: Uuid,
     pub source: Source,
@@ -29,7 +27,6 @@ pub struct SourceRecord {
     /// Derived from the source's immutable policy definitions.
     #[serde(skip)]
     pub retrieval_freshness: Option<super::policy::Freshness>,
-    #[serde(default)]
     pub discovery: BTreeMap<String, Discovery>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]

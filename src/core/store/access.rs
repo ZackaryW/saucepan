@@ -85,7 +85,11 @@ impl ResourceLease {
 }
 
 impl Store {
-    pub fn resolve(&self, entry: Uuid, mode: VerificationMode) -> Result<ResolvedResource> {
+    pub(crate) fn resolve_planned(
+        &self,
+        entry: Uuid,
+        mode: VerificationMode,
+    ) -> Result<ResolvedResource> {
         if mode == VerificationMode::Metadata {
             let _lock = self.lock()?;
             self.authorize_output(entry, crate::models::claim::policy::Action::Lease)?;
@@ -96,12 +100,16 @@ impl Store {
                 verification: mode,
             });
         }
-        Ok(self.lease(entry, mode)?.resource().clone())
+        Ok(self.lease_planned(entry, mode)?.resource().clone())
     }
     pub fn verify(&self, entry: Uuid) -> Result<ResolvedResource> {
         self.resolve(entry, VerificationMode::Full)
     }
-    pub fn lease(&self, entry: Uuid, mode: VerificationMode) -> Result<ResourceLease> {
+    pub(crate) fn lease_planned(
+        &self,
+        entry: Uuid,
+        mode: VerificationMode,
+    ) -> Result<ResourceLease> {
         let (output, mut lease) = {
             let _lock = self.lock()?;
             self.authorize_output(entry, crate::models::claim::policy::Action::Lease)?;
@@ -114,7 +122,7 @@ impl Store {
         }
         Ok(lease)
     }
-    pub fn lease_claim(
+    pub(crate) fn lease_claim_planned(
         &self,
         app: Uuid,
         claim: Uuid,

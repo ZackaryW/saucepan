@@ -97,13 +97,11 @@ pub struct Request {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OutputPlan {
-    #[serde(default)]
+    #[serde(deserialize_with = "required_adoption")]
     pub adopted: Option<Box<crate::models::claim::adopted::AdoptedPolicies>>,
     pub source_uuid: Uuid,
     pub selector: Selector,
-    #[serde(default)]
     pub selection: Selection,
-    #[serde(default)]
     pub policies: Policies,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -177,3 +175,10 @@ pub struct ResolvedResource {
 }
 
 pub use crate::models::policy::requests::Acquisition as AcquisitionRequest;
+
+// Unplanned internal identity candidates may omit evidence; persisted output plans may not.
+fn required_adoption<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Box<crate::models::claim::adopted::AdoptedPolicies>>, D::Error> {
+    Box::deserialize(deserializer).map(Some)
+}

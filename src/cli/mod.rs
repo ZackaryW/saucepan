@@ -44,10 +44,6 @@ struct Args {
     /// Portable leaf policy catalog for retrieve/acquisition commands.
     #[arg(long = "policies", global = true)]
     portable_policies: Option<PathBuf>,
-    #[arg(long, global = true)]
-    force_refresh: bool,
-    #[arg(long, global = true)]
-    allow_stale: bool,
     #[arg(long, global = true, hide = true)]
     test_now: Option<u64>,
     #[arg(long, global = true, hide = true)]
@@ -321,8 +317,6 @@ fn run_store(args: Args) -> Result<()> {
     let explicit_root = args.root.is_some();
     let root = root::resolve(args.root)?;
     let options = crate::core::source::AcquireOptions {
-        force_refresh: args.force_refresh,
-        allow_stale: args.allow_stale,
         test_now: args.test_now,
         test_github_api: args.test_github_api,
     };

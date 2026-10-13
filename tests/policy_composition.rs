@@ -550,3 +550,60 @@ fn equivalent_policy_definitions_share_composed_acquisition_identity() {
     assert_eq!(states[0].last_success, Some(100));
     assert_eq!(states[0].acquisition.provenance[0].uuid, first_policy.uuid);
 }
+#[test]
+fn composed_outputs_preserve_retrieval_choices_for_replay() {
+    let temp = tempfile::tempdir().unwrap();
+    let file = temp.path().join("input");
+    fs::write(&file, b"original").unwrap();
+    let store = Store::create(&temp.path().join("root")).unwrap();
+    let source = store
+        .register_source(Source::Local { path: file.clone() })
+        .unwrap();
+    let cached = input(SourceInput::Registered {
+        source_uuid: source.uuid,
+    });
+    drop(store.retrieve(&cached).unwrap());
+    let cache_only = record(json!({"type":"refresh_policy","mode":"cache_only"}));
+    let none =
+        record(json!({"type":"verification_policy","policy_target":"payload","mode":"none"}));
+    store
+        .register_policies(&[cache_only.clone(), none.clone()])
+        .unwrap();
+    let mut retrieval = cached;
+    retrieval.policy_refs = refs(&[&cache_only, &none]);
+    let acquired = store
+        .acquire_composed(&retrieval, &Acquisition::default())
+        .unwrap();
+    let Ownership::Managed { uuid } = acquired.descriptor().ownership else {
+        panic!()
+    };
+    let output = store.output(uuid).unwrap();
+    let evidence = output.request.adopted.as_ref().unwrap();
+    assert_eq!(
+        evidence.behavior.freshness,
+        saucepan::models::policy::Freshness::CacheOnly {}
+    );
+    assert_eq!(
+        evidence.behavior.payload_verification,
+        saucepan::models::policy::PayloadVerification::None
+    );
+    drop(acquired);
+    fs::write(file, b"new source").unwrap();
+    let replayed = store.reacquire(uuid, &Default::default()).unwrap();
+    assert_eq!(
+        fs::read(replayed.directory.join("input")).unwrap(),
+        b"original"
+    );
+    assert_eq!(replayed.entry.request.adopted, output.request.adopted);
+    for field in ["adopted", "policies", "selection"] {
+        let mut incomplete = serde_json::to_value(&output.request).unwrap();
+        incomplete.as_object_mut().unwrap().remove(field);
+        assert!(
+            serde_json::from_value::<saucepan::models::store::OutputPlan>(incomplete).is_err(),
+            "{field}"
+        );
+    }
+    let mut null = serde_json::to_value(&output.request).unwrap();
+    null["adopted"] = json!(null);
+    assert!(serde_json::from_value::<saucepan::models::store::OutputPlan>(null).is_err());
+}

@@ -59,7 +59,6 @@ fn release_cache_expiry_fallback_and_cli_use_real_transport() {
     let mut opts = AcquireOptions {
         test_now: Some(100),
         test_github_api: Some(server.base.clone()),
-        ..Default::default()
     };
     let first = store.acquire_with(&request, &opts).unwrap();
     assert!(first.update_checked);
@@ -77,9 +76,19 @@ fn release_cache_expiry_fallback_and_cli_use_real_transport() {
         b"/asset/1"
     );
     fail.store(true, Ordering::SeqCst);
-    opts.force_refresh = true;
+    policy_fixture::replace(
+        &store,
+        &mut request.policy_refs,
+        serde_json::json!({"type":"refresh_policy","mode":"always"}),
+    )
+    .unwrap();
     assert!(store.acquire_with(&request, &opts).is_err());
-    opts.allow_stale = true;
+    policy_fixture::replace(
+        &store,
+        &mut request.policy_refs,
+        serde_json::json!({"type":"stale_policy","allow_stale":true}),
+    )
+    .unwrap();
     let stale = store.acquire_with(&request, &opts).unwrap();
     assert!(stale.stale);
     assert_eq!(stale.entry.uuid, second.entry.uuid);
@@ -95,7 +104,12 @@ fn release_cache_expiry_fallback_and_cli_use_real_transport() {
         86500
     );
     fail.store(false, Ordering::SeqCst);
-    opts.force_refresh = false;
+    policy_fixture::replace(
+        &store,
+        &mut request.policy_refs,
+        serde_json::json!({"type":"refresh_policy","mode":"max_age","seconds":86400}),
+    )
+    .unwrap();
     opts.test_now = Some(1);
     assert!(store.acquire_with(&request, &opts).unwrap().update_checked);
     assert!(
@@ -286,7 +300,6 @@ fn zip_integrity_tag_and_shared_platform_discovery() {
     let opts = AcquireOptions {
         test_now: Some(100),
         test_github_api: Some(server.base.clone()),
-        ..Default::default()
     };
     let first = store.acquire_with(&request, &opts).unwrap();
     assert_eq!(

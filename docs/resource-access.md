@@ -111,7 +111,7 @@ ARG...`. Saucepan sets `SAUCEPAN_RESOURCE_DIR` in the child's environment,
 overriding an inherited value without changing the parent environment. Arguments
 remain literal, the working directory is inherited, and child streams and exit
 status pass through without wrapper JSON. No shell or placeholder expansion is
-performed. `--force-refresh` and `--allow-stale` have no effect on access.
+performed. Path verification policies do not refresh sources.
 
 Use `--as-app APP_UUID` with `path`, `verify` or `run` for restricted direct-output
 access. Without an app, these exact-output commands use trusted local

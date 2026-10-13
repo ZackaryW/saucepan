@@ -242,7 +242,9 @@ pub(crate) fn managed_request(
     };
     let revision = effective_revision(request)?.expect("managed revision policy");
     Ok(OutputPlan {
-        adopted: request.adopted.clone(),
+        adopted: Some(Box::new(crate::core::policy::composition::output_evidence(
+            retrieved, request,
+        )?)),
         source_uuid,
         selector: retrieved.request.selector.clone(),
         selection: Selection {

@@ -69,7 +69,6 @@ impl Store {
         let options = AcquireOptions {
             test_now: options.test_now,
             test_github_api: options.test_github_api.clone(),
-            ..Default::default()
         };
         let now = options.now()?;
         let lock_path = self.root.join(format!(".locks/source-{}", source.uuid));

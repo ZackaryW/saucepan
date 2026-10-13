@@ -318,9 +318,7 @@ new source/output destination in a new composition to fetch another revision.
 Configured app restrictions still apply with `--as-app APP_UUID --scope KEY`;
 these composition commands create no claim. Use `ensure` for claimed selection.
 Credentials are needed only when required by that application's registration.
-The older `acquire`, query and application lifecycle commands remain convenience
-interfaces. Their `--force-refresh`/`--allow-stale` flags are not accepted by the
-new commands, which express these decisions in typed request policies.
+Managed `acquire`, query and application lifecycle commands use the same reference-only policy contract. Refresh and stale behavior are selected by `refresh_policy` and `stale_policy` UUIDs; the former global refresh/stale flags are removed.
 
 `tests/composition_cli.rs` executes these flows using disposable roots and no
 home-directory environment, including native child survival and failed launches.

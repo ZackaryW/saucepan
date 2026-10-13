@@ -341,7 +341,7 @@ fn lifecycle_journal_couples_application_registry_and_receipt_at_each_boundary()
 }
 
 #[test]
-fn removing_state_fences_mutations_and_legacy_defaults_are_explicit() {
+fn removing_state_fences_mutations_and_incomplete_records_are_rejected() {
     let tmp = tempfile::tempdir().unwrap();
     let store = Store::create_fixture(&tmp.path().join("root")).unwrap();
     let mut app = store.register_app("state".into()).unwrap();
@@ -349,9 +349,7 @@ fn removing_state_fences_mutations_and_legacy_defaults_are_explicit() {
     for field in ["revision", "state", "shims"] {
         json.as_object_mut().unwrap().remove(field);
     }
-    let old: crate::models::index::Application = serde_json::from_value(json.clone()).unwrap();
-    assert_eq!(old.state, AppState::Ready);
-    assert_eq!(old.revision, 0);
+    assert!(serde_json::from_value::<crate::models::index::Application>(json.clone()).is_err());
     json["unknown"] = true.into();
     assert!(serde_json::from_value::<crate::models::index::Application>(json).is_err());
     store.deactivate(app.uuid).unwrap();

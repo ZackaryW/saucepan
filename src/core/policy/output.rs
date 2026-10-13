@@ -70,7 +70,17 @@ impl Store {
         };
         super::validate(&request)?;
         let mut execution = self.clone();
-        execution.policy_fence = Some(PolicyFence::capture(self, Some(source.uuid), None)?);
+        let references: Vec<_> = input
+            .policy_refs
+            .ids()
+            .iter()
+            .chain(input.selection.filter_refs.ids())
+            .copied()
+            .collect();
+        execution.policy_fence = Some(
+            PolicyFence::capture_references(self, Some(source.uuid), None, &references)?
+                .with_authority(plan, None),
+        );
         Ok((execution, request))
     }
 }

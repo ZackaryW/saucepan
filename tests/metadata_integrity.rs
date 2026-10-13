@@ -668,3 +668,55 @@ fn basic_checksum_has_independent_framed_digest_and_rejects_unknown_contracts() 
     assert!(Authenticator::root_hint(&oversized).is_err());
     assert!(auth.verify::<Value>(identity, &oversized).is_err());
 }
+#[test]
+fn authenticated_mixed_policy_records_are_rejected_without_rewriting_them() {
+    use saucepan::{core::Store, models::source::Source};
+    for mode in [IntegrityMode::Basic, IntegrityMode::Keyring] {
+        for mixed in ["source", "registry", "application"] {
+            let temp = tempfile::tempdir().unwrap();
+            let keys = MemoryKeys::default();
+            let store = Store::create_with_integrity_and_keys(temp.path(), mode, &keys).unwrap();
+            fs::write(temp.path().join("input"), "content").unwrap();
+            let source = store
+                .register_source(Source::Local {
+                    path: temp.path().join("input"),
+                })
+                .unwrap();
+            let app = store.register_app("strict-contract".into()).unwrap();
+            let identity = match mixed {
+                "source" => id(Kind::Source, None, Some(source.uuid)),
+                "registry" => id(Kind::Registry, Some(app.uuid), None),
+                _ => id(Kind::Application, Some(app.uuid), None),
+            };
+            let metadata = Metadata::open(temp.path(), &keys).unwrap();
+            let snapshot = metadata.snapshot().unwrap();
+            let mut value: Value = snapshot.read(metadata.authenticator(), identity).unwrap();
+            match mixed {
+                "source" => value["refresh"] = json!({"seconds":86400}),
+                "registry" => value["defaults"] = json!({}),
+                _ => {
+                    value.as_object_mut().unwrap().remove("revision");
+                }
+            }
+            // Inject a valid envelope/catalog so rejection tests the contract, not a bad checksum.
+            metadata
+                .publish(&snapshot, vec![(identity, value)], vec![])
+                .unwrap();
+            let before = saucepan::utils::tree::inspect(temp.path(), Default::default()).unwrap();
+            let result = match mixed {
+                "source" => store.source(source.uuid).map(|_| ()),
+                "registry" => store.registry(app.uuid).map(|_| ()),
+                _ => store.record(app.uuid).map(|_| ()),
+            };
+            assert_eq!(
+                Error::from_anyhow(&result.unwrap_err()).code,
+                ErrorCode::IntegrityError,
+                "{mixed}"
+            );
+            assert_eq!(
+                before,
+                saucepan::utils::tree::inspect(temp.path(), Default::default()).unwrap()
+            );
+        }
+    }
+}

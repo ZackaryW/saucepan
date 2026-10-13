@@ -18,6 +18,59 @@ use anyhow::{Context, Result};
 use uuid::Uuid;
 
 impl Store {
+    pub fn resolve(&self, entry: Uuid, mode: VerificationMode) -> Result<ResolvedResource> {
+        let (input, catalog) = path_input(vec![], Some(mode))?;
+        self.resolve_referenced(entry, &input, &catalog)
+    }
+
+    pub fn lease(&self, entry: Uuid, mode: VerificationMode) -> Result<ResourceLease> {
+        let (input, catalog) = path_input(vec![], Some(mode))?;
+        self.lease_referenced(entry, &input, &catalog)
+    }
+
+    pub fn lease_view(&self, view: &CoveredView, mode: VerificationMode) -> Result<ResourceLease> {
+        let (input, catalog) = path_input(vec![], Some(mode))?;
+        self.lease_view_referenced(view, &input, &catalog)
+    }
+
+    pub fn lease_claim(
+        &self,
+        app: Uuid,
+        claim: Uuid,
+        mode: VerificationMode,
+    ) -> Result<ResourceLease> {
+        let (input, portable) = path_input(vec![], Some(mode))?;
+        self.lease_claim_referenced(app, claim, &input, &portable)
+    }
+
+    pub fn lease_claim_referenced(
+        &self,
+        app: Uuid,
+        id: Uuid,
+        input: &PathAccess,
+        portable: &PolicyCatalog,
+    ) -> Result<ResourceLease> {
+        let (execution, mode) = {
+            let _lock = self.lock()?;
+            let registry = self.registry(app)?;
+            self.check_session(&registry)?;
+            let claim = registry
+                .claims
+                .get(&id)
+                .with_context(|| Error::new(ErrorCode::UnknownClaim, "claim missing"))?;
+            self.authorize_claim(
+                &registry,
+                claim,
+                crate::models::claim::policy::Action::Lease,
+            )?;
+            self.path_context(claim.request.source_uuid, Some(app), input, portable)?
+        };
+        execution.check_policy_fence()?;
+        let lease = execution.lease_claim_planned(app, id, mode)?;
+        execution.check_policy_fence()?;
+        Ok(lease)
+    }
+
     fn path_context(
         &self,
         source: Uuid,
@@ -80,7 +133,7 @@ impl Store {
             )?
         };
         execution.check_policy_fence()?;
-        let result = execution.resolve(entry, mode)?;
+        let result = execution.resolve_planned(entry, mode)?;
         execution.check_policy_fence()?;
         Ok(result)
     }
@@ -102,7 +155,7 @@ impl Store {
             )?
         };
         execution.check_policy_fence()?;
-        let lease = execution.lease(entry, mode)?;
+        let lease = execution.lease_planned(entry, mode)?;
         execution.check_policy_fence()?;
         Ok(lease)
     }
@@ -130,7 +183,7 @@ impl Store {
             self.path_context(claim.request.source_uuid, Some(view.app), input, portable)?
         };
         execution.check_policy_fence()?;
-        let lease = execution.lease_view(view, mode)?;
+        let lease = execution.lease_view_planned(view, mode)?;
         execution.check_policy_fence()?;
         Ok(lease)
     }
@@ -162,7 +215,7 @@ impl AppSession {
     }
 }
 
-/// CLI convenience values enter the same evaluator as referenced definitions.
+/// Native and CLI convenience values enter the same evaluator as referenced definitions.
 /// A caller cannot select both an explicit mode and policy references.
 pub(crate) fn path_input(
     refs: Vec<Uuid>,

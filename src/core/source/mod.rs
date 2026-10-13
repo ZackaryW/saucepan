@@ -14,8 +14,6 @@ pub(crate) mod retrieve;
 
 #[derive(Debug, Clone, Default)]
 pub struct AcquireOptions {
-    pub force_refresh: bool,
-    pub allow_stale: bool,
     pub test_now: Option<u64>,
     pub test_github_api: Option<String>,
 }

@@ -293,13 +293,13 @@ impl Store {
         })
     }
 
-    pub fn lease_view(
+    pub(crate) fn lease_view_planned(
         &self,
         view: &CoveredView,
         mode: crate::models::store::VerificationMode,
     ) -> Result<ResourceLease> {
         view.validate()?;
-        let mut lease = self.lease_claim(view.app, view.claim, mode)?;
+        let mut lease = self.lease_claim_planned(view.app, view.claim, mode)?;
         let output = self.output(lease.entry_uuid())?;
         lease.project(&output, view.relative.as_deref())?;
         Ok(lease)

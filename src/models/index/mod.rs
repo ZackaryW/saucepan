@@ -26,11 +26,8 @@ pub struct Application {
     pub name: String,
     pub settings: Settings,
     pub active: Option<Binding>,
-    #[serde(default)]
     pub state: AppState,
-    #[serde(default)]
     pub revision: u64,
-    #[serde(default)]
     pub shims: Vec<OwnedShim>,
 }
 impl Application {

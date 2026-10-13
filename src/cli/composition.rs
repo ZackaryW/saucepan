@@ -269,13 +269,6 @@ fn material(
 
 pub(super) fn run(input: &CompositionCommand, args: &Args) -> Result<()> {
     ensure!(
-        !args.force_refresh && !args.allow_stale,
-        Error::new(
-            ErrorCode::InvalidRequest,
-            "composition commands use typed freshness/update/stale policies in their requests"
-        )
-    );
-    ensure!(
         args.credential_file.is_none() || args.as_app.is_some(),
         Error::new(
             ErrorCode::InvalidRequest,

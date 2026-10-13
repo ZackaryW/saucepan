@@ -103,3 +103,56 @@ pub fn effective_revision(request: &AcquisitionPlan) -> Result<Option<RevisionPo
         Ok(None)
     }
 }
+/// Preserve the independently evaluated retrieval and copy choices for replay.
+/// Only verified immutable definitions can contribute to persisted output evidence.
+pub(crate) fn output_evidence(
+    retrieved: &crate::core::retrieval::RetrievedResource,
+    acquisition: &crate::models::store::AcquisitionPlan,
+) -> anyhow::Result<crate::models::claim::adopted::AdoptedPolicies> {
+    use crate::models::policy::{PolicyDefinition, record::Axis};
+    let store = retrieved
+        .store
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("managed store missing"))?;
+    let snapshot = store.metadata.snapshot()?;
+    let catalog = super::persistence::load(&store.metadata, &snapshot)?;
+    if let Some(adopted) = &acquisition.adopted {
+        super::claims::validate_adopted(&catalog, adopted)?;
+        return Ok(adopted.as_ref().clone());
+    }
+    let mut plan = acquisition.evaluated.clone();
+    let mut filters = Vec::new();
+    for expected in &retrieved.request.provenance {
+        let record = catalog.get(expected.uuid)?;
+        anyhow::ensure!(
+            super::resolve::evidence(record)? == *expected,
+            crate::error::Error::new(
+                crate::error::ErrorCode::IntegrityError,
+                "retrieval policy evidence mismatch"
+            )
+        );
+        match record.definition.axis() {
+            Some(
+                Axis::Cache
+                | Axis::Refresh
+                | Axis::Stale
+                | Axis::PayloadVerification
+                | Axis::Selection,
+            ) => {
+                super::resolve::apply(&mut plan, record)?;
+            }
+            _ if matches!(
+                record.definition,
+                PolicyDefinition::GithubReleaseAssetFilter(_)
+            ) =>
+            {
+                filters.push(record.uuid)
+            }
+            _ => {}
+        }
+    }
+    let adopted =
+        crate::models::claim::adopted::AdoptedPolicies::from_plan(&plan, filters.try_into()?);
+    super::claims::validate_adopted(&catalog, &adopted)?;
+    Ok(adopted)
+}

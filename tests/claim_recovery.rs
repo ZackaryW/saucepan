@@ -228,14 +228,7 @@ fn exact_git_restores_saved_commit_after_branch_moves() {
     git(&["add", "."]);
     git(&["commit", "-m", "new"]);
     let restored = store
-        .recover_claim(
-            app,
-            first.claim.uuid,
-            &AcquireOptions {
-                force_refresh: true,
-                ..Default::default()
-            },
-        )
+        .recover_claim(app, first.claim.uuid, &AcquireOptions::default())
         .unwrap();
     assert_eq!(
         restored.acquired.entry.resolved,
@@ -298,7 +291,6 @@ fn remote_exact_uses_saved_url_and_rejects_replacement_while_refresh_honors_ttl(
         let mut options = AcquireOptions {
             test_now: Some(100),
             test_github_api: Some(server.base.clone()),
-            ..Default::default()
         };
         let first = store.ensure_claim(app, &request, &options).unwrap();
         evict(&store, &first, &options);

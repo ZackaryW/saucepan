@@ -1,4 +1,5 @@
 mod native_root;
+mod policy_fixture;
 use saucepan::{
     core::source::AcquireOptions,
     models::{
@@ -123,9 +124,19 @@ fn shared_source_tracked_and_pinned_outputs_with_cli_parity() {
         reference: "main".into(),
     };
     fs::rename(&input, tmp.path().join("offline")).unwrap();
-    opts.force_refresh = true;
+    policy_fixture::replace(
+        &store,
+        &mut request.policy_refs,
+        serde_json::json!({"type":"refresh_policy","mode":"always"}),
+    )
+    .unwrap();
     assert!(store.acquire_with(&request, &opts).is_err());
-    opts.allow_stale = true;
+    policy_fixture::replace(
+        &store,
+        &mut request.policy_refs,
+        serde_json::json!({"type":"stale_policy","allow_stale":true}),
+    )
+    .unwrap();
     let stale = store.acquire_with(&request, &opts).unwrap();
     assert!(stale.stale);
     assert_eq!(stale.entry.uuid, b.entry.uuid);

@@ -3,7 +3,7 @@ use super::{AcquireOptions, Prepared};
 use crate::{
     core::{Store, retrieval::RetrieveOptions, store::composition},
     models::{
-        policy::{Freshness, PayloadVerification},
+        policy::PayloadVerification,
         retrieval::{AssetSelection, CachePolicy, RetrievalPlan, SourceInput},
         source::Source,
         store::{AcquisitionPlan, Format, OutputPlan},
@@ -36,7 +36,13 @@ impl Store {
             verification: PayloadVerification::IfAvailable,
             expected_sha256: request.selection.sha256.clone(),
         };
-        if let Some(adopted) = &request.adopted {
+        {
+            let adopted = request.adopted.as_deref().ok_or_else(|| {
+                crate::error::Error::new(
+                    crate::error::ErrorCode::IntegrityError,
+                    "output is missing adopted policy evidence",
+                )
+            })?;
             retrieval.verification = adopted.behavior.payload_verification;
             retrieval.provenance = adopted.evidence.values().cloned().collect();
         }
@@ -80,7 +86,7 @@ impl Store {
     pub(crate) fn composition_requests(
         &self,
         request: &OutputPlan,
-        options: &AcquireOptions,
+        _options: &AcquireOptions,
     ) -> Result<(RetrievalPlan, AcquisitionPlan)> {
         let source = self.source(request.source_uuid)?;
         match &source.source {
@@ -105,8 +111,8 @@ impl Store {
                 selection_policy: request.selection.selection_policy.clone(),
             },
             cache: CachePolicy::Cached {
-                freshness: options.force_refresh.then_some(Freshness::Always {}),
-                allow_stale: options.allow_stale,
+                freshness: None,
+                allow_stale: false,
             },
             verification: PayloadVerification::IfAvailable,
             expected_sha256: request.selection.sha256.clone(),
@@ -126,7 +132,13 @@ impl Store {
             protection: request.policies.protection.clone(),
             ..Default::default()
         };
-        if let Some(adopted) = &request.adopted {
+        {
+            let adopted = request.adopted.as_deref().ok_or_else(|| {
+                crate::error::Error::new(
+                    crate::error::ErrorCode::IntegrityError,
+                    "output is missing adopted policy evidence",
+                )
+            })?;
             let snapshot = self.metadata.snapshot()?;
             let catalog = crate::core::policy::persistence::load(&self.metadata, &snapshot)?;
             crate::core::policy::claims::validate_adopted(&catalog, adopted)?;
@@ -138,24 +150,14 @@ impl Store {
                     "managed claims require cached retrieval"
                 )
             );
-            ensure!(
-                !options.force_refresh || !matches!(behavior.freshness, Freshness::CacheOnly {}),
-                crate::error::Error::new(
-                    crate::error::ErrorCode::PolicyConflict,
-                    "forced update conflicts with cache_only"
-                )
-            );
             retrieval.cache = CachePolicy::Cached {
-                freshness: Some(if options.force_refresh {
-                    Freshness::Always {}
-                } else {
-                    behavior.freshness
-                }),
-                allow_stale: behavior.allow_stale || options.allow_stale,
+                freshness: Some(behavior.freshness),
+                allow_stale: behavior.allow_stale,
             };
             retrieval.verification = behavior.payload_verification;
             retrieval.provenance = adopted.evidence.values().cloned().collect();
             acquired.provenance = retrieval.provenance.clone();
+            acquired.evaluated = adopted.pinned();
             acquired.update_policy = behavior.update;
             acquired.revision_policy = Some(behavior.revision);
         }

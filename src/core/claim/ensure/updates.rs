@@ -93,8 +93,7 @@ impl Store {
                     .is_some_and(|existing| existing.claim.entry_uuid == state.selected)
             })
             .and_then(|state| state.last_success);
-        let due =
-            options.force_refresh || acquisition.update_policy.due(last_success, options.now()?);
+        let due = acquisition.update_policy.due(last_success, options.now()?);
         authorization.update =
             existing.is_some() && (due || acquisition.identical == Identical::NewEntry);
         authorization.check(self, input.source_uuid, Some(&acquisition))?;

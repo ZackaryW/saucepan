@@ -55,7 +55,6 @@ impl Retriever {
         let options = AcquireOptions {
             test_now: options.test_now,
             test_github_api: options.test_github_api.clone(),
-            ..Default::default()
         };
         validate_retrieval(request)?;
         let SourceInput::Inline { source } = &request.source else {

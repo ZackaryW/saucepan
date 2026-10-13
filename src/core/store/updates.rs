@@ -177,7 +177,7 @@ impl Store {
         previous: Option<&AcquisitionState>,
         claim: Option<crate::core::claim::operations::ClaimTarget>,
     ) -> Result<AcquiredResource> {
-        let legacy = composition::managed_request(retrieved, request)?;
+        let output_plan = composition::managed_request(retrieved, request)?;
         let prepared = composition::prepare(retrieved, request, Some(&self.root.join(".staging")))?;
         let checked = retrieved.descriptor.origin_checked && !retrieved.descriptor.stale;
         let state = AcquisitionState {
@@ -187,7 +187,7 @@ impl Store {
                 .map_or(Some(1), |s| s.revision.checked_add(1))
                 .ok_or_else(|| anyhow::anyhow!("acquisition revision overflow"))?,
             selected: Uuid::nil(),
-            request: legacy.clone(),
+            request: output_plan.clone(),
             acquisition: request.clone(),
             last_success: if checked {
                 retrieved.descriptor.checked_at
@@ -207,10 +207,10 @@ impl Store {
         };
         let _lock = self.lock()?;
         if let Some(authorization) = &retrieved.authorization {
-            authorization.check(self, legacy.source_uuid, Some(request))?;
+            authorization.check(self, output_plan.source_uuid, Some(request))?;
         }
         let result = self.publish_prepared_state(
-            &legacy,
+            &output_plan,
             prepared,
             claim,
             true,
