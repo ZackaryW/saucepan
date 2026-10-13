@@ -56,6 +56,79 @@ fn setup(mode: IntegrityMode) -> (tempfile::TempDir, MemoryKeys, Store, Request)
 }
 
 #[test]
+fn protected_policy_adoption_uses_current_proof_and_returns_coherent_receipts() {
+    let (_tmp, _keys, store, source) = setup(IntegrityMode::Keyring);
+    let mut registration = input(&store, "protected");
+    registration.credentials_required = true;
+    let registered = store.register_application(&registration, None).unwrap();
+    let app = registered.application.uuid;
+    let token = registered.credential.unwrap();
+    let session = store
+        .session(app, Some(Credential::from_bytes(token.expose()).unwrap()))
+        .unwrap();
+    let input = saucepan::models::claim::EnsureRequest {
+        source_uuid: source.source_uuid,
+        scope: scope("project"),
+        selector: Selector::Local,
+        selection: Default::default(),
+        context: Default::default(),
+        policy_refs: Default::default(),
+    };
+    let first = session.ensure(&input, &Default::default()).unwrap();
+    let revision = store.application(app).unwrap().revision;
+    let refs = policy_fixture::definitions(
+        &store,
+        vec![serde_json::json!({"type":"revision_policy","history":"latest","keep":2})],
+    )
+    .unwrap();
+    let before = fs::read(store.root().join("root.json")).unwrap();
+    for (proof, expected) in [
+        (None, ErrorCode::AuthenticationRequired),
+        (
+            Some(Credential::from_bytes(&[123; 32]).unwrap()),
+            ErrorCode::AuthenticationFailed,
+        ),
+    ] {
+        assert_eq!(
+            code(
+                store
+                    .adopt_application_policies(app, revision, refs.clone(), proof.as_ref())
+                    .unwrap_err()
+            ),
+            expected
+        );
+    }
+    assert_eq!(
+        code(
+            store
+                .adopt_claim_policies(app, first.claim.uuid, revision, refs.clone())
+                .unwrap_err()
+        ),
+        ErrorCode::AuthenticationRequired
+    );
+    assert_eq!(before, fs::read(store.root().join("root.json")).unwrap());
+    let adopted = session
+        .adopt_claim_policies(first.claim.uuid, revision, refs.clone())
+        .unwrap();
+    assert_eq!(adopted.revision, revision + 1);
+    assert_eq!(adopted.claim.uuid, first.claim.uuid);
+    assert_eq!(adopted.claim.entry_uuid, first.claim.entry_uuid);
+    let app_adopted = store
+        .adopt_application_policies(app, adopted.revision, refs.clone(), Some(&token))
+        .unwrap();
+    assert_eq!(app_adopted.revision, adopted.revision + 1);
+    assert_eq!(app_adopted.policy_refs, refs);
+    // The previous receipt still describes its own completed operation.
+    assert_eq!(adopted.revision, revision + 1);
+    let before = fs::read(store.root().join("root.json")).unwrap();
+    let repeated = store
+        .adopt_application_policies(app, app_adopted.revision, refs, Some(&token))
+        .unwrap();
+    assert_eq!(repeated.revision, app_adopted.revision);
+    assert_eq!(before, fs::read(store.root().join("root.json")).unwrap());
+}
+
+#[test]
 fn credentials_off_still_enforces_source_scope_action_and_owned_output_boundaries() {
     for mode in [IntegrityMode::Basic, IntegrityMode::Keyring] {
         credentials_off_still_enforces_source_scope_action_and_owned_output_boundaries_in(mode);

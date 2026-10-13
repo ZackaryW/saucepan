@@ -81,14 +81,12 @@ pub(super) fn run(
             policies,
         } => {
             let proof = super::credentials::read(credential_file)?;
-            store.adopt_application_policies(
+            serde_json::to_value(store.adopt_application_policies(
                 app,
                 expected_revision,
                 policies.try_into()?,
                 proof.as_ref(),
-            )?;
-            let registry = store.registry(app)?.registry;
-            serde_json::json!({"app":app,"revision":registry.revision,"policy_refs":registry.policy_refs})
+            )?)?
         }
         PolicyCommand::AdoptSourcePolicies {
             source,
@@ -104,9 +102,11 @@ pub(super) fn run(
             claim,
             expected_revision,
             policies,
-        } => {
-            store.adopt_claim_policies(app, claim, expected_revision, policies.try_into()?)?;
-            serde_json::to_value(&store.registry(app)?.claims[&claim])?
-        }
+        } => serde_json::to_value(store.adopt_claim_policies(
+            app,
+            claim,
+            expected_revision,
+            policies.try_into()?,
+        )?)?,
     })
 }

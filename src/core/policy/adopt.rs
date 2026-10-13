@@ -13,7 +13,11 @@ use crate::{
             security::Credential,
         },
         index::Record,
-        policy::{Policies, PolicyRefs, Protection, effective::EvaluatedPolicies},
+        policy::{
+            Policies, PolicyRefs, Protection,
+            adoption::{ApplicationAdoption, ClaimAdoption},
+            effective::EvaluatedPolicies,
+        },
         source::SourceRecord,
     },
 };
@@ -91,7 +95,7 @@ impl Store {
         claim_id: Uuid,
         expected_revision: u64,
         refs: PolicyRefs,
-    ) -> Result<()> {
+    ) -> Result<ClaimAdoption> {
         let _lock = self.lock()?;
         let mut application = self.application(app)?;
         let mut registry = self.registry(app)?;
@@ -149,7 +153,11 @@ impl Store {
             && claim.request.adopted.as_deref() == Some(&adopted)
             && claim.effective == selected
         {
-            return Ok(());
+            return Ok(ClaimAdoption {
+                app,
+                revision: application.revision,
+                claim: claim.clone(),
+            });
         }
         let claim = registry.claims.get_mut(&claim_id).expect("checked claim");
         claim.policy_refs = selected_refs;
@@ -157,11 +165,17 @@ impl Store {
         claim.effective = selected;
         claim.request.policies = claim.effective.output.clone();
         application.bump()?;
+        let result = ClaimAdoption {
+            app,
+            revision: application.revision,
+            claim: claim.clone(),
+        };
         self.commit(Journal {
             records: vec![Record::Application(application)],
             registries: vec![registry],
             ..Default::default()
-        })
+        })?;
+        Ok(result)
     }
 
     pub fn adopt_source_policies(
@@ -253,7 +267,7 @@ impl Store {
         expected_revision: u64,
         refs: PolicyRefs,
         proof: Option<&Credential>,
-    ) -> Result<()> {
+    ) -> Result<ApplicationAdoption> {
         ensure!(
             self.session.is_none(),
             Error::new(
@@ -302,15 +316,37 @@ impl Store {
             )?;
         }
         if registry.registry.policy_refs == refs {
-            return Ok(());
+            return Ok(ApplicationAdoption {
+                app,
+                revision: application.revision,
+                policy_refs: refs,
+            });
         }
         registry.registry.policy_refs = refs;
         registry.registry.access = access(&plan);
         application.bump()?;
+        let result = ApplicationAdoption {
+            app,
+            revision: application.revision,
+            policy_refs: registry.registry.policy_refs.clone(),
+        };
         self.commit(Journal {
             records: vec![Record::Application(application)],
             registries: vec![registry],
             ..Default::default()
-        })
+        })?;
+        Ok(result)
+    }
+}
+
+impl crate::core::claim::session::AppSession {
+    pub fn adopt_claim_policies(
+        &self,
+        claim: Uuid,
+        expected_revision: u64,
+        refs: PolicyRefs,
+    ) -> Result<ClaimAdoption> {
+        self.store
+            .adopt_claim_policies(self.app, claim, expected_revision, refs)
     }
 }

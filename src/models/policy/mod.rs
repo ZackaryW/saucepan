@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+pub mod adoption;
 mod composition;
 pub mod effective;
 pub mod record;

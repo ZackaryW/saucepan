@@ -221,3 +221,122 @@ fn ensure_rejects_embedded_policy_authority_before_claim_work() {
     assert_eq!(baseline, fs::read(root.join("root.json")).unwrap());
     assert!(store.claims(app.uuid).unwrap().is_empty());
 }
+
+#[test]
+fn adoption_reports_its_revision_and_rejects_stale_or_unauthorized_changes() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = Store::create(&temp.path().join("root")).unwrap();
+    let root = store.root();
+    let file = temp.path().join("input");
+    fs::write(&file, "content").unwrap();
+    let source = store
+        .register_source(saucepan::models::source::Source::Local { path: file })
+        .unwrap();
+    let app = store.register_app("consumer".into()).unwrap();
+    let other = store.register_app("other".into()).unwrap();
+    let id = Uuid::new_v4();
+    let record: PolicyRecord = serde_json::from_value(
+        json!({"uuid":id,"type":"revision_policy","history":"latest","keep":2}),
+    )
+    .unwrap();
+    store.register_policies(&[record]).unwrap();
+    let ensure = temp.path().join("ensure.json");
+    fs::write(
+        &ensure,
+        serde_json::to_vec(
+            &json!({"source_uuid":source.uuid,"scope":"project","selector":{"type":"local"}}),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let app_id = app.uuid.to_string();
+    let claim = value(run(
+        root,
+        &["ensure-claim", &app_id, ensure.to_str().unwrap()],
+    ))["claim"]
+        .clone();
+    let claim_id = claim["uuid"].as_str().unwrap();
+    let id = id.to_string();
+    let revision = store.application(app.uuid).unwrap().revision.to_string();
+    let command = [
+        "adopt-claim-policies",
+        &app_id,
+        claim_id,
+        "--expected-revision",
+        &revision,
+        "--policy",
+        &id,
+    ];
+    let before = fs::read(root.join("root.json")).unwrap();
+    let malformed = temp.path().join("proof");
+    fs::write(&malformed, "invalid").unwrap();
+    let mut args = vec!["--credential-file", malformed.to_str().unwrap()];
+    args.extend(command);
+    error(run(root, &args), "invalid_request");
+    let other_id = other.uuid.to_string();
+    let mut args = vec!["--as-app", &other_id];
+    args.extend(command);
+    error(run(root, &args), "access_denied");
+    assert_eq!(before, fs::read(root.join("root.json")).unwrap());
+    let adopted = value(run(root, &command));
+    assert_eq!(adopted["app"], app_id);
+    assert_eq!(adopted["revision"], revision.parse::<u64>().unwrap() + 1);
+    assert_eq!(adopted["claim"]["uuid"], claim["uuid"]);
+    assert_eq!(adopted["claim"]["entry_uuid"], claim["entry_uuid"]);
+    assert_eq!(adopted["claim"]["policy_refs"], json!([id]));
+    let before = fs::read(root.join("root.json")).unwrap();
+    error(run(root, &command), "revision_conflict");
+    let current = adopted["revision"].to_string();
+    assert_eq!(
+        value(run(
+            root,
+            &[
+                "adopt-claim-policies",
+                &app_id,
+                claim_id,
+                "--expected-revision",
+                &current,
+                "--policy",
+                &id
+            ]
+        )),
+        adopted
+    );
+    error(
+        run(
+            root,
+            &[
+                "adopt-claim-policies",
+                &app_id,
+                claim_id,
+                "--expected-revision",
+                &current,
+                "--policy",
+                &id,
+                "--policy",
+                &id,
+            ],
+        ),
+        "invalid_request",
+    );
+    assert_eq!(before, fs::read(root.join("root.json")).unwrap());
+
+    let source_id = source.uuid.to_string();
+    let source_command = [
+        "adopt-source-policies",
+        &source_id,
+        "--expected-revision",
+        "0",
+        "--policy",
+        &id,
+    ];
+    let mut args = vec!["--as-app", &app_id];
+    args.extend(source_command);
+    error(run(root, &args), "access_denied");
+    let adopted_source = value(run(root, &source_command));
+    assert_eq!(adopted_source["policy_revision"], 1);
+    assert_eq!(adopted_source["policy_refs"], json!([id]));
+    let before = fs::read(root.join("root.json")).unwrap();
+    error(run(root, &source_command), "revision_conflict");
+    assert_eq!(before, fs::read(root.join("root.json")).unwrap());
+}

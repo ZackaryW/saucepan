@@ -99,6 +99,28 @@ saucepan policy 10000000-0000-4000-8000-000000000003
 `--as-app UUID` restricts inspection to readable associations, with
 `--credential-file PATH` when that application requires proof.
 
+Adoption replaces an attachment list at its observed revision. Register the new
+definitions first, then use the relevant command:
+
+```text
+saucepan adopt-source-policies SOURCE_UUID --expected-revision N --policy POLICY_UUID
+saucepan adopt-app-policies APP_UUID --expected-revision N --policy POLICY_UUID
+saucepan adopt-claim-policies APP_UUID CLAIM_UUID --expected-revision N --policy POLICY_UUID
+```
+
+Repeat `--policy` for multiple references; omit it to select an empty list. Source
+and app attachment changes require administration. Claim adoption runs as the
+named app and uses its optional credential file. A stale revision fails even when
+the requested list already matches; a current no-op preserves the revision.
+
+Source results expose `policy_revision`. App results contain `app`, `revision`
+and `policy_refs`; claim results contain `app`, `revision` and `claim`. These are
+captured with the adoption itself, so another writer cannot change the reported
+result between mutation and response. Obtain an app revision for the first claim
+adoption from `query-claims`; use the returned revision for a subsequent edit.
+Native callers receive the same typed results from `Store` adoption methods and
+`AppSession::adopt_claim_policies`.
+
 Composition commands (`retrieve`, `acquire-retrieved`, `run-retrieved`,
 `run-acquired`) accept reference-only requests. `--policies FILE` supplies an array
 of portable definitions for fresh operations. Inline temporary/no-store requests
