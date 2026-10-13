@@ -1,7 +1,7 @@
 //! Post-retrieval selections cannot change provider or asset selection.
 use super::Format;
 use crate::models::{
-    policy::{Identical, RevisionPolicy, UpdatePolicy},
+    policy::{Identical, Protection, RevisionPolicy, UpdatePolicy},
     retrieval::{Ownership, VerificationEvidence},
     source::Resolved,
 };
@@ -28,6 +28,7 @@ pub struct AcquisitionRequest {
     pub update_policy: UpdatePolicy,
     /// Absence means latest ten for managed outputs, no policy for other outputs.
     pub revision_policy: Option<RevisionPolicy>,
+    pub protection: Option<Protection>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -43,6 +44,7 @@ pub struct AcquiredDescriptor {
     pub stale: bool,
     pub update_policy: UpdatePolicy,
     pub revision_policy: Option<RevisionPolicy>,
+    pub reclaim: Option<super::ReclaimReport>,
 }
 
 impl Default for Destination {

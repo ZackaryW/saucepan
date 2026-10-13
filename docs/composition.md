@@ -2,7 +2,8 @@
 
 The new request models separate three policy decisions. Native inline fresh
 retrieval is available through `Retriever`, and managed retrieval through `Store`.
-Acquisition composition and new CLI commands are still being integrated.
+Offline acquisition is available through `Acquirer`; automatic update orchestration
+and new CLI commands are still being integrated.
 
 | Policy | Responsibility | Managed default |
 | --- | --- | --- |
@@ -103,3 +104,34 @@ Payload verification is `none`, `if_available`, or `required`. An explicit diges
 cannot be combined with `none`. Required verification needs an expected digest;
 a self-computed storage identity is not proof of upstream authenticity. Structural
 validation and managed metadata/manifest integrity retain their own contracts.
+
+For offline acquisition, use `Acquirer::acquire(&retrieved, &selection)` with
+manual update mode. Managed destinations use the retrieval's owning store;
+temporary and directory destinations create independent copies. The source guard
+may be dropped after copying. Temporary acquired paths last until their handle
+is dropped; directory destinations remain caller-owned.
+
+One repository can supply two subpaths without another provider request:
+
+```rust
+use saucepan::core::store::Acquirer;
+use saucepan::models::store::{AcquisitionRequest, Destination};
+
+let repository = store.retrieve(&git_request)?;
+let source_path = repository.source_path(); // bare repository, exact commit in descriptor
+let first = Acquirer::acquire(&repository, &AcquisitionRequest {
+    folder: Some("plugins/first".into()),
+    destination: Destination::Temporary {},
+    ..Default::default()
+})?;
+let second = Acquirer::acquire(&repository, &AcquisitionRequest {
+    folder: Some("plugins/second".into()),
+    destination: Destination::Temporary {},
+    ..Default::default()
+})?;
+// first.path() and second.path() are copied directories, independent of source_path.
+```
+
+The integration fixture in `tests/acquisition_composition.rs` runs this pattern
+with the Git origin removed after retrieval. It also verifies independent output
+lifetimes and cached ZIP extraction surviving source-material purge.

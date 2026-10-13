@@ -14,7 +14,7 @@ use crate::{
             CachePolicy, MaterialKind, RetrievalRecord, RetrievalState, RetrieveRequest,
             SourceInput,
         },
-        source::{Discovery, Source, SourceRecord},
+        source::{Discovery, Resolved, Source, SourceRecord},
     },
     utils::{
         lock::{LockGuard, LockMode},
@@ -42,6 +42,16 @@ impl Store {
                 "use the scoped application retrieval interface"
             )
         );
+        self.retrieve_prevalidated(request, options)
+    }
+
+    /// Internal composition after the owning operation authorizes app/source/scope.
+    /// App identities are retained; this must never become an administrative fallback.
+    pub(crate) fn retrieve_prevalidated(
+        &self,
+        request: &RetrieveRequest,
+        options: &RetrieveOptions,
+    ) -> Result<RetrievedResource> {
         crate::core::policy::composition::validate_retrieval(request)?;
         let CachePolicy::Cached {
             freshness,
@@ -56,6 +66,13 @@ impl Store {
         let source = match &request.source {
             SourceInput::Registered { source_uuid } => self.source(*source_uuid)?,
             SourceInput::Inline { source } => {
+                ensure!(
+                    self.session.is_none(),
+                    Error::new(
+                        ErrorCode::AccessDenied,
+                        "application retrieval requires a registered source"
+                    )
+                );
                 retrieve::validate(source, request)?;
                 self.register_source(source.clone())?
             }
@@ -82,7 +99,7 @@ impl Store {
                 || matches!(policy, Freshness::CacheOnly {}))
             && self.cache_hit(record, request)?
         {
-            return self.retrieved_handle(record, request, guard, true, false);
+            return self.retrieved_handle(record, request, guard, true, false, false);
         }
         ensure!(
             !matches!(policy, Freshness::CacheOnly {}),
@@ -111,7 +128,7 @@ impl Store {
             let guard = LockGuard::acquire(&lock_path, LockMode::Shared, Duration::from_secs(150))?;
             let record = self.retrieval_record(record.uuid)?;
             self.verify_retrieval(&record, request)?;
-            return self.retrieved_handle(&record, request, guard, true, false);
+            return self.retrieved_handle(&record, request, guard, true, false, false);
         }
         ensure!(
             !matches!(policy, Freshness::CacheOnly {}),
@@ -122,12 +139,12 @@ impl Store {
         );
         let fetched =
             self.fetch_retrieval(&mut source, request, &options, policy, previous.as_ref());
-        let (record, reused, stale) = match fetched {
-            Ok((record, reused)) => (record, reused, false),
+        let (record, reused, stale, origin_checked) = match fetched {
+            Ok((record, reused, origin_checked)) => (record, reused, false, origin_checked),
             Err(error) if allow_stale => {
                 let record = previous.context(error)?;
                 self.verify_retrieval(&record, request)?;
-                (record, true, true)
+                (record, true, true, false)
             }
             Err(error) => return Err(error),
         };
@@ -136,7 +153,7 @@ impl Store {
         // Purge could have acquired the source lock in the handover interval.
         let record = self.retrieval_record(record.uuid)?;
         self.verify_retrieval(&record, request)?;
-        self.retrieved_handle(&record, request, guard, reused, stale)
+        self.retrieved_handle(&record, request, guard, reused, stale, origin_checked)
     }
 
     fn matching_retrieval(
@@ -168,7 +185,7 @@ impl Store {
         options: &AcquireOptions,
         policy: Freshness,
         previous: Option<&RetrievalRecord>,
-    ) -> Result<(RetrievalRecord, bool)> {
+    ) -> Result<(RetrievalRecord, bool, bool)> {
         let stage = tempfile::tempdir_in(self.root.join(".staging"))?;
         let content = stage.path().join("content");
         fs::create_dir(&content)?;
@@ -190,6 +207,8 @@ impl Store {
         } else {
             cached_discovery.map_or(now, |entry| entry.checked_at)
         };
+        let origin_checked =
+            is_git || matches!(source.source, Source::Local { .. }) || cached_discovery.is_none();
         let discovered = if is_git || matches!(source.source, Source::Local { .. }) {
             None
         } else if let Some(discovered) = cached_discovery {
@@ -201,6 +220,40 @@ impl Store {
                 options,
             )?)
         };
+        // Metadata freshness and material publication are separate. A successful
+        // discovery is shared across asset selections even if this download fails.
+        if let Some(resolved) = &discovered {
+            source.discovery.insert(
+                discovery_key.clone(),
+                Discovery {
+                    checked_at,
+                    resolved: resolved.clone(),
+                },
+            );
+            let _lock = self.lock()?;
+            self.save_source(source)?;
+        }
+        if let (Some(old), Some(discovered)) = (previous, discovered.as_ref()) {
+            let selected = selected_provenance(discovered, request)?;
+            let reusable = match &selected {
+                Resolved::Url {
+                    etag,
+                    last_modified,
+                    ..
+                } => !origin_checked || etag.is_some() || last_modified.is_some(),
+                _ => true,
+            };
+            if reusable && old.resolved == selected && self.cache_hit(old, request)? {
+                let mut record = old.clone();
+                record.checked_at = checked_at;
+                let _lock = self.lock()?;
+                self.commit(Journal {
+                    records: vec![Record::Retrieval(Box::new(record.clone()))],
+                    ..Default::default()
+                })?;
+                return Ok((record, true, origin_checked));
+            }
+        }
         let material = retrieve::obtain(
             &source.source,
             request,
@@ -270,7 +323,7 @@ impl Store {
             },
         );
         self.save_source(source)?;
-        Ok((record, reused))
+        Ok((record, reused, origin_checked))
     }
 }
 
@@ -279,5 +332,24 @@ fn usable_age(policy: Freshness, checked: u64, now: u64) -> bool {
         Freshness::CacheOnly {} => true,
         Freshness::Always {} => false,
         Freshness::MaxAge { seconds } => now.checked_sub(checked).is_some_and(|age| age < seconds),
+    }
+}
+
+fn selected_provenance(resolved: &Resolved, request: &RetrieveRequest) -> Result<Resolved> {
+    match resolved {
+        Resolved::Release { id, tag, assets } => {
+            let selection = crate::models::store::Selection {
+                platform: request.asset.platform.clone(),
+                filters: request.asset.filters.clone(),
+                selection_policy: request.asset.selection_policy.clone(),
+                ..Default::default()
+            };
+            Ok(Resolved::Release {
+                id: *id,
+                tag: tag.clone(),
+                assets: vec![crate::core::policy::select_asset(assets, &selection)?.clone()],
+            })
+        }
+        other => Ok(other.clone()),
     }
 }

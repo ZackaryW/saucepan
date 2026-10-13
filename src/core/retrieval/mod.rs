@@ -9,6 +9,7 @@ mod fresh;
 mod managed;
 #[cfg(test)]
 mod tests;
+pub(crate) use fresh::delivery_lock;
 pub use fresh::{RetrieveOptions, Retriever};
 
 /// A source path and its native lifetime. Only retrieval operations may construct
@@ -16,6 +17,8 @@ pub use fresh::{RetrieveOptions, Retriever};
 /// The handle is intentionally neither serializable nor cloneable.
 pub struct RetrievedResource {
     pub(crate) request: RetrieveRequest,
+    pub(crate) source: crate::models::source::Source,
+    pub(crate) store: Option<crate::core::Store>,
     pub(crate) descriptor: RetrievedDescriptor,
     pub(crate) _temporary: Option<Rc<tempfile::TempDir>>,
     pub(crate) _coordination: Option<LockGuard>,

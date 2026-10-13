@@ -74,17 +74,6 @@ pub(crate) fn validate(source: &Source, request: &RetrieveRequest) -> Result<()>
     Ok(())
 }
 
-/// Fetch fresh material. `work` and `scratch` are private and already exist.
-pub(crate) fn fresh(
-    source: &Source,
-    request: &RetrieveRequest,
-    work: &Path,
-    scratch: &Path,
-    options: &AcquireOptions,
-) -> Result<Material> {
-    obtain(source, request, work, scratch, options, None)
-}
-
 pub(crate) fn obtain(
     source: &Source,
     request: &RetrieveRequest,

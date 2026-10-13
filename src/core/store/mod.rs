@@ -14,9 +14,10 @@ use crate::{
 use anyhow::{Result, bail, ensure};
 use std::{collections::BTreeMap, path::PathBuf};
 use uuid::Uuid;
-mod composition;
+pub(crate) mod composition;
+mod materialize;
 mod reclaim;
-pub use composition::AcquiredResource;
+pub use composition::{AcquiredResource, Acquirer};
 
 pub(crate) struct Acquisition {
     pub acquired: Acquired,

@@ -61,7 +61,7 @@ impl Store {
         )?;
         let record = self.retrieval_record(id)?;
         self.verify_retrieval(&record, &record.request)?;
-        self.retrieved_handle(&record, &record.request, guard, true, false)
+        self.retrieved_handle(&record, &record.request, guard, true, false, false)
     }
 
     pub(crate) fn retrieval_path(&self, record: &RetrievalRecord) -> Result<PathBuf> {
@@ -156,6 +156,7 @@ impl Store {
         guard: LockGuard,
         reused: bool,
         stale: bool,
+        origin_checked: bool,
     ) -> Result<RetrievedResource> {
         let mut verification = record.verification.clone();
         if matches!(record.kind, MaterialKind::File) {
@@ -177,6 +178,8 @@ impl Store {
         }
         Ok(RetrievedResource {
             request: request.clone(),
+            source: self.source(record.source_uuid)?.source,
+            store: Some(self.clone()),
             descriptor: RetrievedDescriptor {
                 ownership: Ownership::Managed { uuid: record.uuid },
                 path: self.retrieval_path(record)?,
@@ -188,6 +191,7 @@ impl Store {
                 dependencies: record.dependencies.clone(),
                 verification,
                 checked_at: Some(record.checked_at),
+                origin_checked,
                 reused,
                 stale,
             },

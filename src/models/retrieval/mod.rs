@@ -98,6 +98,7 @@ pub struct RetrievedDescriptor {
     pub dependencies: BTreeMap<String, String>,
     pub verification: VerificationEvidence,
     pub checked_at: Option<u64>,
+    pub origin_checked: bool,
     pub reused: bool,
     pub stale: bool,
 }

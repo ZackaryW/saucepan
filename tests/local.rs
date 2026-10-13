@@ -63,5 +63,13 @@ fn concurrent_reuse_and_failed_selection() {
     let mut invalid = request;
     invalid.selection.folder = Some("../escape".into());
     assert!(store.acquire(&invalid).is_err());
-    assert_eq!(store.records().unwrap().len(), 1);
+    assert_eq!(
+        store
+            .records()
+            .unwrap()
+            .iter()
+            .filter(|record| matches!(record, saucepan::models::index::Record::Output(_)))
+            .count(),
+        1
+    );
 }

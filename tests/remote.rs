@@ -95,11 +95,12 @@ fn release_cache_expiry_fallback_and_cli_use_real_transport() {
     opts.test_now = Some(1);
     assert!(store.acquire_with(&request, &opts).unwrap().update_checked);
     assert!(
-        !store
+        store
             .root()
             .join("source")
             .join(source.uuid.to_string())
-            .exists()
+            .join("retrieval")
+            .is_dir()
     );
     let file = tmp.path().join("release-request.json");
     std::fs::write(&file, serde_json::to_vec(&request).unwrap()).unwrap();

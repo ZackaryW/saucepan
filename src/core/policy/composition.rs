@@ -53,7 +53,7 @@ pub fn validate_composition(
             acquisition.revision_policy.unwrap_or_default().keep()?;
         }
         destination => {
-            if acquisition.revision_policy.is_some() {
+            if acquisition.revision_policy.is_some() || acquisition.protection.is_some() {
                 return Err(invalid("revision policy requires managed output"));
             }
             if let Destination::Directory { path } = destination

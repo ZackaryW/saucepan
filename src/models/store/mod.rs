@@ -126,7 +126,7 @@ pub struct Acquired {
     pub reclaim: ReclaimReport,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReclaimReport {
     pub effective_keep: BTreeMap<String, usize>,
     pub reclaimed: Vec<Uuid>,

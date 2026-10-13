@@ -38,6 +38,14 @@ impl Retriever {
         request: &RetrieveRequest,
         options: &RetrieveOptions,
     ) -> Result<RetrievedResource> {
+        Self::retrieve_exact(request, options, None)
+    }
+
+    pub(crate) fn retrieve_exact(
+        request: &RetrieveRequest,
+        options: &RetrieveOptions,
+        exact: Option<&crate::models::source::Resolved>,
+    ) -> Result<RetrievedResource> {
         let options = AcquireOptions {
             test_now: options.test_now,
             test_github_api: options.test_github_api.clone(),
@@ -68,8 +76,16 @@ impl Retriever {
             }
             None => tempfile::tempdir()?,
         };
+        let normalized_source = crate::core::source::git::normalize(source.clone())?;
         let scratch = tempfile::tempdir()?;
-        let material = retrieve::fresh(source, request, work.path(), scratch.path(), &options)?;
+        let material = retrieve::obtain(
+            source,
+            request,
+            work.path(),
+            scratch.path(),
+            &options,
+            exact,
+        )?;
         let (path, ownership, temporary) = if let Some(destination) = destination {
             let path = match material.kind {
                 MaterialKind::File => {
@@ -113,6 +129,8 @@ impl Retriever {
         };
         Ok(RetrievedResource {
             request: request.clone(),
+            source: normalized_source,
+            store: None,
             descriptor: RetrievedDescriptor {
                 ownership,
                 path,
@@ -122,6 +140,7 @@ impl Retriever {
                 dependencies: material.dependencies,
                 verification: material.verification,
                 checked_at: Some(options.now()?),
+                origin_checked: true,
                 reused: false,
                 stale: false,
             },
@@ -171,7 +190,7 @@ fn destination_path(source: &Source, destination: &Path) -> Result<PathBuf> {
     }
 }
 
-fn delivery_lock(destination: &Path) -> Result<PathBuf> {
+pub(crate) fn delivery_lock(destination: &Path) -> Result<PathBuf> {
     // Persistent coordination files are not payload caches. Never unlink a lock
     // while another process may hold the same native file identity.
     let locks = std::env::temp_dir().join("saucepan-delivery-locks");
