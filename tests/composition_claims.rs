@@ -459,3 +459,70 @@ fn concurrent_automatic_ensures_share_claim_and_check_state() {
     assert_eq!(states.len(), 1);
     assert_eq!(states[0].revision, 1);
 }
+
+#[test]
+fn rejected_compositions_do_not_register_sources_or_write_inside_the_store() {
+    let temp = tempfile::tempdir().unwrap();
+    let file = temp.path().join("input");
+    fs::write(&file, b"payload").unwrap();
+    let store = native_root::create(&temp.path().join("root")).unwrap();
+    let mut request = RetrieveRequest {
+        source: SourceInput::Inline {
+            source: Source::Local { path: file.clone() },
+        },
+        selector: Selector::Local,
+        asset: Default::default(),
+        cache: CachePolicy::default(),
+        verification: Default::default(),
+        expected_sha256: None,
+    };
+    let before = snapshot(store.root());
+    let acquisition = AcquisitionRequest {
+        destination: Destination::Directory {
+            path: store.root().join("invalid-output"),
+        },
+        ..Default::default()
+    };
+    assert!(store.acquire_composed(&request, &acquisition).is_err());
+    assert_eq!(snapshot(store.root()), before);
+    request.cache = CachePolicy::Cached {
+        freshness: Some(saucepan::models::policy::Freshness::CacheOnly {}),
+        allow_stale: false,
+    };
+    for update_policy in [
+        UpdatePolicy::Always {},
+        UpdatePolicy::MaxAge { seconds: 60 },
+    ] {
+        assert!(
+            store
+                .acquire_composed(
+                    &request,
+                    &AcquisitionRequest {
+                        update_policy,
+                        ..Default::default()
+                    }
+                )
+                .is_err()
+        );
+        assert_eq!(snapshot(store.root()), before);
+    }
+    let source = store.register_source(Source::Local { path: file }).unwrap();
+    request.source = SourceInput::Registered {
+        source_uuid: source.uuid,
+    };
+    request.cache = CachePolicy::NoStore {
+        destination: temp.path().join("caller"),
+    };
+    let reader = RegisteredRetriever::open(store.root()).unwrap();
+    let material = reader.retrieve(&request, &at(100)).unwrap();
+    let mut descriptor = material.descriptor().clone();
+    let disguised = store.root().join("disguised");
+    fs::write(&disguised, b"payload").unwrap();
+    request.cache = CachePolicy::NoStore {
+        destination: disguised.clone(),
+    };
+    descriptor.path = disguised;
+    let before = snapshot(store.root());
+    assert!(reader.open_caller(&request, &descriptor).is_err());
+    assert_eq!(snapshot(store.root()), before);
+}

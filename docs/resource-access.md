@@ -1,6 +1,10 @@
 # Resource access
 
-CLI commands default to the user-home `.saucepan` store; `--root ROOT` is an
+For original source/repository paths, temporary files and caller-owned copies, see
+[retrieval and acquisition composition](composition.md). This guide describes
+managed output access; a source-path string likewise carries no retained lease.
+
+Store-backed CLI commands default to the user-home `.saucepan` store; `--root ROOT` is an
 optional override. App consumers use `Store::session(app, optional_credential)`
 and keep the returned `AppSession` for queries, claims and resource access.
 Credentials are opt-in; registered permissions still apply without them.

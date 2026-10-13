@@ -96,10 +96,70 @@ fn at(time: u64) -> RetrieveOptions {
 
 #[test]
 fn updates_check_inside_source_ttl_and_keep_selected_provenance_and_leased_history() {
+    // Put Git tracing in an isolated worker environment, never mutate the test
+    // runner's process-wide environment while other fixtures are active.
+    if std::env::var_os("SAUCEPAN_COMPOSITION_TRACE").is_none() {
+        let trace = tempfile::tempdir().unwrap();
+        let mut child = Command::new(std::env::current_exe().unwrap());
+        child
+            .args([
+                "--exact",
+                "updates_check_inside_source_ttl_and_keep_selected_provenance_and_leased_history",
+                "--nocapture",
+            ])
+            .env("SAUCEPAN_COMPOSITION_TRACE", trace.path().join("git.json"))
+            .env("GIT_TRACE2_EVENT", trace.path().join("git.json"));
+        let result =
+            saucepan::utils::process::run(child, std::time::Duration::from_secs(120), 128 * 1024)
+                .unwrap();
+        assert!(
+            result.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+        return;
+    }
+    let fetches = || {
+        fs::read_to_string(std::env::var_os("SAUCEPAN_COMPOSITION_TRACE").unwrap())
+            .unwrap()
+            .lines()
+            .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+            .filter(|event| {
+                event["event"] == "start"
+                    && event["argv"]
+                        .as_array()
+                        .is_some_and(|args| args.iter().any(|arg| arg == "fetch"))
+            })
+            .count()
+    };
     let (root, store, retrieval, acquisition) = setup();
+    let origin = root.path().join("origin");
+    fs::create_dir(origin.join("other")).unwrap();
+    fs::write(origin.join("other/file"), b"other").unwrap();
+    git(&origin, &["add", "."]);
+    git(&origin, &["commit", "-m", "second folder"]);
+    let material = store.retrieve_with(&retrieval, &at(90)).unwrap();
+    assert_eq!(fetches(), 1);
+    for folder in ["selected", "other"] {
+        let copy = saucepan::core::store::Acquirer::acquire(
+            &material,
+            &AcquisitionRequest {
+                folder: Some(folder.into()),
+                destination: saucepan::models::store::Destination::Temporary {},
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(copy.path().join("file").is_file());
+        assert_ne!(copy.path(), material.source_path());
+    }
+    assert_eq!(fetches(), 1, "offline subpaths must not fetch");
+    drop(material);
     let first = store
         .acquire_composed_with(&retrieval, &acquisition, &at(100))
         .unwrap();
+    assert_eq!(fetches(), 2);
     let original = first.descriptor().selected_source.clone();
     let origin = root.path().join("origin");
     fs::write(origin.join("unrelated"), b"two").unwrap();
@@ -111,6 +171,7 @@ fn updates_check_inside_source_ttl_and_keep_selected_provenance_and_leased_histo
     assert_eq!(id(&cached), id(&first));
     assert_eq!(states(&store)[0].last_success, Some(100));
     drop(cached);
+    assert_eq!(fetches(), 2, "satisfied acquisition check must not fetch");
     let unchanged = store
         .acquire_composed_with(&retrieval, &acquisition, &at(160))
         .unwrap();
@@ -124,6 +185,7 @@ fn updates_check_inside_source_ttl_and_keep_selected_provenance_and_leased_histo
     );
     assert!(!unchanged.descriptor().changed);
     assert_eq!(states(&store)[0].last_success, Some(160));
+    assert_eq!(fetches(), 3, "due update must fetch inside source TTL");
     drop(unchanged);
     fs::write(origin.join("selected/file"), b"new bytes").unwrap();
     git(&origin, &["commit", "-am", "selected"]);
@@ -132,6 +194,7 @@ fn updates_check_inside_source_ttl_and_keep_selected_provenance_and_leased_histo
         .unwrap();
     assert_ne!(id(&first), id(&changed));
     assert!(changed.descriptor().changed);
+    assert_eq!(fetches(), 4);
     assert!(
         changed
             .descriptor()

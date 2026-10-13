@@ -156,7 +156,8 @@ the same journal as a selected managed output and never rewrites that output's
 original provenance. Failed checks preserve the previous selection and timestamp;
 explicit stale fallback returns the previous selection with `stale: true`.
 Requests with different effective update/revision/verification policies have
-separate check proofs. Explicit `new_entry` still creates an output even when
+separate check proofs and may require an initial check; this does not rewrite
+source freshness or update intervals. Explicit `new_entry` still creates an output even when
 content is unchanged. App-scoped updates use the same check/publication state with separate scope identity.
 
 
@@ -190,6 +191,8 @@ Successful fresh calls leave source caches and catalog contents unchanged.
 ## CLI composition
 
 `retrieve request.json` returns `{ "request": ..., "descriptor": ... }`.
+Use absolute caller destinations when a receipt will be consumed from a different
+working directory; relative request paths retain ordinary working-directory semantics.
 Cached receipts identify a managed retrieval UUID; no-store receipts describe a
 caller-owned file, directory or bare Git repository. Inline fresh commands do not
 resolve a home or store, even if `--root` is supplied. Cached and registered-source

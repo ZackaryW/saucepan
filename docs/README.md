@@ -1,7 +1,10 @@
 # Documentation map
 
 The [repository README](../README.md) introduces the current Rust implementation.
-The [main OpenSpec specs](../openspec/specs/README.md) define its behavior.
+The [main OpenSpec specs](../openspec/specs/README.md) define the synchronized
+contract. The [composition guide](composition.md) describes the new retrieval and
+acquisition APIs; their active `compose-retrieval-and-acquisition` change awaits
+synchronization and archive.
 [Archived changes](../openspec/changes/archive/README.md) preserve decisions at
 their original checkpoints; they are not alternative current contracts.
 
@@ -9,6 +12,7 @@ their original checkpoints; they are not alternative current contracts.
 
 | Topic | Guide |
 | --- | --- |
+| Retrieval, copied results, fresh delivery and independent policies | [Composition](composition.md) |
 | Default store, anonymous lookup and optional app identity | [Source discovery](source-query.md) |
 | Registration, scoped claims, credentials and CLI errors | [Claim CLI](claim-cli.md) |
 | Permissions, retention, ensure and recovery | [Claim policies](claim-policies.md) |
@@ -19,9 +23,9 @@ their original checkpoints; they are not alternative current contracts.
 | Managed install, update, rollback, shims and uninstall | [Application lifecycle](application-lifecycle.md) |
 | Platform builds, release ZIPs and publishing | [Releases](releases.md) |
 
-CLI roots default to the user's home `.saucepan`; `--root` explicitly selects an
+Store-backed CLI roots default to the user's home `.saucepan`; `--root` explicitly selects an
 isolated store. Native `Store` callers still supply a root, and Saucepan shims
-forward their installed root. A project-local `.saucepan` is not auto-discovered.
+forward their installed root. A project-local `.saucepan` is not auto-discovered. Inline temporary/no-store composition does not resolve a home or store.
 
 Anonymous source discovery needs no app UUID, scope or query file, but returns
 only explicitly public sources. App-owned claims require an application and an
@@ -37,8 +41,11 @@ earlier layouts are not migrated and old-reader compatibility is not promised.
 
 ## Verification evidence
 
+[Composition verification](composition-verification.md) records the 2026-10-13
+Windows suite, traced Git update flow and fresh ZIP/Git process consumers.
+
 [Optional keyring verification](optional-keyring-verification.md) records the
-current basic-mode two-build release/bootstrap/update acceptance and separately
+dated basic-mode two-build release/bootstrap/update acceptance and separately
 selected Windows native-custody checks.
 
 [Claim registry verification](claim-verification.md) records a Windows x86_64

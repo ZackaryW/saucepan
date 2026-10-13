@@ -74,6 +74,25 @@ fn consumer_child() {
         .map(PathBuf::from)
         .unwrap();
     assert!(path.exists());
+    if let Ok(kind) = std::env::var("SAUCEPAN_TEST_KIND") {
+        match kind.as_str() {
+            "zip" => assert!(fs::read(&path).unwrap().starts_with(b"PK")),
+            "directory" => assert_eq!(fs::read(path.join("file")).unwrap(), b"fresh"),
+            "git_repository" => {
+                assert_eq!(std::env::var("SAUCEPAN_SOURCE_KIND").unwrap(), kind);
+                let commit = std::env::var("SAUCEPAN_SOURCE_COMMIT").unwrap();
+                let output = Command::new("git")
+                    .arg("-C")
+                    .arg(&path)
+                    .args(["show", &format!("{commit}:selected/file")])
+                    .output()
+                    .unwrap();
+                assert!(output.status.success());
+                assert_eq!(output.stdout, b"fresh");
+            }
+            _ => panic!("unexpected representation"),
+        }
+    }
     assert!(std::env::args().any(|arg| arg == "literal space;$(no-shell)&value"));
     save(
         &report,
@@ -400,5 +419,168 @@ fn children_retain_temporary_and_cached_sources_after_wrapper_death() {
             std::thread::sleep(Duration::from_millis(20));
         }
         assert!(!path.exists());
+    }
+}
+
+fn git(path: &Path, args: &[&str]) {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(path)
+        .args([
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+        ])
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+fn snapshot(path: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
+    fn walk(root: &Path, path: &Path, result: &mut std::collections::BTreeMap<PathBuf, Vec<u8>>) {
+        for entry in fs::read_dir(path).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                walk(root, &path, result);
+            } else {
+                result.insert(
+                    path.strip_prefix(root).unwrap().to_owned(),
+                    fs::read(path).unwrap(),
+                );
+            }
+        }
+    }
+    let mut result = Default::default();
+    walk(path, path, &mut result);
+    result
+}
+#[test]
+fn fresh_zip_and_git_consumers_ignore_preexisting_caches_without_home() {
+    for repository in [false, true] {
+        let temp = tempfile::tempdir().unwrap();
+        let input = temp
+            .path()
+            .join(if repository { "origin" } else { "bundle.zip" });
+        if repository {
+            fs::create_dir(&input).unwrap();
+            git(&input, &["init", "-b", "main"]);
+            fs::create_dir(input.join("selected")).unwrap();
+            fs::write(input.join("selected/file"), b"cached").unwrap();
+            git(&input, &["add", "."]);
+            git(&input, &["commit", "-m", "cached"]);
+        } else {
+            let mut zip = zip::ZipWriter::new(fs::File::create(&input).unwrap());
+            zip.start_file("selected/file", zip::write::SimpleFileOptions::default())
+                .unwrap();
+            zip.write_all(b"cached").unwrap();
+            zip.finish().unwrap();
+        }
+        let store = Store::create(&temp.path().join("root")).unwrap();
+        let mut retrieval = request(&input, CachePolicy::default());
+        if repository {
+            retrieval.source = SourceInput::Inline {
+                source: Source::Git {
+                    origin: input.to_str().unwrap().into(),
+                },
+            };
+            retrieval.selector = Selector::Ref {
+                reference: "main".into(),
+            };
+        }
+        drop(store.retrieve(&retrieval).unwrap());
+        let before = snapshot(store.root());
+        if repository {
+            fs::write(input.join("selected/file"), b"fresh").unwrap();
+            git(&input, &["commit", "-am", "fresh"]);
+        } else {
+            let mut zip = zip::ZipWriter::new(fs::File::create(&input).unwrap());
+            zip.start_file("selected/file", zip::write::SimpleFileOptions::default())
+                .unwrap();
+            zip.write_all(b"fresh").unwrap();
+            zip.finish().unwrap();
+        }
+        for caller in [false, true] {
+            for acquired in [false, true] {
+                let suffix = format!("{caller}-{acquired}");
+                retrieval.cache = if caller {
+                    CachePolicy::NoStore {
+                        destination: temp.path().join(format!("download-{suffix}")),
+                    }
+                } else {
+                    CachePolicy::Temporary {}
+                };
+                let file = temp.path().join(format!("request-{suffix}.json"));
+                if acquired {
+                    save(
+                        &file,
+                        &json!({"retrieval":retrieval,"acquisition":{
+                            "destination":{"mode":"temporary"}, "folder":"selected", "format": if repository { "natural" } else { "zip" }
+                        }}),
+                    );
+                } else {
+                    save(&file, &retrieval);
+                }
+                let report = temp.path().join(format!("report-{suffix}.json"));
+                let mut command = cli();
+                command
+                    .arg("--root")
+                    .arg(store.root())
+                    .arg(if acquired {
+                        "run-acquired"
+                    } else {
+                        "run-retrieved"
+                    })
+                    .arg(&file)
+                    .env("SAUCEPAN_TEST_CONSUMER_REPORT", &report)
+                    .env(
+                        "SAUCEPAN_TEST_KIND",
+                        if acquired {
+                            "directory"
+                        } else if repository {
+                            "git_repository"
+                        } else {
+                            "zip"
+                        },
+                    )
+                    .stdin(Stdio::null());
+                consumer_args(&mut command);
+                let output = command.output().unwrap();
+                assert!(
+                    output.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                let value: Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+                assert_eq!(
+                    Path::new(value["path"].as_str().unwrap()).exists(),
+                    caller && !acquired
+                );
+                assert_eq!(
+                    snapshot(store.root()),
+                    before,
+                    "fresh operation changed a managed cache"
+                );
+            }
+        }
+        // An unavailable fresh origin must not fall back to the populated cache.
+        fs::rename(&input, temp.path().join("unavailable")).unwrap();
+        retrieval.cache = CachePolicy::Temporary {};
+        let file = temp.path().join("failure.json");
+        save(&file, &retrieval);
+        let output = cli()
+            .arg("--root")
+            .arg(store.root())
+            .arg("run-retrieved")
+            .arg(file)
+            .args(["--", "unused"])
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert_eq!(snapshot(store.root()), before);
     }
 }

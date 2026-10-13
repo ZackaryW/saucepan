@@ -251,18 +251,8 @@ impl Store {
             ))
         })?;
         let _guard = self.lock()?;
-        let snapshot = self.metadata.snapshot()?;
-        for reference in snapshot
-            .catalog
-            .records
-            .values()
-            .filter(|r| r.identity.kind == Kind::Source)
-        {
-            let existing: SourceRecord =
-                snapshot.read(self.metadata.authenticator(), reference.identity)?;
-            if existing.source == source {
-                return Ok(existing);
-            }
+        if let Some(existing) = self.find_source(&source)? {
+            return Ok(existing);
         }
         let record = SourceRecord {
             uuid: Uuid::new_v4(),
@@ -274,6 +264,25 @@ impl Store {
         };
         self.save_source(&record)?;
         Ok(record)
+    }
+
+    /// Look up an already normalized source without registration effects.
+    pub(crate) fn find_source(&self, source: &Source) -> Result<Option<SourceRecord>> {
+        let _guard = self.lock()?;
+        let snapshot = self.metadata.snapshot()?;
+        for reference in snapshot
+            .catalog
+            .records
+            .values()
+            .filter(|r| r.identity.kind == Kind::Source)
+        {
+            let existing: SourceRecord =
+                snapshot.read(self.metadata.authenticator(), reference.identity)?;
+            if &existing.source == source {
+                return Ok(Some(existing));
+            }
+        }
+        Ok(None)
     }
     pub fn source(&self, id: Uuid) -> Result<SourceRecord> {
         let _lock = self.lock()?;

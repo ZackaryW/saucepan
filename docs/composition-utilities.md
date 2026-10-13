@@ -16,6 +16,12 @@ their paths, coordinate access and decide whether returned bytes are publishable
   executable metadata as `copy_tree`, but returns no manifest or file hashes.
   Both require a stable source and a new private destination. Use staged delivery
   when partial copies must be cleaned up on failure.
+- `lifetime::inheritable_marker` and `marker_held` expose native handle liveness
+  without PID or age guesses. The caller must serialize marker creation and
+  sweeping and preserve inherited handles; the helpers do not decide when to
+  delete application data.
+- `path::new_destination` resolves an absent name beneath an existing parent
+  without reserving it. Publication still requires create-new coordination.
 - `path::disjoint_destination` rejects occupied or overlapping destinations and
   resolves a new destination beneath its existing parent before effects.
 - `fs::staged_directory_coordinated` serializes cooperating publishers through a

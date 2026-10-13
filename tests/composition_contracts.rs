@@ -165,8 +165,15 @@ fn documented_request_examples_parse_and_validate() {
         .skip(1)
         .map(|part| serde_json::from_str(part.split("```").next().unwrap()).unwrap())
         .collect();
-    assert_eq!(values.len(), 2);
+    assert_eq!(values.len(), 4);
     let retrieve: RetrieveRequest = serde_json::from_value(values[0].clone()).unwrap();
     let acquire: AcquisitionRequest = serde_json::from_value(values[1].clone()).unwrap();
+    validate_composition(&retrieve, &acquire, false).unwrap();
+    // The managed CLI example contains a placeholder UUID but its acquisition
+    // fields are the same public contract. The final example is a full request.
+    let _: AcquisitionRequest = serde_json::from_value(values[2]["acquisition"].clone()).unwrap();
+    let retrieve: RetrieveRequest = serde_json::from_value(values[3]["retrieval"].clone()).unwrap();
+    let acquire: AcquisitionRequest =
+        serde_json::from_value(values[3]["acquisition"].clone()).unwrap();
     validate_composition(&retrieve, &acquire, false).unwrap();
 }

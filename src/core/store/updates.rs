@@ -63,8 +63,15 @@ impl Store {
                 authorization,
             );
         }
-        crate::core::policy::composition::validate_composition(retrieval, acquisition, false)?;
+        crate::core::policy::composition::validate_composition(
+            retrieval,
+            acquisition,
+            matches!(acquisition.update_policy, UpdatePolicy::Always {}),
+        )?;
         composition::preflight_destination(retrieval, acquisition)?;
+        if let Destination::Directory { path } = &acquisition.destination {
+            crate::utils::path::disjoint_destination(self.root(), path)?;
+        }
         if !matches!(acquisition.destination, Destination::Managed {}) {
             let mut retrieval = retrieval.clone();
             let due = acquisition.update_policy.due(None, 0);
@@ -84,7 +91,28 @@ impl Store {
         let mut retrieval = retrieval.clone();
         let source_uuid = match &retrieval.source {
             SourceInput::Registered { source_uuid } => *source_uuid,
-            SourceInput::Inline { source } => self.register_source(source.clone())?.uuid,
+            SourceInput::Inline { source } => {
+                crate::core::source::retrieve::validate(source, &retrieval)?;
+                let source = crate::core::source::git::normalize(source.clone())?;
+                if matches!(
+                    retrieval.cache,
+                    CachePolicy::Cached {
+                        freshness: Some(Freshness::CacheOnly {}),
+                        ..
+                    }
+                ) {
+                    self.find_source(&source)?
+                        .ok_or_else(|| {
+                            Error::new(
+                                ErrorCode::ContentUnavailable,
+                                "cache_only source has no registered material",
+                            )
+                        })?
+                        .uuid
+                } else {
+                    self.register_source(source)?.uuid
+                }
+            }
         };
         retrieval.source = SourceInput::Registered { source_uuid };
         let key = scoped_intent_key(&retrieval, acquisition, authorization.as_ref())?;

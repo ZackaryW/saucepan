@@ -250,6 +250,23 @@ impl Store {
         }
         let _lock = self.lock()?;
         let source = self.source(source_uuid)?.source;
+        let CachePolicy::NoStore { destination } = &request.cache else {
+            return Err(Error::new(
+                ErrorCode::InvalidRequest,
+                "caller material requires no_store",
+            )
+            .into());
+        };
+        for path in [destination, &descriptor.path] {
+            let path = path.canonicalize()?;
+            ensure!(
+                !path.starts_with(self.root()) && !self.root().starts_with(&path),
+                Error::new(
+                    ErrorCode::InvalidRequest,
+                    "caller material overlaps its registered store"
+                )
+            );
+        }
         ensure!(
             descriptor.source == request.source,
             Error::new(ErrorCode::InvalidRequest, "caller source identity mismatch")
