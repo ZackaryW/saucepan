@@ -7,7 +7,7 @@ Separate source working data, acquisition metadata, and stored outputs so their 
 ## Requirements
 
 ### Requirement: Source metadata and output content have separate locations
-Saucepan SHALL keep source definitions under `source/<source-uuid>.json`, optional provider working data under `source/<source-uuid>/`, live application and output metadata under `index/<uuid>/index.json`, application claim registries under `claims/<app-uuid>/index.json`, separate claim envelopes under `claims/<app-uuid>/<claim-uuid>.json`, and available acquired content under `store/<entry-uuid>/`. Claims and registered policies SHALL NOT remain embedded as a second mutable copy in the application index. Claim JSON files SHALL contain readable payloads verified using the store's basic checksums or keyring-backed HMAC tags as specified by claim-security. App and output records SHALL have distinguishable record types. Completed uninstall SHALL retire the live app record while retaining its operation receipt as specified by [application-lifecycle](../application-lifecycle/spec.md); output reclaim SHALL retain provenance as specified by [output-policies](../output-policies/spec.md). UUID and path validation SHALL prevent access outside the owning root.
+Saucepan SHALL keep source definitions under source/<source-uuid>.json, optional provider working data under source/<source-uuid>/, live application and output metadata under index/<uuid>/index.json, application claim registries under claims/<app-uuid>/index.json, separate claim envelopes under claims/<app-uuid>/<claim-uuid>.json, standalone policy definitions under policies/<policy-uuid>.json, and available acquired content under store/<entry-uuid>/. Persistent retrieval and acquisition-check records SHALL retain their distinct index record types. Applications, sources and claims SHALL retain policy references rather than embedded authoritative policy definitions or defaults/override bundles. Policy records SHALL participate in verified catalog membership and recoverable publication. Metadata SHALL remain readable and verified using the store basic checksums or keyring-backed HMAC tags. App and output records SHALL have distinguishable types. Completed uninstall SHALL retire the live app record while retaining its operation receipt; output reclaim SHALL retain provenance. Policy definitions referenced by historical records SHALL not be deleted by uninstall or reclaim. UUID and path validation SHALL prevent access outside the owning root.
 
 #### Scenario: Application and output records coexist
 - **WHEN** an application acquires content from a registered source
@@ -30,11 +30,16 @@ Saucepan SHALL publish an output as ready only after acquisition and required va
 - **AND** no path lookup reports a partial output as ready
 
 ### Requirement: Legacy data is not implicitly accepted or migrated
-Saucepan SHALL use a newly defined data contract without inheriting the old FORMAT_VERSION or compatibility decoders. Opening a legacy store or an earlier inline-claim layout SHALL fail explicitly with `unsupported_store` without changing its data. New stores SHALL have an explicit store UUID and contract discriminator. Missing or corrupt required claim metadata SHALL NOT be treated as an empty new store.
+Saucepan SHALL identify the flat-policy layout through a distinct named store contract without inheriting the old FORMAT_VERSION or compatibility decoders. Opening a legacy store, earlier inline-claim layout or preceding nested-policy composition store SHALL fail explicitly with unsupported_store before recovery, signing-key provisioning or data mutation. New flat stores SHALL have an explicit store UUID and contract discriminator. Missing or corrupt required claim or policy metadata SHALL NOT be treated as an empty new store. Known flat stores containing mixed inline and referenced policy authorities SHALL fail validation without fallback. No automatic conversion or in-place migration is provided.
 
 #### Scenario: An old encrypted central index is present
 - **WHEN** initialization or opening detects a legacy Saucepan store
 - **THEN** it reports that a separate new-format root is required and leaves the legacy store unchanged
+
+#### Scenario: Previous composition store is opened
+- **WHEN** a root uses the preceding nested-policy contract
+- **THEN** the binary reports unsupported_store with guidance to use a separate fresh root
+- **AND** the source data, metadata, pending journal and credentials remain unchanged
 
 ### Requirement: An explicit root isolates the full application flow
 Saucepan SHALL accept an explicit root for initialization and subsequent operations, and SHALL preserve that root through its managed Saucepan shim and child Saucepan execution. Explicit-root operations SHALL NOT silently read or mutate the production root. A fresh simulated root SHALL be usable directly without an additional nested `.saucepan` directory. The repository's existing `mock/` is historical evidence under an earlier contract; current acceptance SHALL preserve it and use a separate fresh root rather than treating explicit root selection as migration permission.
@@ -45,7 +50,7 @@ Saucepan SHALL accept an explicit root for initialization and subsequent operati
 - **AND** the user's production installation is not used as a fallback
 
 ### Requirement: CLI operations default to the user-home store
-When `--root` is omitted, CLI operations SHALL resolve the operating-system user's home directory and append `.saucepan`. On Windows the default SHALL use USERPROFILE and on Unix HOME, with the standard operating-system home lookup fallback. An explicit `--root PATH` SHALL take precedence without requiring home resolution; relative overrides SHALL remain relative to the working directory. The CLI SHALL NOT search working-directory ancestors or fall back to another store after an error. Unavailable, empty or relative home resolution SHALL produce `invalid_request` with guidance to pass `--root`. Native APIs and shim-carried explicit roots SHALL retain their existing contracts.
+When `--root` is omitted, store-backed CLI operations SHALL resolve the operating-system user's home directory and append `.saucepan`. On Windows the default SHALL use USERPROFILE and on Unix HOME, with the standard operating-system home lookup fallback. An explicit `--root PATH` SHALL take precedence without requiring home resolution; relative overrides SHALL remain relative to the working directory. The CLI SHALL NOT search working-directory ancestors or fall back to another store after an error. Unavailable, empty or relative home resolution SHALL produce `invalid_request` with guidance to pass `--root`. Native APIs and shim-carried explicit roots SHALL retain their existing contracts. Inline temporary/no_store retrieval and its caller-owned or temporary acquisition SHALL not require home lookup or initialize a store.
 
 #### Scenario: Default location is independent of working directory
 - **WHEN** a caller omits --root while working in a project with a local .saucepan folder
@@ -57,7 +62,7 @@ When `--root` is omitted, CLI operations SHALL resolve the operating-system user
 - **THEN** only the explicit root is used
 
 ### Requirement: Read commands do not implicitly initialize a missing store
-`saucepan init` SHALL initialize the resolved default or explicit root in basic mode unless `--integrity keyring` is explicitly selected. `--integrity basic` SHALL explicitly select the default. Native creation SHALL provide the same default and explicit choice. Successful initialization SHALL identify the selected mode. Invalid mode values SHALL fail before initialization effects. Other commands encountering a missing root directory SHALL fail with `unsupported_store`, no success stdout, and guidance to initialize the selected root; they SHALL NOT create it or its signing key. Existing corrupt, legacy or incomplete stores SHALL retain existing error handling without an implicit reset. Help and version SHALL succeed without home lookup or store initialization.
+`saucepan init` SHALL initialize the resolved default or explicit root in basic mode unless `--integrity keyring` is explicitly selected. `--integrity basic` SHALL explicitly select the default. Native creation SHALL provide the same default and explicit choice. Successful initialization SHALL identify the selected mode. Invalid mode values SHALL fail before initialization effects. Other store-backed commands encountering a missing root directory SHALL fail with `unsupported_store`, no success stdout, and guidance to initialize the selected root; they SHALL NOT create it or its signing key. Existing corrupt, legacy or incomplete stores SHALL retain existing error handling without an implicit reset. Help and version SHALL succeed without home lookup or store initialization. Explicit inline fresh operations SHALL remain usable without any store and SHALL not create one as a side effect.
 
 #### Scenario: First query precedes initialization
 - **WHEN** a caller runs saucepan query-sources before the default root exists
@@ -93,3 +98,14 @@ Every newly initialized store SHALL have a store identity and an unambiguous int
 - **WHEN** the manager or shim opens a valid basic store without an integrity option
 - **THEN** it selects basic verification without contacting a keyring
 - **AND** a protected root selects HMAC verification instead
+
+### Requirement: Cached retrievals and acquisition check state have explicit record ownership
+Cached retrieval material SHALL live under the owning source's working-data area. Persistent retrieval descriptors and managed acquisition check state SHALL have distinct typed records under index/<uuid>/index.json and participate in root membership, selected basic/keyring integrity and recoverable publication. Git working repositories SHALL remain provider-owned data, separately identified from acquired store/<entry-uuid>/ copies. Output revision reclaim SHALL not delete retrieval records or source material. Explicit retrieval purge SHALL coordinate source lifetimes without deleting independent acquired results or source registrations. Fresh-mode scratch and caller-owned destinations SHALL remain outside the persistent index and catalog.
+
+#### Scenario: Output history is removed while source remains cached
+- **WHEN** revision policy reclaims an old acquired output
+- **THEN** its provenance remains and the source's retrieval cache remains independently available
+
+#### Scenario: No-store operation completes
+- **WHEN** an inline no_store retrieval and caller-owned acquisition succeed
+- **THEN** the caller receives completed files without source, index, store, claim or catalog records being added to a Saucepan root

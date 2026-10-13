@@ -35,11 +35,15 @@ Application source queries SHALL verify optional credentials according to the re
 - **AND** explicitly publishing the source does not publish its private claims
 
 ### Requirement: Source visibility is explicit verified administration
-Trusted local administration SHALL be able to set an existing source's public-discovery flag to true or false through native and CLI interfaces. The update SHALL preserve source identity, provider definition and discovery cache and protect the changed metadata using the store-selected integrity mode. Registration retries SHALL preserve the configured visibility. App sessions SHALL not configure visibility. Existing supported source records missing the flag SHALL read as private; unsigned legacy stores SHALL remain unsupported. Explicitly initialized basic stores SHALL be supported without keyring access and SHALL retain the same private-by-default visibility.
+Trusted local administration SHALL configure source public discovery by explicitly adopting a source_visibility_policy UUID through native and CLI interfaces. Missing visibility policy SHALL mean private. Adoption SHALL check the source attachment revision and preserve source identity, provider definition and discovery cache, protecting the changed metadata using the store-selected integrity mode. Registration retries SHALL preserve the configured references. App sessions and caller catalogs SHALL NOT publish source visibility. A visibility-setting convenience command SHALL register an immutable definition and adopt its reference atomically rather than maintaining a second boolean authority; query results SHALL retain the derived public-discovery boolean. Sources in a supported flat store with no visibility attachment SHALL remain private. Earlier nested-policy and legacy stores SHALL remain unsupported. Basic stores SHALL retain the same visibility behavior without keyring access.
 
 #### Scenario: Publish and withdraw
 - **WHEN** an administrator publishes and then withdraws a source
 - **THEN** subsequent anonymous queries include and then omit it without changing its UUID or claims
+
+#### Scenario: Visibility is independent from application restrictions
+- **WHEN** an application has private claim scopes and a source adopts a public discovery policy
+- **THEN** anonymous source queries can discover that source but cannot discover the private claims or gain acquisition permission
 
 ### Requirement: Source query results are verified metadata snapshots
 Queries SHALL return the observed catalogue generation and compact source views containing UUID, source definition and public-discovery flag, ordered by UUID. They SHALL read a coordinated snapshot verified according to the store's selected integrity mode and fail on corrupt or missing catalogue source records rather than silently skipping them. They SHALL NOT access provider payloads, fetch releases, refresh caches, create claims, retain leases or mutate metadata; ordinary store-open recovery remains permitted. Native queries and `query-sources FILE` SHALL share this contract. CLI queries without `--as-app` SHALL use anonymous visibility; queries with it SHALL use the app session. Query errors SHALL use the existing structured error mechanism, exit nonzero and emit no success stdout.

@@ -54,7 +54,7 @@ Credential enforcement SHALL be opt-in per registered application and disabled b
 - **AND** the same token presented for another store or app does not satisfy that registration's verifier
 
 ### Requirement: One operation policy governs application access
-App-facing lookup, acquisition, claim ensure/reuse, leasing, recovery, update, release, activation and removal SHALL evaluate caller, action and resource against registered source and claim/scope permissions. Omitted restrictions SHALL permit supported actions within the app's ownership boundary; an explicitly empty allowance SHALL permit none. Configured dimensions SHALL intersect, and a permitted source SHALL NOT override a denied action or scope. Cache hits, covered views and direct UUID lookup SHALL NOT bypass policy. Presentation filters SHALL remain distinct from authorization. Restricted app calls SHALL NOT edit their own registration to broaden authority or select trusted administrative mode. Policy changes SHALL use the explicit local store-administration boundary with revision checking and applicable proof.
+App-facing lookup, retrieval, acquisition, claim ensure/reuse, leasing, recovery, update, release, activation and removal SHALL evaluate caller, action and resource against verified referenced access policies and constraints. Omitted restrictions SHALL permit supported actions within the app ownership boundary; an explicitly empty allowance SHALL permit none. Configured dimensions and applicable restriction records SHALL intersect, and a permitted source SHALL NOT override a denied action or scope. Cache hits, covered views, historical effective-policy evidence and direct UUID lookup SHALL NOT bypass current policy. Presentation filters SHALL remain distinct from authorization. Restricted app calls SHALL NOT broaden their registration, attach authoritative request-supplied policies or select trusted administrative mode. Authoritative policy association changes SHALL use explicit local store administration with revision checking and applicable proof. Credential enforcement and source/claim visibility SHALL remain independent opt-ins. Native, CLI, maintenance and shim paths SHALL preserve their existing authority boundaries while using the same resolved policy meaning.
 
 #### Scenario: A cached output would bypass acquisition restrictions
 - **WHEN** an app requests an already-cached output belonging to a forbidden source
@@ -67,6 +67,14 @@ App-facing lookup, acquisition, claim ensure/reuse, leasing, recovery, update, r
 #### Scenario: An app attempts to broaden its own policy
 - **WHEN** a restricted app operation attempts to modify registered source allowances
 - **THEN** it is denied without altering the registration
+
+#### Scenario: Request policy cannot grant authority
+- **WHEN** a restricted caller supplies a permissive access definition or tries to replace registered constraints in an acquisition request
+- **THEN** the operation is rejected before effects and its registered authority remains unchanged
+
+#### Scenario: Credential-free policy adoption is still revision checked
+- **WHEN** an administrator replaces policy associations for an app whose credentials are disabled using a stale expected revision
+- **THEN** the change conflicts without asking for an unnecessary token or modifying associations
 
 ### Requirement: Signing keys and optional credentials have separate custody
 Only keyring-protected stores SHALL provision an HMAC master key in OS-backed keyring under a store-specific identity, separately from JSON files. Missing or unavailable protected keys SHALL produce `key_unavailable` without generating replacement keys for existing records or falling back to basic acceptance. Basic stores SHALL NOT provision, load, retire, or require a signing key. Test key providers SHALL require explicit injection for protected fixtures. Optional bearer tokens SHALL be random, distinct from signing keys, verified using constant-time library primitives, and delivered only through a chosen secret destination. Persisted credential verifiers SHALL explicitly distinguish independent bearer proof from existing signing-key-dependent proof; verification SHALL NOT try alternative algorithms after a failed proof. Normal results, logs, records, journals and sidecars SHALL contain neither signing keys nor bearer tokens. Registration retries SHALL NOT redisclose tokens. CLI proof SHALL use a credential file rather than a literal command-line token.

@@ -7,7 +7,7 @@ Track which exact acquired outputs an application uses while retaining the acqui
 ## Requirements
 
 ### Requirement: Applications claim specific outputs and retain their requests
-Registered applications SHALL have UUID-indexed records with settings and separate application-owned claim registries. Each claim SHALL retain a claim identity, the acquisition request including item policies, its selected output UUID, an explicit nonempty scope of at most 4096 UTF-8 bytes, and a plain string-to-string context map. Scope SHALL be compared literally without inferred filesystem normalization. Omitted context SHALL mean an empty map in the current contract. Successful scoped acquisition SHALL create or update the intended claim; failed acquisition SHALL leave existing claims unchanged. Supplied acquisition context SHALL be published atomically with a new claim. Claims SHALL represent usage associations rather than exclusive resource ownership or authentication proof. Context SHALL NOT participate in source identity, output identity, item grouping, output deduplication, or retention policy. Explicit scope, rather than context, SHALL determine independent claim ownership. Claim ensure and reuse SHALL follow the requirements below.
+Registered applications SHALL have UUID-indexed records and separate application-owned claim registries. Application defaults and constraints SHALL be attached as policy UUID references. Each claim SHALL retain a claim identity, its resource request and adopted policy references, its selected output UUID, an explicit nonempty scope of at most 4096 UTF-8 bytes, and a plain string-to-string context map. Derived effective-policy evidence SHALL NOT constitute a second editable policy authority. Scope SHALL be compared literally without inferred filesystem normalization. Omitted context SHALL mean an empty map. Successful scoped acquisition SHALL create or update the intended claim; failed acquisition SHALL leave existing claims unchanged. Supplied acquisition context SHALL be published atomically with a new claim. Claims SHALL represent usage associations rather than exclusive resource ownership or authentication proof. Context SHALL NOT participate in source identity, output identity, item grouping, output deduplication, or retention policy. Explicit scope, rather than context or policy UUID, SHALL determine independent claim ownership. Claim ensure and reuse SHALL follow the requirements below.
 
 #### Scenario: An application claims two selections from one repository
 - **WHEN** it acquires two disjoint folders or different platform selections
@@ -90,7 +90,7 @@ Registration SHALL accept a caller-owned registration key distinct from the disp
 - **AND** a retry cannot retrieve a previously issued secret
 
 ### Requirement: Ensuring a request does not duplicate a claim within its scope
-Claim ensure SHALL require an explicit scope. Matching normalized requests with compatible effective policies in the same application and scope SHALL reuse a claim UUID, including concurrent requests. Different scopes SHALL retain independent claim identities and updates while allowing output reuse. Under output reuse policy, ensuring an available claim SHALL NOT implicitly refresh it. Explicit new-output policy SHALL acquire under normal source freshness rules but SHALL NOT create another claim identity; any resulting selection change SHALL use the existing claim and normal conflict checks. Identity lookup and final publication SHALL be coordinated with release, policy changes, context replacement, and uninstall.
+Claim ensure SHALL require an explicit scope. Matching normalized requests with compatible effective policies in the same application and scope SHALL reuse a claim UUID, including concurrent requests. Equivalent effective choices under different policy UUIDs SHALL NOT alone create duplicate claims. Reuse SHALL NOT silently adopt the new references; explicit revision-checked adoption SHALL retain claim identity and context. Different scopes SHALL retain independent claim identities and updates while allowing output reuse. Under output reuse and the default manual acquisition update policy, ensuring an available claim SHALL NOT implicitly refresh it. An explicitly configured due acquisition update SHALL be evaluated before reuse, following acquisition-refresh; it SHALL update the same claim only after permission checks and successful publication. Its check state and selection SHALL remain independent of other scopes. Explicit new-output policy SHALL acquire under normal source freshness rules but SHALL NOT create another claim identity; any resulting selection change SHALL use the existing claim and normal conflict checks. Identity lookup and final publication SHALL be coordinated with release, policy adoption, context replacement, and uninstall.
 
 #### Scenario: Repeated identical scoped acquisition
 - **WHEN** concurrent callers ensure the same request, scope, policies, and context
@@ -99,6 +99,11 @@ Claim ensure SHALL require an explicit scope. Matching normalized requests with 
 #### Scenario: Projects update independently
 - **WHEN** scopes A and B share output E1 and A updates its claim to E2
 - **THEN** B still selects E1 through its own claim
+
+#### Scenario: Equivalent policy definitions do not duplicate ownership
+- **WHEN** a same-scope ensure selects equivalent behavior using another registered policy UUID
+- **THEN** it reuses the compatible claim without changing its adopted references
+- **AND** an incompatible overlapping policy choice fails without creating another claim
 
 ### Requirement: Covered folder requests reuse an existing claim
 A compatible natural-directory or Git folder request fully covered by an existing same-scope claim SHALL return that claim and an explicit relative view, without a new claim record. Coverage SHALL require matching source and selector semantics, compatible effective policies, immutable provenance and manifest evidence, and safe path-component containment. Exact matches SHALL take precedence over covering matches; otherwise the most specific covering folder SHALL win deterministically. Raw/extracted format changes and different binary/platform selection SHALL NOT be treated as folder coverage. Returned views SHALL use the owning claim's context.
@@ -121,3 +126,29 @@ A broader request that would subsume an existing narrower claim, or a same-scope
 #### Scenario: Labels differ on a matching request
 - **WHEN** a matching request is ensured with different supplied context
 - **THEN** `claim_context_conflict` is returned without duplicate claims or label changes
+
+### Requirement: Claims are optional composition without optional authorization
+Retrieval and acquisition SHALL not require app registration unless the caller selects an app identity or a managed claim. App credentials SHALL remain independently opt-in. A persistent claim SHALL require a managed output, explicit app and scope, and permitted policies; temporary or caller-owned results SHALL not create claims. App-identified operations without claims SHALL still enforce registered source/action/scope restrictions, including an explicit authorization scope where required. Automatic update and revision-policy defaults/overrides SHALL be validated against app registration before effects and at commit. Omitted update policy SHALL retain manual behavior; omitted revision policy SHALL retain the existing latest-ten default.
+
+#### Scenario: Acquire files without owning them as an app
+- **WHEN** a local caller acquires a caller-owned directory without an app identity
+- **THEN** no app registration, scope record or claim is synthesized
+
+#### Scenario: App requests temporary files from a denied source
+- **WHEN** an identified app selects temporary delivery for a source its policy denies
+- **THEN** the operation fails before retrieval even though no claim would have been created
+
+#### Scenario: Update policy is outside app allowance
+- **WHEN** a claim request asks for automatic update frequency or revision retention outside its registered allowance
+- **THEN** it reports policy_conflict before fetching or moving any selection
+
+### Requirement: Optional claims adopt resolved behavior without embedded overrides
+A managed claim SHALL adopt the resolved behavior references or built-in choices used at creation. Subsequent changes SHALL require explicit revision-checked adoption under current registered constraints. Temporary and caller-owned acquisitions SHALL NOT create claims. App-identified operations without a claim SHALL still apply source/action/scope restrictions and policy constraints. Covered folder views SHALL retain the owning claim and its adopted policies; policy references SHALL NOT turn query globs into ownership coverage.
+
+#### Scenario: Unclaimed app operation remains restricted
+- **WHEN** an identified app requests temporary files from a denied source with permissive behavior references
+- **THEN** it fails before retrieval even though no claim would be created
+
+#### Scenario: Covered folder keeps its owner
+- **WHEN** a compatible subfolder is already covered by a same-scope claim
+- **THEN** the returned relative view uses that claim and its adopted policies without a new association
