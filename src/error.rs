@@ -14,6 +14,7 @@ pub enum ErrorCode {
     UnknownClaim,
     UnknownOutput,
     ContentUnavailable,
+    RecoveryRequired,
     ExactContentUnavailable,
     RevisionConflict,
     ClaimContextConflict,

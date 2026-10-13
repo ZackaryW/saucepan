@@ -3,7 +3,7 @@ use super::{AcquiredResource, composition, json_digest};
 use crate::{
     core::{
         Store,
-        retrieval::{RetrieveOptions, RetrievedResource, Retriever},
+        retrieval::{RetrieveOptions, RetrievedResource},
         source::AcquireOptions,
     },
     error::{Error, ErrorCode},
@@ -11,9 +11,7 @@ use crate::{
         index::Record,
         policy::{Freshness, Identical, UpdatePolicy},
         retrieval::{CachePolicy, Ownership, RetrieveRequest, SourceInput},
-        store::{
-            AcquiredDescriptor, AcquisitionRequest, AcquisitionState, Destination, VerificationMode,
-        },
+        store::{AcquiredDescriptor, AcquisitionRequest, AcquisitionState, Destination},
     },
     utils::lock::{LockGuard, LockMode},
 };
@@ -45,6 +43,26 @@ impl Store {
                 "use scoped application acquisition"
             )
         );
+        self.acquire_composed_authorized(retrieval, acquisition, options, None)
+    }
+
+    pub(crate) fn acquire_composed_authorized(
+        &self,
+        retrieval: &RetrieveRequest,
+        acquisition: &AcquisitionRequest,
+        options: &RetrieveOptions,
+        mut authorization: Option<crate::core::claim::composition::Authorization>,
+    ) -> Result<AcquiredResource> {
+        if !matches!(retrieval.cache, CachePolicy::Cached { .. }) && !self.metadata_only {
+            let mut reader = self.clone();
+            reader.metadata_only = true;
+            return reader.acquire_composed_authorized(
+                retrieval,
+                acquisition,
+                options,
+                authorization,
+            );
+        }
         crate::core::policy::composition::validate_composition(retrieval, acquisition, false)?;
         if !matches!(acquisition.destination, Destination::Managed {}) {
             let mut retrieval = retrieval.clone();
@@ -59,11 +77,7 @@ impl Store {
             if due && let CachePolicy::Cached { freshness, .. } = &mut retrieval.cache {
                 *freshness = Some(Freshness::Always {});
             }
-            let retrieved = if matches!(retrieval.cache, CachePolicy::Cached { .. }) {
-                self.retrieve_with(&retrieval, options)?
-            } else {
-                Retriever::retrieve_with(&retrieval, options)?
-            };
+            let retrieved = self.retrieve_authorized(&retrieval, options, authorization)?;
             return composition::Acquirer::materialize_checked(&retrieved, acquisition);
         }
         let mut retrieval = retrieval.clone();
@@ -72,13 +86,13 @@ impl Store {
             SourceInput::Inline { source } => self.register_source(source.clone())?.uuid,
         };
         retrieval.source = SourceInput::Registered { source_uuid };
-        let key = intent_key(&retrieval, acquisition)?;
+        let key = scoped_intent_key(&retrieval, acquisition, authorization.as_ref())?;
         let _intent = self.acquisition_lock(&key)?;
         let previous = self.acquisition_by_key(&key)?;
         // Keep the previous selection usable through failed preparation and
         // publication. This output lease is independent of the source lease.
         let _previous_lease = match previous.as_ref() {
-            Some(state) => match self.lease(state.selected, VerificationMode::Full) {
+            Some(state) => match self.lease_acquisition(state, authorization.as_ref()) {
                 Ok(lease) => Some(lease),
                 Err(error) if Error::from_anyhow(&error).code == ErrorCode::ContentUnavailable => {
                     None
@@ -95,6 +109,10 @@ impl Store {
         let due = acquisition
             .update_policy
             .due(previous.as_ref().and_then(|s| s.last_success), now);
+        if let Some(authorization) = &mut authorization {
+            authorization.update = due && previous.is_some();
+            authorization.check(self, source_uuid, Some(acquisition))?;
+        }
         let source = self.source(source_uuid)?;
         if let CachePolicy::Cached { freshness, .. } = &mut retrieval.cache
             && freshness.is_none()
@@ -107,7 +125,7 @@ impl Store {
             && acquisition.identical == Identical::Reuse
             && let Some(state) = &previous
         {
-            match self.selected_acquisition(state, false) {
+            match self.selected_acquisition(state, false, authorization.as_ref()) {
                 Ok(result) => return Ok(result),
                 Err(error) if Error::from_anyhow(&error).code == ErrorCode::ContentUnavailable => {}
                 Err(error) => return Err(error),
@@ -116,13 +134,13 @@ impl Store {
         if due && let CachePolicy::Cached { freshness, .. } = &mut retrieval.cache {
             *freshness = Some(Freshness::Always {});
         }
-        let retrieved = self.retrieve_with(&retrieval, options)?;
+        let retrieved = self.retrieve_authorized(&retrieval, options, authorization.clone())?;
         if retrieved.descriptor.stale
             && let Some(state) = &previous
         {
-            return self.selected_acquisition(state, true);
+            return self.selected_acquisition(state, true, authorization.as_ref());
         }
-        self.publish_acquisition(&retrieved, acquisition, key, previous.as_ref())
+        self.publish_acquisition(&retrieved, acquisition, key, previous.as_ref(), None)
     }
 
     pub(crate) fn acquisition_lock(&self, key: &str) -> Result<LockGuard> {
@@ -146,6 +164,7 @@ impl Store {
         request: &AcquisitionRequest,
         key: String,
         previous: Option<&AcquisitionState>,
+        claim: Option<crate::core::claim::operations::ClaimTarget>,
     ) -> Result<AcquiredResource> {
         let legacy = composition::managed_request(retrieved, request)?;
         let prepared = composition::prepare(retrieved, request, Some(&self.root.join(".staging")))?;
@@ -170,9 +189,23 @@ impl Store {
                 previous.and_then(|s| s.checked_source.clone())
             },
             verification: retrieved.descriptor.verification.clone(),
+            owner: retrieved
+                .authorization
+                .as_ref()
+                .map(|authorization| authorization.owner.clone()),
         };
-        let result =
-            self.publish_prepared_state(&legacy, prepared, None, true, false, Some(state.clone()))?;
+        let _lock = self.lock()?;
+        if let Some(authorization) = &retrieved.authorization {
+            authorization.check(self, legacy.source_uuid, Some(request))?;
+        }
+        let result = self.publish_prepared_state(
+            &legacy,
+            prepared,
+            claim,
+            true,
+            false,
+            Some(state.clone()),
+        )?;
         let changed =
             previous.is_none_or(|previous| previous.selected != result.acquired.entry.uuid);
         Ok(AcquiredResource {
@@ -201,8 +234,9 @@ impl Store {
         &self,
         state: &AcquisitionState,
         stale: bool,
+        authorization: Option<&crate::core::claim::composition::Authorization>,
     ) -> Result<AcquiredResource> {
-        let lease = self.lease(state.selected, VerificationMode::Full)?;
+        let lease = self.lease_acquisition(state, authorization)?;
         let selected = self.output(state.selected)?;
         Ok(AcquiredResource {
             descriptor: AcquiredDescriptor {
@@ -226,6 +260,45 @@ impl Store {
             _lease: Some(lease),
             _retrieval: None,
         })
+    }
+
+    fn lease_acquisition(
+        &self,
+        state: &AcquisitionState,
+        authorization: Option<&crate::core::claim::composition::Authorization>,
+    ) -> Result<super::ResourceLease> {
+        let _lock = self.lock()?;
+        ensure!(
+            state.owner.as_ref() == authorization.map(|authorization| &authorization.owner),
+            Error::new(ErrorCode::AccessDenied, "acquisition scope mismatch")
+        );
+        if let Some(authorization) = authorization {
+            authorization.check(self, state.request.source_uuid, Some(&state.acquisition))?;
+        } else {
+            ensure!(
+                self.session.is_none(),
+                Error::new(
+                    ErrorCode::AccessDenied,
+                    "application authorization required"
+                )
+            );
+        }
+        let output = self.output(state.selected)?;
+        let mut lease = self.metadata_lease_locked(&output)?;
+        lease.verify(self, &output)?;
+        Ok(lease)
+    }
+}
+
+pub(crate) fn scoped_intent_key(
+    retrieval: &RetrieveRequest,
+    acquisition: &AcquisitionRequest,
+    authorization: Option<&crate::core::claim::composition::Authorization>,
+) -> Result<String> {
+    let base = intent_key(retrieval, acquisition)?;
+    match authorization {
+        Some(authorization) => json_digest(&(&authorization.owner, base)),
+        None => Ok(base),
     }
 }
 

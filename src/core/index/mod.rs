@@ -287,6 +287,13 @@ impl Store {
         Ok(record)
     }
     pub(crate) fn save_source(&self, source: &SourceRecord) -> Result<()> {
+        ensure!(
+            !self.metadata_only,
+            Error::new(
+                ErrorCode::AccessDenied,
+                "metadata-only access cannot publish sources"
+            )
+        );
         let snapshot = self.metadata.snapshot()?;
         self.metadata.publish(
             &snapshot,
@@ -327,6 +334,13 @@ impl Store {
         mut journal: Journal,
         observer: impl FnMut(crate::core::claim::persistence::Publication) -> crate::error::Result<()>,
     ) -> Result<()> {
+        ensure!(
+            !self.metadata_only,
+            Error::new(
+                ErrorCode::AccessDenied,
+                "metadata-only access cannot commit changes"
+            )
+        );
         let snapshot = self.metadata.snapshot()?;
         let mut writes = Vec::new();
         let mut deletes = Vec::new();

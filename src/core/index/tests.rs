@@ -76,6 +76,9 @@ fn interrupted_content_publication_recovers_before_and_after_rename_and_rejects_
             let (record, registry) = store
                 .claim_record(
                     &crate::core::claim::operations::ClaimTarget {
+                        projection: None,
+                        expected_revision: None,
+                        overrides: None,
                         app: app.uuid,
                         scope: scope.clone(),
                         id: old.uuid,

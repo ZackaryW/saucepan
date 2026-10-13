@@ -95,10 +95,12 @@ impl Store {
                     }),
                     useable_app: Some(true),
                     reclaim: None,
+                    update_policy: None,
                 },
                 effective: crate::models::claim::policy::Effective {
                     output: input.request.policies.clone(),
                     reclaim: Default::default(),
+                    update_policy: Default::default(),
                 },
                 context: Default::default(),
                 uuid: op.claim,

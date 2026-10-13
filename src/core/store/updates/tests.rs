@@ -1,4 +1,5 @@
 use super::*;
+use crate::models::store::VerificationMode;
 use crate::{
     core::index::Journal,
     models::{source::Source, store::Selector},

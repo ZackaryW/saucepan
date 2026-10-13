@@ -16,4 +16,14 @@ pub struct AcquisitionState {
     pub last_success: Option<u64>,
     pub checked_source: Option<Resolved>,
     pub verification: VerificationEvidence,
+    #[serde(default)]
+    pub owner: Option<AcquisitionOwner>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AcquisitionOwner {
+    pub app: Uuid,
+    pub scope: Option<crate::models::claim::Scope>,
+    pub claim: Option<Uuid>,
 }

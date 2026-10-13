@@ -37,9 +37,15 @@ impl Acquirer {
     ) -> Result<AcquiredResource> {
         let retrieval = retrieved.request.clone();
         let store = retrieved.store.clone();
+        let authorization = retrieved.authorization.clone();
         drop(retrieved);
         match store {
-            Some(store) => store.acquire_composed(&retrieval, request),
+            Some(store) => store.acquire_composed_authorized(
+                &retrieval,
+                request,
+                &Default::default(),
+                authorization,
+            ),
             None => Self::retrieve_and_acquire(&retrieval, request),
         }
     }
@@ -63,6 +69,14 @@ impl Acquirer {
         request: &AcquisitionRequest,
     ) -> Result<AcquiredResource> {
         validate_composition(&retrieved.request, request, false)?;
+        if let (Some(store), Some(authorization)) = (&retrieved.store, &retrieved.authorization) {
+            let SourceInput::Registered { source_uuid } = retrieved.request.source else {
+                return Err(
+                    Error::new(ErrorCode::AccessDenied, "registered source required").into(),
+                );
+            };
+            authorization.check(store, source_uuid, Some(request))?;
+        }
         ensure!(
             matches!(request.update_policy, UpdatePolicy::Manual {}),
             Error::new(
@@ -78,13 +92,17 @@ impl Acquirer {
                 )
             })?;
             ensure!(
-                store.session.is_none(),
+                store.session.is_none() || retrieved.authorization.is_some(),
                 Error::new(
                     ErrorCode::AccessDenied,
                     "use scoped application acquisition"
                 )
             );
-            let key = super::updates::intent_key(&retrieved.request, request)?;
+            let key = super::updates::scoped_intent_key(
+                &retrieved.request,
+                request,
+                retrieved.authorization.as_ref(),
+            )?;
             // A retained source lease cannot wait for an intent whose owner may
             // itself be waiting to refresh that source. Fail immediately instead.
             let _intent = crate::utils::lock::LockGuard::acquire(
@@ -93,7 +111,7 @@ impl Acquirer {
                 std::time::Duration::ZERO,
             )?;
             let previous = store.acquisition_by_key(&key)?;
-            return store.publish_acquisition(retrieved, request, key, previous.as_ref());
+            return store.publish_acquisition(retrieved, request, key, previous.as_ref(), None);
         }
         let destination = match &request.destination {
             Destination::Directory { path } => {
@@ -120,6 +138,18 @@ impl Acquirer {
             request,
             destination.as_ref().and_then(|path| path.parent()),
         )?;
+        // Fence authorization changes while copying before caller-visible delivery.
+        let _authorization_lock = retrieved
+            .authorization
+            .as_ref()
+            .and(retrieved.store.as_ref())
+            .map(|store| store.lock())
+            .transpose()?;
+        if let (Some(store), Some(authorization)) = (&retrieved.store, &retrieved.authorization)
+            && let SourceInput::Registered { source_uuid } = retrieved.request.source
+        {
+            authorization.check(store, source_uuid, Some(request))?;
+        }
         let (path, ownership, temporary) = match destination {
             Some(destination) => {
                 publish_prepared_directory(

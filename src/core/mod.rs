@@ -49,6 +49,7 @@ pub struct Store {
     pub(crate) root: PathBuf,
     pub(crate) metadata: claim::persistence::Metadata,
     pub(crate) session: Option<claim::session::SessionIdentity>,
+    pub(crate) metadata_only: bool,
     #[cfg(test)]
     pub(crate) before_claim_commit: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
     #[cfg(test)]
@@ -160,6 +161,7 @@ impl Store {
             Duration::from_secs(30),
         )?;
         Ok(Self {
+            metadata_only: false,
             session: None,
             metadata: claim::persistence::Metadata::initialize_with_mode(&root, mode, keys)?,
             root,
@@ -176,6 +178,19 @@ impl Store {
         self.metadata.authenticator().mode()
     }
     pub fn open_with_keys(root: &Path, keys: &dyn claim::security::KeyProvider) -> Result<Self> {
+        Self::open_mode(root, keys, false)
+    }
+    pub(crate) fn open_metadata(
+        root: &Path,
+        keys: &dyn claim::security::KeyProvider,
+    ) -> Result<Self> {
+        Self::open_mode(root, keys, true)
+    }
+    fn open_mode(
+        root: &Path,
+        keys: &dyn claim::security::KeyProvider,
+        metadata_only: bool,
+    ) -> Result<Self> {
         ensure!(plain_metadata(root)?.is_dir(), "invalid store root");
         ensure!(
             !root.join("index.json.enc").exists(),
@@ -196,6 +211,7 @@ impl Store {
             );
         }
         let store = Self {
+            metadata_only,
             session: None,
             root,
             metadata,
@@ -213,17 +229,31 @@ impl Store {
         if let Some(native) =
             HELD_LOCKS.with(|locks| locks.borrow().get(&self.root).and_then(Weak::upgrade))
         {
+            if self.metadata_only {
+                self.metadata.require_reconciled()?;
+            }
             return Ok(StoreGuard {
                 root: self.root.clone(),
                 native,
             });
+        }
+        if self.metadata_only {
+            ensure!(
+                plain_metadata(&self.root.join(".locks/mutation"))?.is_file(),
+                "metadata read requires existing coordination"
+            );
         }
         let native = Rc::new(LockGuard::acquire(
             &self.root.join(".locks/mutation"),
             LockMode::Exclusive,
             Duration::from_secs(30),
         )?);
-        self.recover_locked()?;
+        if self.metadata_only {
+            self.metadata.require_reconciled()?;
+            self.metadata.snapshot()?;
+        } else {
+            self.recover_locked()?;
+        }
         HELD_LOCKS.with(|locks| {
             locks
                 .borrow_mut()

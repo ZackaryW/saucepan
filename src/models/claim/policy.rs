@@ -1,7 +1,7 @@
 use super::Scope;
 use crate::{
     error::{Error, ErrorCode, Result},
-    models::policy::{Eviction, Identical, Policies},
+    models::policy::{Eviction, Identical, Policies, UpdatePolicy},
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -62,6 +62,7 @@ impl ReclaimPolicy {
 pub struct Effective {
     pub output: Policies,
     pub reclaim: ReclaimPolicy,
+    pub update_policy: UpdatePolicy,
 }
 impl Effective {
     pub fn validate(&self) -> Result<()> {
@@ -82,6 +83,7 @@ pub struct Overrides {
     pub reclaim: Option<ReclaimPolicy>,
     /// Output protection is registered by the app; overrides cannot remove it.
     pub useable_app: Option<bool>,
+    pub update_policy: Option<UpdatePolicy>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -92,6 +94,8 @@ pub struct Registration {
     pub allowed_identical: Vec<Identical>,
     pub allowed_reclaim: Vec<ReclaimStrategy>,
     pub allow_useable_app: bool,
+    pub allow_automatic_updates: bool,
+    pub minimum_update_interval: u64,
 }
 impl Default for Registration {
     fn default() -> Self {
@@ -106,12 +110,15 @@ impl Default for Registration {
                 ReclaimStrategy::Refresh,
             ],
             allow_useable_app: true,
+            allow_automatic_updates: true,
+            minimum_update_interval: 0,
         }
     }
 }
 impl Registration {
     pub fn validate(&self) -> Result<()> {
         self.defaults.validate()?;
+        self.validate_update(self.defaults.update_policy)?;
         let Eviction::Latest { keep } = self.defaults.output.eviction;
         if self.minimum_keep == 0
             || self.minimum_keep > self.maximum_keep
@@ -143,6 +150,10 @@ impl Registration {
         if let Some(reclaim) = &overrides.reclaim {
             effective.reclaim = reclaim.clone();
         }
+        if let Some(update_policy) = overrides.update_policy {
+            effective.update_policy = update_policy;
+        }
+        self.validate_update(effective.update_policy)?;
         if let Some(protect) = overrides.useable_app {
             if (!protect && self.defaults.output.protection.is_some())
                 || (protect && !self.allow_useable_app)
@@ -166,5 +177,20 @@ impl Registration {
             ));
         }
         Ok(effective)
+    }
+
+    fn validate_update(&self, update: UpdatePolicy) -> Result<()> {
+        let interval = match update {
+            UpdatePolicy::Manual {} => return Ok(()),
+            UpdatePolicy::Always {} => 0,
+            UpdatePolicy::MaxAge { seconds } => seconds,
+        };
+        if !self.allow_automatic_updates || interval < self.minimum_update_interval {
+            return Err(Error::new(
+                ErrorCode::PolicyConflict,
+                "update policy is outside registered allowances",
+            ));
+        }
+        Ok(())
     }
 }

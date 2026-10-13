@@ -61,6 +61,22 @@ impl Store {
         request: &Request,
         options: &AcquireOptions,
     ) -> Result<Prepared> {
+        let (retrieval, acquired) = self.composition_requests(request, options)?;
+        let retrieved = self.retrieve_prevalidated(
+            &retrieval,
+            &RetrieveOptions {
+                test_now: options.test_now,
+                test_github_api: options.test_github_api.clone(),
+            },
+        )?;
+        composition::prepare(&retrieved, &acquired, Some(&self.root.join(".staging")))
+    }
+
+    pub(crate) fn composition_requests(
+        &self,
+        request: &Request,
+        options: &AcquireOptions,
+    ) -> Result<(RetrieveRequest, AcquisitionRequest)> {
         let source = self.source(request.source_uuid)?;
         match &source.source {
             Source::Local { .. } | Source::Git { .. } | Source::GithubRepo { .. } => ensure!(
@@ -104,13 +120,6 @@ impl Store {
             ..Default::default()
         };
         crate::core::policy::composition::validate_composition(&retrieval, &acquired, false)?;
-        let retrieved = self.retrieve_prevalidated(
-            &retrieval,
-            &RetrieveOptions {
-                test_now: options.test_now,
-                test_github_api: options.test_github_api.clone(),
-            },
-        )?;
-        composition::prepare(&retrieved, &acquired, Some(&self.root.join(".staging")))
+        Ok((retrieval, acquired))
     }
 }

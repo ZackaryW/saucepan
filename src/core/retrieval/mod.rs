@@ -7,6 +7,8 @@ use std::{path::Path, rc::Rc};
 mod access;
 mod fresh;
 mod managed;
+mod registered;
+pub use registered::{RegisteredAppRetriever, RegisteredRetriever};
 #[cfg(test)]
 mod tests;
 pub(crate) use fresh::delivery_lock;
@@ -19,6 +21,7 @@ pub struct RetrievedResource {
     pub(crate) request: RetrieveRequest,
     pub(crate) source: crate::models::source::Source,
     pub(crate) store: Option<crate::core::Store>,
+    pub(crate) authorization: Option<crate::core::claim::composition::Authorization>,
     pub(crate) descriptor: RetrievedDescriptor,
     pub(crate) _temporary: Option<Rc<tempfile::TempDir>>,
     pub(crate) _coordination: Option<LockGuard>,

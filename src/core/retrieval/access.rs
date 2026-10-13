@@ -185,6 +185,7 @@ impl Store {
             },
             source: self.source(record.source_uuid)?.source,
             store: Some(self.clone()),
+            authorization: None,
             descriptor: RetrievedDescriptor {
                 ownership: Ownership::Managed { uuid: record.uuid },
                 path: self.retrieval_path(record)?,

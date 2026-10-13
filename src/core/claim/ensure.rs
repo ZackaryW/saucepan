@@ -14,6 +14,7 @@ use uuid::Uuid;
 
 #[cfg(test)]
 mod tests;
+mod updates;
 
 struct Selected {
     claim: Claim,
@@ -33,6 +34,24 @@ impl Store {
         options: &AcquireOptions,
     ) -> Result<Claimed> {
         crate::models::claim::validate_context(&input.context)?;
+        {
+            let _lock = self.lock()?;
+            let registry = self.registry(app)?;
+            self.authorize_resource(
+                &registry,
+                Action::Acquire,
+                Some(input.source_uuid),
+                Some(&input.scope),
+            )?;
+            let effective = registry.registry.policies.evaluate(&input.overrides)?;
+            if !matches!(
+                effective.update_policy,
+                crate::models::policy::UpdatePolicy::Manual {}
+            ) {
+                drop(_lock);
+                return self.ensure_updated(app, input, options);
+            }
+        }
         let (revision, existing, request, effective) = {
             let _lock = self.lock()?;
             let application = self.application(app)?;

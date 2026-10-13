@@ -46,6 +46,16 @@ impl Retriever {
         options: &RetrieveOptions,
         exact: Option<&crate::models::source::Resolved>,
     ) -> Result<RetrievedResource> {
+        Self::retrieve_finishing(request, options, exact, || Ok(()))
+    }
+
+    /// Hold a caller's final publication fence only after network/material work.
+    pub(crate) fn retrieve_finishing<G>(
+        request: &RetrieveRequest,
+        options: &RetrieveOptions,
+        exact: Option<&crate::models::source::Resolved>,
+        finish: impl FnOnce() -> Result<G>,
+    ) -> Result<RetrievedResource> {
         let options = AcquireOptions {
             test_now: options.test_now,
             test_github_api: options.test_github_api.clone(),
@@ -86,6 +96,7 @@ impl Retriever {
             &options,
             exact,
         )?;
+        let _finish_guard = finish()?;
         let (path, ownership, temporary) = if let Some(destination) = destination {
             let path = match material.kind {
                 MaterialKind::File => {
@@ -131,6 +142,7 @@ impl Retriever {
             request: request.clone(),
             source: normalized_source,
             store: None,
+            authorization: None,
             descriptor: RetrievedDescriptor {
                 ownership,
                 path,

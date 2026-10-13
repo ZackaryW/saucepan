@@ -2,8 +2,8 @@
 
 The new request models separate three policy decisions. Native inline fresh
 retrieval is available through `Retriever`, and managed retrieval through `Store`.
-Offline acquisition is available through `Acquirer`; app-scoped update integration
-and new CLI commands are still being integrated.
+Offline acquisition and scoped automatic updates are available. New CLI commands
+are still being integrated.
 
 | Policy | Responsibility | Managed default |
 | --- | --- | --- |
@@ -158,5 +158,32 @@ original provenance. Failed checks preserve the previous selection and timestamp
 explicit stale fallback returns the previous selection with `stale: true`.
 Requests with different effective update/revision/verification policies have
 separate check proofs. Explicit `new_entry` still creates an output even when
-content is unchanged. App-scoped update integration is still in progress.
+content is unchanged. App-scoped updates use the same check/publication state with separate scope identity.
 
+
+App-scoped native operations use `session.retrieve(&request, scope, &options)`
+and `session.acquire_composed(&retrieval, &acquisition, scope, &options)`.
+They may create no claim while still enforcing configured source, action and
+scope restrictions. A restricted app cannot omit scope to become an administrative
+caller. Its unclaimed selection/check state includes app and explicit scope.
+Anonymous operations do not synthesize an app.
+
+For existing claims, set `overrides.update_policy` (or the registered policy
+default) and use the existing `session.ensure` method. Due checks require the
+update action, retain the claim UUID/context, and publish check state with the
+selected output and claim. They do not activate binaries or change bindings.
+`allow_automatic_updates` and `minimum_update_interval` bound registered update
+choices; existing minimum/maximum keep bounds govern revision retention.
+
+Credentials are still independently optional. A session registered with
+`credentials_required: false` needs no credential, but its configured permissions
+and policy limits still apply. With required credentials, use the existing
+credential-bearing session constructor; omitting a claim never omits that proof.
+
+For registered fresh operations, open `RegisteredRetriever::open(root)` instead
+of opening/recovering a normal `Store`. Its `retrieve` method provides trusted
+administrative access; `.session(app, credential)?.retrieve(...)` retains app
+restrictions. Both accept only registered temporary/no_store requests. Basic
+integrity needs no keyring. Pending metadata transactions return
+`recovery_required`; reconcile through a normal store operation separately.
+Successful fresh calls leave source caches and catalog contents unchanged.

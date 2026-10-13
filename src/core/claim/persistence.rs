@@ -130,6 +130,17 @@ pub struct Metadata {
     auth: Arc<Authenticator>,
 }
 impl Metadata {
+    pub(crate) fn require_reconciled(&self) -> Result<()> {
+        if beneath(&self.root, PENDING)?.try_exists()?
+            || beneath(&self.root, INITIALIZING)?.try_exists()?
+        {
+            return Err(Error::new(
+                ErrorCode::RecoveryRequired,
+                "reconcile pending metadata separately before fresh retrieval",
+            ));
+        }
+        Ok(())
+    }
     pub fn authenticator(&self) -> &Authenticator {
         &self.auth
     }

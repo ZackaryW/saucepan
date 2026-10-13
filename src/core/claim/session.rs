@@ -25,8 +25,8 @@ pub(crate) struct SessionIdentity {
 }
 #[derive(Clone)]
 pub struct AppSession {
-    store: Store,
-    app: Uuid,
+    pub(crate) store: Store,
+    pub(crate) app: Uuid,
 }
 
 #[derive(serde::Deserialize)]

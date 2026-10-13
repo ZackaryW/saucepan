@@ -60,6 +60,9 @@ fn uninstall_fences_pending_maintenance_and_claim_publication() {
         store
             .claim_record(
                 &crate::core::claim::operations::ClaimTarget {
+                    projection: None,
+                    expected_revision: None,
+                    overrides: None,
                     scope: "fixture".to_string().try_into().unwrap(),
                     context: Default::default(),
                     app: app.uuid,

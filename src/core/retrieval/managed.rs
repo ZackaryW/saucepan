@@ -52,6 +52,13 @@ impl Store {
         request: &RetrieveRequest,
         options: &RetrieveOptions,
     ) -> Result<RetrievedResource> {
+        ensure!(
+            !self.metadata_only,
+            Error::new(
+                ErrorCode::InvalidRequest,
+                "metadata-only access cannot retrieve cached material"
+            )
+        );
         crate::core::policy::composition::validate_retrieval(request)?;
         let CachePolicy::Cached {
             freshness,

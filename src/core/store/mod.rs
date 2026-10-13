@@ -17,7 +17,7 @@ use uuid::Uuid;
 pub(crate) mod composition;
 mod materialize;
 mod reclaim;
-mod updates;
+pub(crate) mod updates;
 pub use composition::{AcquiredResource, Acquirer};
 
 pub(crate) struct Acquisition {
@@ -190,6 +190,26 @@ impl Store {
     ) -> Result<Acquisition> {
         let content = prepared.temp.path().join("content");
         let files = manifest(&content)?;
+        if let Some(relative) = claim.as_ref().and_then(|target| target.projection.as_ref()) {
+            ensure!(
+                files
+                    .get(relative)
+                    .is_some_and(|entry| entry.digest.is_none()),
+                Error::new(
+                    ErrorCode::InvalidRequest,
+                    "requested covered folder is absent from refreshed output"
+                )
+            );
+            ensure!(
+                request.selection.bin.iter().all(|bin| files
+                    .get(&format!("{relative}/{bin}"))
+                    .is_some_and(|entry| entry.digest.is_some())),
+                Error::new(
+                    ErrorCode::InvalidRequest,
+                    "requested covered binary is absent from refreshed output"
+                )
+            );
+        }
         for bin in &request.selection.bin {
             ensure!(
                 files.get(bin).is_some_and(|f| f.digest.is_some()),

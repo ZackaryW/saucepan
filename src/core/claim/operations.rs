@@ -27,6 +27,9 @@ pub(crate) struct ClaimTarget {
     pub id: Uuid,
     pub expected: Option<Uuid>,
     pub context: ClaimContext,
+    pub expected_revision: Option<u64>,
+    pub overrides: Option<Overrides>,
+    pub projection: Option<String>,
 }
 impl Store {
     pub fn acquire_for(
@@ -78,6 +81,9 @@ impl Store {
                 id,
                 expected: Some(claim.entry_uuid),
                 context: Default::default(),
+                expected_revision: None,
+                overrides: None,
+                projection: None,
             }),
         )?;
         let view = crate::models::claim::CoveredView {
@@ -223,6 +229,15 @@ impl Store {
         entry: Uuid,
     ) -> Result<(Record, RegistryState)> {
         let mut app = self.application(target.app)?;
+        ensure!(
+            target
+                .expected_revision
+                .is_none_or(|expected| expected == app.revision),
+            Error::new(
+                ErrorCode::RevisionConflict,
+                "application changed during acquisition"
+            )
+        );
         let mut registry = self.registry(target.app)?;
         self.authorize_resource(
             &registry,
@@ -246,23 +261,24 @@ impl Store {
             .get(&target.id)
             .map(|claim| claim.context.clone())
             .unwrap_or_else(|| target.context.clone());
+        let overrides = target
+            .overrides
+            .clone()
+            .or_else(|| {
+                registry
+                    .claims
+                    .get(&target.id)
+                    .map(|claim| claim.overrides.clone())
+            })
+            .unwrap_or_else(|| request_overrides(request));
+        let effective = registry.registry.policies.evaluate(&overrides)?;
         registry.claims.insert(
             target.id,
             Claim {
                 uuid: target.id,
                 scope: target.scope.clone(),
-                overrides: registry
-                    .claims
-                    .get(&target.id)
-                    .map(|c| c.overrides.clone())
-                    .unwrap_or_else(|| request_overrides(request)),
-                effective: registry.registry.policies.evaluate(
-                    &registry
-                        .claims
-                        .get(&target.id)
-                        .map(|c| c.overrides.clone())
-                        .unwrap_or_else(|| request_overrides(request)),
-                )?,
+                overrides,
+                effective,
                 request: request.clone(),
                 entry_uuid: entry,
                 context,
@@ -283,5 +299,6 @@ fn request_overrides(request: &Request) -> Overrides {
         }),
         reclaim: None,
         useable_app: Some(request.policies.protection.is_some()),
+        update_policy: None,
     }
 }
