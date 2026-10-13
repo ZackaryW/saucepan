@@ -227,23 +227,10 @@ impl Store {
         id: Uuid,
         freshness: Freshness,
     ) -> Result<SourceRecord> {
-        ensure!(
-            self.session.is_none(),
-            Error::new(
-                ErrorCode::AccessDenied,
-                "source configuration requires administration"
-            )
-        );
-        let _source = LockGuard::acquire(
-            &self.root.join(format!(".locks/source-{id}")),
-            LockMode::Exclusive,
-            Duration::from_secs(150),
-        )?;
-        let _lock = self.lock()?;
-        let mut source = self.source(id)?;
-        source.retrieval_freshness = Some(freshness);
-        self.save_source(&source)?;
-        Ok(source)
+        self.source_behavior(
+            id,
+            crate::models::policy::record::PolicyDefinition::RefreshPolicy(freshness),
+        )
     }
 
     /// Returns false when live source users defer retirement. Retry explicitly.

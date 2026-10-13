@@ -13,6 +13,7 @@ pub mod fence;
 pub(crate) mod persistence;
 pub mod prepare;
 pub mod resolve;
+pub(crate) mod source;
 pub fn validate(request: &Request) -> Result<()> {
     let Eviction::Latest { keep } = request.policies.eviction;
     ensure!(keep > 0, "retention must be positive");

@@ -71,3 +71,10 @@ references remain meaningful. There is no definition deletion or overwrite opera
 Journal recovery verifies definitions using the selected basic/keyring mode. Unknown
 caller UUIDs report `invalid_request`; missing or corrupt expected catalog members
 report `integrity_error` rather than becoming default policies.
+
+Application registration/configuration now accepts `policy_refs`; nested `access`
+and `policies` inputs are rejected. Source visibility and freshness convenience
+operations publish a new immutable definition and its source association in one
+metadata transaction. Source records persist references and attachment revisions;
+visibility and freshness are derived when read. Repeating an attached choice is a
+no-op, and replaced definitions remain available by UUID.

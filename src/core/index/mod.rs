@@ -273,14 +273,16 @@ impl Store {
     pub(crate) fn find_source(&self, source: &Source) -> Result<Option<SourceRecord>> {
         let _guard = self.lock()?;
         let snapshot = self.metadata.snapshot()?;
+        let policies = crate::core::policy::persistence::load(&self.metadata, &snapshot)?;
         for reference in snapshot
             .catalog
             .records
             .values()
             .filter(|r| r.identity.kind == Kind::Source)
         {
-            let existing: SourceRecord =
+            let mut existing: SourceRecord =
                 snapshot.read(self.metadata.authenticator(), reference.identity)?;
+            crate::core::policy::source::hydrate(&mut existing, &policies)?;
             if &existing.source == source {
                 return Ok(Some(existing));
             }
@@ -290,8 +292,12 @@ impl Store {
     pub fn source(&self, id: Uuid) -> Result<SourceRecord> {
         let _lock = self.lock()?;
         let snapshot = self.metadata.snapshot()?;
-        let record: SourceRecord =
+        let mut record: SourceRecord =
             snapshot.read(self.metadata.authenticator(), source_identity(id))?;
+        crate::core::policy::source::hydrate(
+            &mut record,
+            &crate::core::policy::persistence::load(&self.metadata, &snapshot)?,
+        )?;
         ensure!(
             record.uuid == id,
             Error::new(ErrorCode::IntegrityError, "source identity mismatch")
@@ -317,27 +323,12 @@ impl Store {
     }
     /// Trusted local administration. Publishing exposes the full source definition.
     pub fn set_source_visibility(&self, id: Uuid, public: bool) -> Result<SourceRecord> {
-        ensure!(
-            self.session.is_none(),
-            Error::new(
-                ErrorCode::AccessDenied,
-                "source visibility requires administration"
-            )
-        );
-        // Providers hold this lock while fetching and later publishing a source
-        // snapshot. Share their lock order so a stale fetch cannot undo visibility.
-        let _source_lock = crate::utils::lock::LockGuard::acquire(
-            &self.root.join(format!(".locks/source-{id}")),
-            crate::utils::lock::LockMode::Exclusive,
-            std::time::Duration::from_secs(150),
-        )?;
-        let _lock = self.lock()?;
-        let mut source = self.source(id)?;
-        if source.public_discovery != public {
-            source.public_discovery = public;
-            self.save_source(&source)?;
-        }
-        Ok(source)
+        self.source_behavior(
+            id,
+            crate::models::policy::record::PolicyDefinition::SourceVisibilityPolicy {
+                public_discovery: public,
+            },
+        )
     }
     pub(crate) fn commit(&self, journal: Journal) -> Result<()> {
         self.commit_observed(journal, |_| Ok(()))

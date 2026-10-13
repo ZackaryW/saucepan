@@ -74,6 +74,7 @@ impl Store {
             })
             .transpose()?;
         let snapshot = self.metadata.snapshot()?;
+        let policies = crate::core::policy::persistence::load(&self.metadata, &snapshot)?;
         let mut sources = Vec::new();
         for reference in snapshot
             .catalog
@@ -81,12 +82,13 @@ impl Store {
             .values()
             .filter(|reference| reference.identity.kind == Kind::Source)
         {
-            let record: SourceRecord =
+            let mut record: SourceRecord =
                 snapshot.read(self.metadata.authenticator(), reference.identity)?;
             ensure!(
                 Some(record.uuid) == reference.identity.member,
                 Error::new(ErrorCode::IntegrityError, "source identity mismatch")
             );
+            crate::core::policy::source::hydrate(&mut record, &policies)?;
             let visible = match &application {
                 Some((app, registry)) => {
                     authorize_source_discovery(

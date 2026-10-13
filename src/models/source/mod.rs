@@ -22,12 +22,12 @@ pub struct SourceRecord {
     pub uuid: Uuid,
     pub source: Source,
     /// Explicit anonymous catalogue visibility; independent of claim visibility.
-    #[serde(default)]
+    #[serde(skip)]
     pub public_discovery: bool,
-    #[serde(default)]
+    #[serde(skip)]
     pub refresh: Refresh,
-    /// New retrieval defaults inherit the existing TTL when not configured.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Derived from the source's immutable policy definitions.
+    #[serde(skip)]
     pub retrieval_freshness: Option<super::policy::Freshness>,
     #[serde(default)]
     pub discovery: BTreeMap<String, Discovery>,

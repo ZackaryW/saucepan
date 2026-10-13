@@ -261,7 +261,7 @@ fn fresh_root_cross_feature_acceptance_with_real_binaries() {
         .unwrap();
         let metadata = Metadata::open(store.root(), &NativeKeyring).unwrap();
         let mut updated_source = source.clone();
-        updated_source.refresh.ttl_seconds = 43200;
+        updated_source.policy_revision = 43200;
         let interrupted = metadata.publish_observed(
             &metadata.snapshot().unwrap(),
             vec![(
@@ -284,10 +284,7 @@ fn fresh_root_cross_feature_acceptance_with_real_binaries() {
         assert!(interrupted.is_err());
     }
     let reopened = Store::open(store.root()).unwrap();
-    assert_eq!(
-        reopened.source(source.uuid).unwrap().refresh.ttl_seconds,
-        43200
-    );
+    assert_eq!(reopened.source(source.uuid).unwrap().policy_revision, 43200);
     assert!(
         !store
             .root()

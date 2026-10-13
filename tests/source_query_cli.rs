@@ -132,11 +132,12 @@ fn simple_app_can_find_unclaimed_source_then_ensure_and_lease() {
         public,
         serde_json::to_value(store.query_sources(&SourceQuery::default()).unwrap()).unwrap()
     );
-    assert!(
-        ok(&root, &["register-source", input.to_str().unwrap()])["public_discovery"]
-            .as_bool()
-            .unwrap()
+    let registered = ok(&root, &["register-source", input.to_str().unwrap()]);
+    let definition = ok(
+        &root,
+        &["policy", registered["policy_refs"][0].as_str().unwrap()],
     );
+    assert_eq!(definition["public_discovery"], true);
     let discover = tmp.path().join("discover.json");
     write(&discover, json!({"where":[]}));
     assert_eq!(
@@ -420,9 +421,16 @@ fn cli_enforces_query_shape_credentials_and_source_permissions() {
             None,
         ),
     ] {
+        let policy_id = uuid::Uuid::new_v4();
+        let mut record = access;
+        record["uuid"] = json!(policy_id);
+        record["type"] = json!("access_policy");
+        let definitions = tmp.path().join("policies.json");
+        write(&definitions, json!([record]));
+        ok(&root, &["register-policies", definitions.to_str().unwrap()]);
         write(
             &registration,
-            json!({"registration_key":key,"name":key,"access":access}),
+            json!({"registration_key":key,"name":key,"policy_refs":[policy_id]}),
         );
         let app = ok(
             &root,
