@@ -2,6 +2,8 @@ use super::{policy::Policies, source::Resolved};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, path::PathBuf};
 use uuid::Uuid;
+mod composition;
+pub use composition::{AcquiredDescriptor, AcquisitionRequest, Destination};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]

@@ -1,4 +1,6 @@
 use serde::{Deserialize, Serialize};
+mod composition;
+pub use composition::{Freshness, PayloadVerification, RevisionPolicy, UpdatePolicy};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

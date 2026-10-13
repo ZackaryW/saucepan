@@ -1,0 +1,76 @@
+# Retrieval and acquisition contracts
+
+The new request models separate three policy decisions. Runtime integration is
+in progress; these examples describe the typed contracts, not available CLI commands.
+
+| Policy | Responsibility | Managed default |
+| --- | --- | --- |
+| Retrieval cache/freshness | Obtain original source material and decide whether to cache it | Cached, check after 86,400 seconds |
+| Acquisition update | Decide when to check whether copied results have changed | Manual |
+| Revision history | Decide how many acquired revisions to retain | Latest ten |
+
+`models::retrieval::RetrieveRequest` selects a source, revision and original asset.
+Git retrieval returns repository data and an exact commit; a ZIP stays an archive.
+Folder selection and extraction belong to `models::store::AcquisitionRequest`.
+
+For example, retrieve a fresh archive into an explicitly caller-owned destination:
+
+```json
+{
+  "source": {
+    "kind": "inline",
+    "source": { "type": "url", "url": "https://example.invalid/tool.zip" }
+  },
+  "selector": { "type": "url" },
+  "cache": { "mode": "no_store", "destination": "download/tool.zip" },
+  "verification": "if_available"
+}
+```
+
+Then acquire its files into another caller-owned location:
+
+```json
+{
+  "destination": { "mode": "directory", "path": "unpacked/tool" },
+  "format": "zip",
+  "update_policy": { "mode": "manual" }
+}
+```
+
+Both destinations must be new and must not overlap. Validation of the JSON is
+pure; runtime operations must also validate paths, access and ownership before
+fetching or writing.
+
+| Retrieval | Managed output | Temporary output | Caller-owned output |
+| --- | --- | --- | --- |
+| Cached | Supported | Supported | Supported |
+| Temporary | Rejected | Supported | Supported |
+| No store | Rejected | Supported | Supported |
+
+Temporary and no-store retrieval always fetch fresh without Saucepan cache reuse.
+Temporary results require a live native guard or a supported consumer process;
+a serialized path cannot retain that lifetime. Caller-owned destinations survive
+the operation and are never reclaimed by Saucepan. Descriptors report ownership
+and evidence but cannot manufacture a managed lease or authorize access.
+
+Native handles are `core::retrieval::RetrievedResource` (`source_path()`) and
+`core::store::AcquiredResource` (`path()`). Their fields are private and they do
+not implement deserialization or cloning. Their `descriptor()` references expose
+observational metadata separately from native lifetime ownership.
+
+Only managed outputs accept `revision_policy`. `{"history":"none"}` means keep
+the newest revision; `{"history":"latest","keep":3}` includes the newest among
+the three. Live leases, active protection and other surviving retention demands
+can defer deletion. Existing convenience `policies.eviction` settings translate
+to the same retention evaluator. New requests reject that spelling.
+
+Update modes are `manual`, `always`, and `max_age` with `seconds`. A due update
+checks the selected content before reuse, even within the retrieval cache TTL.
+It never changes an explicit pinned commit. A changed repository head with an
+unchanged selected folder may reuse old bytes; checked and selected provenance
+remain distinct. Due updates conflict with `cache_only` retrieval.
+
+Payload verification is `none`, `if_available`, or `required`. An explicit digest
+cannot be combined with `none`. Required verification needs an expected digest;
+a self-computed storage identity is not proof of upstream authenticity. Structural
+validation and managed metadata/manifest integrity retain their own contracts.

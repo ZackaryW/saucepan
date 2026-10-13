@@ -6,6 +6,7 @@ pub mod launch;
 pub mod lifecycle;
 pub mod policy;
 pub mod query;
+pub mod retrieval;
 pub mod shims;
 pub mod source;
 pub mod store;
