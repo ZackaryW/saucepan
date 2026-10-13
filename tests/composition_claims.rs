@@ -181,7 +181,7 @@ fn automatic_ensure_preserves_claim_identity_context_and_scope_and_does_not_bind
         context: [("project".into(), "a".into())].into(),
         policy_refs: policy_fixture::requested(
             &store,
-            saucepan::models::claim::policy::Overrides {
+            policy_fixture::Overrides {
                 update_policy: Some(UpdatePolicy::MaxAge { seconds: 60 }),
                 ..Default::default()
             },
@@ -233,7 +233,8 @@ fn registered_fresh_reader_reports_pending_recovery_without_replaying_it() {
 
 #[test]
 fn automatic_updates_require_registered_allowances_and_update_permission() {
-    use saucepan::models::claim::policy::{Action, Registration};
+    use policy_fixture::Registration;
+    use saucepan::models::claim::policy::Action;
     let temp = tempfile::tempdir().unwrap();
     let file = temp.path().join("input");
     fs::write(&file, b"one").unwrap();
@@ -277,7 +278,7 @@ fn automatic_updates_require_registered_allowances_and_update_permission() {
         context: Default::default(),
         policy_refs: policy_fixture::requested(
             &store,
-            saucepan::models::claim::policy::Overrides {
+            policy_fixture::Overrides {
                 update_policy: Some(UpdatePolicy::MaxAge { seconds: 60 }),
                 ..Default::default()
             },
@@ -328,7 +329,7 @@ fn disappearing_covered_folder_does_not_advance_automatic_owner() {
         context: Default::default(),
         policy_refs: policy_fixture::requested(
             &store,
-            saucepan::models::claim::policy::Overrides {
+            policy_fixture::Overrides {
                 update_policy: Some(UpdatePolicy::Always {}),
                 ..Default::default()
             },
@@ -445,7 +446,7 @@ fn concurrent_automatic_ensures_share_claim_and_check_state() {
         context: Default::default(),
         policy_refs: policy_fixture::requested(
             &store,
-            saucepan::models::claim::policy::Overrides {
+            policy_fixture::Overrides {
                 update_policy: Some(UpdatePolicy::MaxAge { seconds: 60 }),
                 ..Default::default()
             },

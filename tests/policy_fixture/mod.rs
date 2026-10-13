@@ -4,15 +4,44 @@ use anyhow::Result;
 use saucepan::{
     core::Store,
     models::{
-        claim::policy::{AccessPolicy, Registration},
-        policy::{PolicyRecord, PolicyRefs},
+        claim::policy::{AccessPolicy, Effective, ReclaimPolicy, ReclaimStrategy},
+        policy::{Identical, PolicyRecord, PolicyRefs, RevisionPolicy, UpdatePolicy},
     },
 };
 use serde_json::{Value, json};
 use uuid::Uuid;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Registration {
+    pub defaults: Effective,
+    pub minimum_keep: usize,
+    pub maximum_keep: usize,
+    pub allowed_identical: Vec<Identical>,
+    pub allowed_reclaim: Vec<ReclaimStrategy>,
+    pub allow_useable_app: bool,
+    pub allow_automatic_updates: bool,
+    pub minimum_update_interval: u64,
+}
+impl Default for Registration {
+    fn default() -> Self {
+        Self {
+            defaults: Effective::default(),
+            minimum_keep: 1,
+            maximum_keep: usize::MAX,
+            allowed_identical: vec![Identical::Reuse, Identical::NewEntry],
+            allowed_reclaim: vec![
+                ReclaimStrategy::ReportUnavailable,
+                ReclaimStrategy::RestoreExact,
+                ReclaimStrategy::Refresh,
+            ],
+            allow_useable_app: true,
+            allow_automatic_updates: true,
+            minimum_update_interval: 0,
+        }
+    }
+}
+
 pub fn register(store: &Store, access: AccessPolicy, settings: Registration) -> Result<PolicyRefs> {
-    settings.validate()?;
     let mut revision = serde_json::to_value(settings.defaults.output.revision)?;
     revision["type"] = json!("revision_policy");
     let mut values = vec![
@@ -32,13 +61,40 @@ pub fn register(store: &Store, access: AccessPolicy, settings: Registration) -> 
     if settings.defaults.output.protection.is_some() {
         values.push(json!({"type":"useable_app_policy"}));
     }
-    definitions(store, values)
+    let records = records(values)?;
+    let catalog = saucepan::core::policy::catalog::PolicyCatalog::new(records.clone())?;
+    let refs: PolicyRefs = records
+        .iter()
+        .map(|r| r.uuid)
+        .collect::<Vec<_>>()
+        .try_into()?;
+    let empty = PolicyRefs::default();
+    saucepan::core::policy::resolve::evaluate(
+        &catalog,
+        saucepan::core::policy::resolve::Inputs {
+            source: &empty,
+            application: &refs,
+            request: &empty,
+            pinned: None,
+            operation: saucepan::core::policy::resolve::Operation::Compose,
+            managed_output: true,
+            update_due: false,
+        },
+    )?;
+    Ok(store.register_policies(&records)?.try_into()?)
 }
 
-pub fn requested(
-    store: &Store,
-    settings: saucepan::models::claim::policy::Overrides,
-) -> Result<PolicyRefs> {
+#[derive(Default)]
+pub struct Overrides {
+    pub identical: Option<Identical>,
+    pub revision: Option<RevisionPolicy>,
+    pub reclaim: Option<ReclaimPolicy>,
+    /// Output protection is registered by the app; overrides cannot remove it.
+    pub useable_app: Option<bool>,
+    pub update_policy: Option<UpdatePolicy>,
+}
+
+pub fn requested(store: &Store, settings: Overrides) -> Result<PolicyRefs> {
     let mut values = Vec::new();
     if let Some(value) = settings.identical {
         values.push(json!({"type":"identical_pull_policy","strategy":value}));
@@ -72,8 +128,8 @@ pub fn requested(
     definitions(store, values)
 }
 
-pub fn definitions(store: &Store, values: Vec<Value>) -> Result<PolicyRefs> {
-    let records: Vec<PolicyRecord> = values
+fn records(values: Vec<Value>) -> Result<Vec<PolicyRecord>> {
+    values
         .into_iter()
         .map(|mut value| -> Result<_> {
             let digest = saucepan::utils::tree::digest(serde_json::to_vec(&value)?.as_slice())?;
@@ -82,8 +138,11 @@ pub fn definitions(store: &Store, values: Vec<Value>) -> Result<PolicyRefs> {
             value["uuid"] = Value::String(id.to_string());
             Ok(serde_json::from_value(value)?)
         })
-        .collect::<Result<_>>()?;
-    Ok(store.register_policies(&records)?.try_into()?)
+        .collect()
+}
+
+pub fn definitions(store: &Store, values: Vec<Value>) -> Result<PolicyRefs> {
+    Ok(store.register_policies(&records(values)?)?.try_into()?)
 }
 
 pub fn replace(store: &Store, refs: &mut PolicyRefs, value: Value) -> Result<()> {

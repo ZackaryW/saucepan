@@ -165,7 +165,6 @@ impl Store {
             request,
             entry_uuid: uuid,
             context: input.context.clone(),
-            overrides: input.overrides.clone(),
             effective,
         };
         let directory = match &relative {

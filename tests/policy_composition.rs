@@ -48,6 +48,81 @@ fn code(error: anyhow::Error) -> ErrorCode {
 }
 
 #[test]
+fn scoped_caller_output_ignores_managed_defaults_but_keeps_update_constraints() {
+    let temp = tempfile::tempdir().unwrap();
+    let file = temp.path().join("input");
+    fs::write(&file, "content").unwrap();
+    let store = Store::create(&temp.path().join("root")).unwrap();
+    let source = store.register_source(Source::Local { path: file }).unwrap();
+    let app = store.register_app("consumer".into()).unwrap();
+    let temporary = record(json!({"type":"cache_policy","mode":"temporary"}));
+    let protect = record(json!({"type":"useable_app_policy"}));
+    let retain = record(json!({"type":"revision_policy","history":"latest","keep":2}));
+    let bounds = record(
+        json!({"type":"policy_constraints","minimum_keep":2,"maximum_keep":3,"require_useable_app":true,"allow_automatic_updates":false}),
+    );
+    let update = record(json!({"type":"update_policy","mode":"always"}));
+    store
+        .register_policies(&[
+            temporary.clone(),
+            protect.clone(),
+            retain.clone(),
+            bounds.clone(),
+            update.clone(),
+        ])
+        .unwrap();
+    store
+        .adopt_application_policies(
+            app.uuid,
+            app.revision,
+            refs(&[&protect, &retain, &bounds]),
+            None,
+        )
+        .unwrap();
+    let session = store.session(app.uuid, None).unwrap();
+    let mut retrieval = input(SourceInput::Registered {
+        source_uuid: source.uuid,
+    });
+    retrieval.policy_refs = refs(&[&temporary]);
+    let mut acquisition = Acquisition {
+        destination: Destination::Temporary {},
+        ..Default::default()
+    };
+    let before = tree(store.root());
+    let result = session
+        .compose_referenced(
+            &retrieval,
+            &acquisition,
+            &PolicyCatalog::default(),
+            None,
+            &Default::default(),
+        )
+        .unwrap();
+    assert_eq!(
+        fs::read_to_string(result.path().join("input")).unwrap(),
+        "content"
+    );
+    assert_eq!(tree(store.root()), before);
+    acquisition.policy_refs = refs(&[&update]);
+    assert_eq!(
+        code(
+            session
+                .compose_referenced(
+                    &retrieval,
+                    &acquisition,
+                    &PolicyCatalog::default(),
+                    None,
+                    &Default::default()
+                )
+                .err()
+                .unwrap()
+        ),
+        ErrorCode::PolicyConflict
+    );
+    assert_eq!(tree(store.root()), before);
+}
+
+#[test]
 fn flat_guide_examples_are_valid_operation_inputs() {
     let guide = include_str!("../docs/composition.md");
     let examples: Vec<_> = guide

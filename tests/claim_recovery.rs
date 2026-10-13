@@ -34,7 +34,7 @@ fn request(store: &Store, source_uuid: uuid::Uuid, strategy: ReclaimStrategy) ->
         context: [("label".into(), "retained".into())].into(),
         policy_refs: policy_fixture::requested(
             store,
-            saucepan::models::claim::policy::Overrides {
+            policy_fixture::Overrides {
                 revision: Some(saucepan::models::policy::RevisionPolicy::Latest { keep: 1 }),
                 reclaim: Some(ReclaimPolicy::ReclaimPolicy { strategy }),
                 ..Default::default()

@@ -268,7 +268,7 @@ fn concurrent_registration_and_registered_defaults_are_applied_before_source_wor
         let handles: Vec<_> = (0..6)
             .map(|_| {
                 threads.spawn(|| {
-                    let mut settings = saucepan::models::claim::policy::Registration::default();
+                    let mut settings = policy_fixture::Registration::default();
                     settings.defaults.output.revision =
                         saucepan::models::policy::RevisionPolicy::Latest { keep: 3 };
                     settings.maximum_keep = 4;

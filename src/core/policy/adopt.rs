@@ -9,7 +9,7 @@ use crate::{
     error::{Error, ErrorCode},
     models::{
         claim::{
-            policy::{AccessPolicy, Effective, Overrides, ReclaimPolicy, Registration},
+            policy::{AccessPolicy, Effective, Overrides, ReclaimPolicy},
             security::Credential,
         },
         index::Record,
@@ -64,43 +64,10 @@ pub(crate) fn pinned(effective: &Effective) -> Overrides {
         update_policy: Some(effective.update_policy),
     }
 }
-fn survivor(effective: &Effective) -> Result<EvaluatedPolicies> {
-    let mut plan = EvaluatedPolicies::default();
-    plan.behavior.identical = effective.output.identical;
-    plan.behavior.revision = effective.output.revision;
-    plan.behavior.update = effective.update_policy;
-    plan.behavior.reclaim = effective.reclaim.strategy();
-    plan.behavior.useable_app = effective.output.protection.is_some();
-    Ok(plan)
-}
-pub(crate) fn registration(plan: &EvaluatedPolicies) -> Result<Registration> {
-    let mut registration = Registration {
-        defaults: effective(plan)?,
-        ..Default::default()
-    };
-    for bound in &plan.constraints {
-        registration.minimum_keep = registration.minimum_keep.max(bound.minimum_keep);
-        registration.maximum_keep = registration.maximum_keep.min(bound.maximum_keep);
-        registration
-            .allowed_identical
-            .retain(|value| bound.allowed_identical.contains(value));
-        registration
-            .allowed_reclaim
-            .retain(|value| bound.allowed_reclaim.contains(value));
-        registration.allow_useable_app &= bound.allow_useable_app;
-        registration.allow_automatic_updates &= bound.allow_automatic_updates;
-        registration.minimum_update_interval = registration
-            .minimum_update_interval
-            .max(bound.minimum_update_interval);
-    }
-    registration.validate()?;
-    Ok(registration)
-}
-
 pub(crate) fn application_settings(
     catalog: &super::catalog::PolicyCatalog,
     refs: &PolicyRefs,
-) -> Result<(AccessPolicy, Registration)> {
+) -> Result<AccessPolicy> {
     let empty = PolicyRefs::default();
     let plan = resolve::evaluate(
         catalog,
@@ -114,7 +81,7 @@ pub(crate) fn application_settings(
             update_due: false,
         },
     )?;
-    Ok((access(&plan), registration(&plan)?))
+    Ok(access(&plan))
 }
 
 impl Store {
@@ -178,7 +145,6 @@ impl Store {
                 .unwrap_or_default(),
         );
         let selected_refs = super::claims::behavior_refs(&catalog, &adopted)?;
-        let overrides = pinned(&selected);
         if claim.policy_refs == selected_refs
             && claim.request.adopted.as_deref() == Some(&adopted)
             && claim.effective == selected
@@ -189,7 +155,6 @@ impl Store {
         claim.policy_refs = selected_refs;
         claim.request.adopted = Some(Box::new(adopted));
         claim.effective = selected;
-        claim.overrides = overrides;
         claim.request.policies = claim.effective.output.clone();
         application.bump()?;
         self.commit(Journal {
@@ -260,35 +225,12 @@ impl Store {
                 .values()
                 .filter(|claim| claim.request.source_uuid == id)
             {
-                if let Some(adopted) = &claim.request.adopted {
-                    super::claims::surviving(
-                        &catalog,
-                        adopted,
-                        &refs,
-                        &registry.registry.policy_refs,
-                    )?;
-                    continue;
-                }
-                let pinned = survivor(&claim.effective)?;
-                let next = resolve::evaluate(
+                super::claims::validate_existing(
                     &catalog,
-                    Inputs {
-                        source: &refs,
-                        application: &registry.registry.policy_refs,
-                        request: &empty,
-                        pinned: Some(&pinned),
-                        operation: Operation::Compose,
-                        managed_output: true,
-                        update_due: false,
-                    },
+                    claim,
+                    &refs,
+                    &registry.registry.policy_refs,
                 )?;
-                ensure!(
-                    effective(&next)? == claim.effective,
-                    Error::new(
-                        ErrorCode::PolicyConflict,
-                        "source constraints would reinterpret a surviving claim"
-                    )
-                );
             }
         }
         source.policy_refs = refs;
@@ -349,29 +291,21 @@ impl Store {
                 update_due: false,
             },
         )?;
-        let settings = registration(&plan)?;
-        // Pin surviving choices before changing defaults. Registry validation
-        // rejects tightened constraints that would invalidate any survivor.
-        for claim in registry.claims.values_mut() {
-            if let Some(adopted) = &claim.request.adopted {
-                super::claims::surviving(
-                    &catalog,
-                    adopted,
-                    &self.source(claim.request.source_uuid)?.policy_refs,
-                    &refs,
-                )?;
-            }
-            claim.overrides = pinned(&claim.effective);
-            if claim.request.adopted.is_none() {
-                settings.evaluate(&claim.overrides)?;
-            }
+        // Validate pinned choices before changing defaults. Reject tightened
+        // constraints that would invalidate any survivor.
+        for claim in registry.claims.values() {
+            super::claims::validate_existing(
+                &catalog,
+                claim,
+                &self.source(claim.request.source_uuid)?.policy_refs,
+                &refs,
+            )?;
         }
         if registry.registry.policy_refs == refs {
             return Ok(());
         }
         registry.registry.policy_refs = refs;
         registry.registry.access = access(&plan);
-        registry.registry.policies = settings;
         application.bump()?;
         self.commit(Journal {
             records: vec![Record::Application(application)],

@@ -97,6 +97,16 @@ pub(crate) fn apply(plan: &mut EvaluatedPolicies, record: &PolicyRecord) -> Resu
 }
 
 pub fn evaluate(catalog: &PolicyCatalog, input: Inputs<'_>) -> Result<EvaluatedPolicies> {
+    evaluate_compiled(catalog, input, &[])
+}
+
+/// Temporary internal boundary for the remaining compiled native inputs. All
+/// precedence and constraint checks still live in this resolver.
+pub(crate) fn evaluate_compiled(
+    catalog: &PolicyCatalog,
+    input: Inputs<'_>,
+    compiled: &[PolicyRecord],
+) -> Result<EvaluatedPolicies> {
     let mut plan = EvaluatedPolicies::default();
     if let Some(pinned) = input.pinned {
         plan.behavior = pinned.behavior.clone();
@@ -157,6 +167,17 @@ pub fn evaluate(catalog: &PolicyCatalog, input: Inputs<'_>) -> Result<EvaluatedP
                 }
             }
         }
+    }
+    for record in compiled {
+        record.definition.validate()?;
+        let axis = record
+            .definition
+            .axis()
+            .ok_or_else(|| invalid("expected behavior policy"))?;
+        if !input.operation.accepts(axis) {
+            return Err(invalid("policy targets another operation"));
+        }
+        apply(&mut plan, record)?;
     }
     if let Some(required) = required_protection {
         plan.behavior.useable_app = true;

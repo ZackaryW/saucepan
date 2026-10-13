@@ -237,7 +237,6 @@ impl Store {
                 revision,
                 registration_key: app.to_string().try_into()?,
                 access: Default::default(),
-                policies: Default::default(),
                 credential: Default::default(),
                 members: BTreeMap::new(),
             },

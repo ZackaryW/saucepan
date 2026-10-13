@@ -24,7 +24,7 @@ impl RegistryState {
         let mut registry: Registry =
             snapshot.read(metadata.authenticator(), registry_identity(app))?;
         let policies = crate::core::policy::persistence::load(metadata, snapshot)?;
-        (registry.access, registry.policies) =
+        registry.access =
             crate::core::policy::adopt::application_settings(&policies, &registry.policy_refs)
                 .map_err(|_| integrity_error())?;
         if metadata.authenticator().mode() == crate::models::claim::security::IntegrityMode::Basic
@@ -72,11 +72,7 @@ impl RegistryState {
         self.registry.validate()?;
         for (id, claim) in &self.claims {
             claim.validate()?;
-            if claim.uuid != *id
-                || (claim.request.adopted.is_none()
-                    && self.registry.policies.evaluate(&claim.overrides)? != claim.effective)
-                || claim.request.policies != claim.effective.output
-            {
+            if claim.uuid != *id || claim.request.policies != claim.effective.output {
                 return Err(Error::new(
                     ErrorCode::PolicyConflict,
                     "claim no longer satisfies registered policies",
@@ -152,11 +148,7 @@ impl RegistryState {
                     update_due: false,
                 },
             )?;
-            if crate::core::policy::adopt::access(&plan) != self.registry.access
-                || crate::core::policy::adopt::registration(&plan)
-                    .map_err(|error| Error::from_anyhow(&error))?
-                    != self.registry.policies
-            {
+            if crate::core::policy::adopt::access(&plan) != self.registry.access {
                 return Err(integrity_error());
             }
         }
@@ -164,28 +156,25 @@ impl RegistryState {
             for id in claim.policy_refs.ids() {
                 catalog.get(*id)?;
             }
+            let source: crate::models::source::SourceRecord = snapshot.read(
+                metadata.authenticator(),
+                Identity {
+                    kind: Kind::Source,
+                    owner: None,
+                    member: Some(claim.request.source_uuid),
+                },
+            )?;
+            crate::core::policy::claims::validate_existing(
+                &catalog,
+                claim,
+                &source.policy_refs,
+                &self.registry.policy_refs,
+            )
+            .map_err(|error| Error::from_anyhow(&error))?;
             if let Some(adopted) = &claim.request.adopted {
-                let source: crate::models::source::SourceRecord = snapshot.read(
-                    metadata.authenticator(),
-                    Identity {
-                        kind: Kind::Source,
-                        owner: None,
-                        member: Some(claim.request.source_uuid),
-                    },
-                )?;
-                let plan = crate::core::policy::claims::surviving(
-                    &catalog,
-                    adopted,
-                    &source.policy_refs,
-                    &self.registry.policy_refs,
-                )
-                .map_err(|error| Error::from_anyhow(&error))?;
-                if crate::core::policy::adopt::effective(&plan)
+                if crate::core::policy::claims::behavior_refs(&catalog, adopted)
                     .map_err(|error| Error::from_anyhow(&error))?
-                    != claim.effective
-                    || crate::core::policy::claims::behavior_refs(&catalog, adopted)
-                        .map_err(|error| Error::from_anyhow(&error))?
-                        != claim.policy_refs
+                    != claim.policy_refs
                 {
                     return Err(integrity_error());
                 }

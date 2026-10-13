@@ -23,14 +23,24 @@ impl crate::core::Store {
         adopted: Option<&AdoptedPolicies>,
         legacy: &crate::models::claim::policy::Overrides,
     ) -> Result<crate::models::claim::policy::Effective> {
-        let Some(adopted) = adopted else {
-            // The remaining compiled native request entry points have not yet
-            // been cut over. Reference-only ensure never enters this branch.
-            return registry.policies.evaluate(legacy).map_err(Into::into);
-        };
         let snapshot = self.metadata.snapshot()?;
         let catalog = super::persistence::load(&self.metadata, &snapshot)?;
         let source = self.source(source)?;
+        let Some(adopted) = adopted else {
+            return super::compiled::evaluate(
+                &catalog,
+                Inputs {
+                    source: &source.policy_refs,
+                    application: &registry.policy_refs,
+                    request: &PolicyRefs::default(),
+                    pinned: None,
+                    operation: Operation::Compose,
+                    managed_output: true,
+                    update_due: false,
+                },
+                legacy,
+            );
+        };
         let plan = surviving(
             &catalog,
             adopted,
@@ -39,6 +49,67 @@ impl crate::core::Store {
         )?;
         super::adopt::effective(&plan)
     }
+
+    pub(crate) fn acquisition_execution_policy(
+        &self,
+        source: uuid::Uuid,
+        registry: &crate::models::claim::Registry,
+        acquisition: &crate::models::store::AcquisitionRequest,
+    ) -> Result<crate::models::claim::policy::Effective> {
+        if let Some(adopted) = acquisition.adopted.as_deref() {
+            return self.claim_execution_policy(
+                source,
+                registry,
+                Some(adopted),
+                &Default::default(),
+            );
+        }
+        let snapshot = self.metadata.snapshot()?;
+        let catalog = super::persistence::load(&self.metadata, &snapshot)?;
+        let source = self.source(source)?;
+        super::compiled::evaluate(
+            &catalog,
+            Inputs {
+                source: &source.policy_refs,
+                application: &registry.policy_refs,
+                request: &PolicyRefs::default(),
+                pinned: None,
+                operation: Operation::Acquire,
+                managed_output: matches!(
+                    acquisition.destination,
+                    crate::models::store::Destination::Managed {}
+                ),
+                update_due: false,
+            },
+            &crate::models::claim::policy::Overrides {
+                identical: Some(acquisition.identical),
+                revision: super::composition::effective_revision(acquisition)?,
+                useable_app: Some(acquisition.protection.is_some()),
+                update_policy: Some(acquisition.update_policy),
+                ..Default::default()
+            },
+        )
+    }
+}
+
+pub(crate) fn validate_existing(
+    catalog: &PolicyCatalog,
+    claim: &crate::models::claim::Claim,
+    source: &PolicyRefs,
+    application: &PolicyRefs,
+) -> Result<EvaluatedPolicies> {
+    let plan = match claim.request.adopted.as_deref() {
+        Some(adopted) => surviving(catalog, adopted, source, application)?,
+        None => super::compiled::surviving(catalog, &claim.effective, source, application)?,
+    };
+    ensure!(
+        super::adopt::effective(&plan)? == claim.effective,
+        Error::new(
+            ErrorCode::PolicyConflict,
+            "claim execution differs from adopted policy"
+        )
+    );
+    Ok(plan)
 }
 
 pub(crate) fn validate_adopted(catalog: &PolicyCatalog, adopted: &AdoptedPolicies) -> Result<()> {

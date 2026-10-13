@@ -274,7 +274,7 @@ impl Store {
                 registry
                     .claims
                     .get(&target.id)
-                    .map(|claim| claim.overrides.clone())
+                    .map(|claim| crate::core::policy::adopt::pinned(&claim.effective))
             })
             .unwrap_or_else(|| request_overrides(request));
         let effective = self.claim_execution_policy(
@@ -295,7 +295,6 @@ impl Store {
                 policy_refs,
                 uuid: target.id,
                 scope: target.scope.clone(),
-                overrides,
                 effective,
                 request: request.clone(),
                 entry_uuid: entry,

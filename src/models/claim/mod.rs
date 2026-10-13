@@ -108,7 +108,6 @@ pub struct Claim {
     pub request: Request,
     pub entry_uuid: Uuid,
     pub context: ClaimContext,
-    pub overrides: policy::Overrides,
     pub effective: policy::Effective,
 }
 impl Claim {
@@ -129,15 +128,12 @@ pub struct Registry {
     pub registration_key: Scope,
     #[serde(skip)]
     pub access: policy::AccessPolicy,
-    #[serde(skip)]
-    pub policies: policy::Registration,
     pub credential: security::CredentialPolicy,
     /// Expected member digests; payloads live in separate files.
     pub members: BTreeMap<Uuid, String>,
 }
 impl Registry {
     pub fn validate(&self) -> Result<()> {
-        self.policies.validate()?;
         for digest in self.members.values() {
             if digest.len() != 64 || !digest.bytes().all(|b| b.is_ascii_hexdigit()) {
                 return Err(Error::new(

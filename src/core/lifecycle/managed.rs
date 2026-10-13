@@ -94,13 +94,6 @@ impl Store {
             let claim = Claim {
                 policy_refs: self.adopted_refs(input.request.adopted.as_deref())?,
                 scope: input.scope.clone(),
-                overrides: crate::models::claim::policy::Overrides {
-                    identical: Some(input.request.policies.identical),
-                    revision: Some(input.request.policies.revision),
-                    useable_app: Some(true),
-                    reclaim: None,
-                    update_policy: None,
-                },
                 effective: crate::models::claim::policy::Effective {
                     output: input.request.policies.clone(),
                     reclaim: Default::default(),

@@ -8,10 +8,7 @@ use crate::{
     },
     error::{Error, ErrorCode},
     models::{
-        claim::{
-            Scope,
-            policy::{Action, Overrides},
-        },
+        claim::{Scope, policy::Action},
         retrieval::{CachePolicy, RetrieveRequest, SourceInput},
         store::{AcquisitionRequest, acquisition::AcquisitionOwner},
     },
@@ -58,19 +55,8 @@ impl Authorization {
             )
         );
         if let Some(acquisition) = acquisition {
-            let revision = crate::core::policy::composition::effective_revision(acquisition)?;
-            let effective = store.claim_execution_policy(
-                source,
-                &registry.registry,
-                acquisition.adopted.as_deref(),
-                &Overrides {
-                    identical: Some(acquisition.identical),
-                    revision,
-                    useable_app: Some(acquisition.protection.is_some()),
-                    update_policy: Some(acquisition.update_policy),
-                    ..Default::default()
-                },
-            )?;
+            let effective =
+                store.acquisition_execution_policy(source, &registry.registry, acquisition)?;
             ensure!(
                 effective.output.protection == acquisition.protection,
                 Error::new(

@@ -3,7 +3,7 @@ use saucepan::{
     error::{Error, ErrorCode},
     models::claim::{
         CoveredView, Scope,
-        policy::{AccessPolicy, Action, Overrides, ReclaimPolicy, Registration},
+        policy::{AccessPolicy, Action, ReclaimPolicy},
         security::{Credential, CredentialPolicy},
     },
 };
@@ -262,54 +262,13 @@ fn public_discovery_is_explicit_and_grants_no_other_action() {
 }
 
 #[test]
-fn registered_policies_apply_defaults_and_reject_out_of_bounds_or_unknown_overrides() {
-    let mut registration = Registration {
-        maximum_keep: 10,
-        ..Default::default()
-    };
-    assert_eq!(
-        registration.evaluate(&Overrides::default()).unwrap(),
-        registration.defaults
-    );
-    for keep in [0, 11] {
-        assert_eq!(
-            registration
-                .evaluate(&Overrides {
-                    revision: Some(saucepan::models::policy::RevisionPolicy::Latest { keep }),
-                    ..Default::default()
-                })
-                .unwrap_err()
-                .code,
-            ErrorCode::PolicyConflict
-        );
-    }
-    assert!(
-        registration
-            .evaluate(&Overrides {
-                revision: Some(saucepan::models::policy::RevisionPolicy::Latest { keep: 5 }),
-                ..Default::default()
-            })
-            .is_ok()
-    );
-    registration.defaults.output.protection =
-        Some(saucepan::models::policy::Protection::UseableApp);
-    assert!(
-        registration
-            .evaluate(&Overrides {
-                useable_app: Some(false),
-                ..Default::default()
-            })
-            .is_err()
-    );
+fn reclaim_policy_rejects_unknown_strategy() {
     assert!(
         serde_json::from_value::<ReclaimPolicy>(
             json!({"type":"reclaim_policy","strategy":"invented"})
         )
         .is_err()
     );
-    assert!(serde_json::from_value::<Overrides>(json!({"secret_override":true})).is_err());
-    registration.minimum_keep = 20;
-    assert!(registration.validate().is_err());
 }
 
 #[test]
@@ -348,12 +307,15 @@ fn registry_and_claim_round_trip_validate_the_new_contract() {
         revision: 0,
         registration_key: scope("integration"),
         access: Default::default(),
-        policies: Default::default(),
         credential: Default::default(),
         members: Default::default(),
     };
     registry.validate().unwrap();
     let encoded = serde_json::to_value(&registry).unwrap();
+    assert!(encoded.get("policies").is_none());
+    let mut old_registry = encoded.clone();
+    old_registry["policies"] = json!({});
+    assert!(serde_json::from_value::<Registry>(old_registry).is_err());
     serde_json::from_value::<Registry>(encoded.clone())
         .unwrap()
         .validate()
@@ -379,7 +341,6 @@ fn registry_and_claim_round_trip_validate_the_new_contract() {
             policies: Default::default(),
         },
         context: Default::default(),
-        overrides: Default::default(),
         effective: Default::default(),
     };
     claim.validate().unwrap();
@@ -391,6 +352,10 @@ fn registry_and_claim_round_trip_validate_the_new_contract() {
         serde_json::to_value(&claim.request).unwrap()
     );
     let decoded: Claim = serde_json::from_value(serde_json::to_value(&claim).unwrap()).unwrap();
+    let mut old_claim = serde_json::to_value(&claim).unwrap();
+    assert!(old_claim.get("overrides").is_none());
+    old_claim["overrides"] = json!({});
+    assert!(serde_json::from_value::<Claim>(old_claim).is_err());
     decoded.validate().unwrap();
     assert_eq!(decoded.uuid, claim.uuid);
     claim.context.insert("".into(), "invalid".into());

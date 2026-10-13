@@ -7,7 +7,7 @@ use crate::{
     models::{
         claim::{
             Claim, ClaimContext, ClaimView, Claimed, RegistryState, Scope,
-            policy::{AccessPolicy, Action, Registration},
+            policy::{AccessPolicy, Action},
             security::Credential,
         },
         index::{Application, Record},
@@ -105,7 +105,7 @@ impl Store {
             Error::new(ErrorCode::InvalidRequest, "empty application name")
         );
         let _lock = self.lock()?;
-        let (access, policies) = self.application_policy_settings(&input.policy_refs)?;
+        let access = self.application_policy_settings(&input.policy_refs)?;
         for record in self.records()? {
             let Record::Application(app) = record else {
                 continue;
@@ -150,7 +150,6 @@ impl Store {
         registry.registry.registration_key = input.registration_key.clone();
         registry.registry.policy_refs = input.policy_refs.clone();
         registry.registry.access = access;
-        registry.registry.policies = policies;
         let credential = if input.credentials_required {
             registry.change_credentials(
                 self.metadata.authenticator(),
@@ -216,26 +215,19 @@ impl Store {
             application.revision == expected_revision,
             Error::new(ErrorCode::RevisionConflict, "application revision conflict")
         );
-        let (access, policies) = self.application_policy_settings(&policy_refs)?;
+        let access = self.application_policy_settings(&policy_refs)?;
         let snapshot = self.metadata.snapshot()?;
         let catalog = crate::core::policy::persistence::load(&self.metadata, &snapshot)?;
-        for claim in registry.claims.values_mut() {
-            if let Some(adopted) = &claim.request.adopted {
-                crate::core::policy::claims::surviving(
-                    &catalog,
-                    adopted,
-                    &self.source(claim.request.source_uuid)?.policy_refs,
-                    &policy_refs,
-                )?;
-            }
-            claim.overrides = crate::core::policy::adopt::pinned(&claim.effective);
-            if claim.request.adopted.is_none() {
-                policies.evaluate(&claim.overrides)?;
-            }
+        for claim in registry.claims.values() {
+            crate::core::policy::claims::validate_existing(
+                &catalog,
+                claim,
+                &self.source(claim.request.source_uuid)?.policy_refs,
+                &policy_refs,
+            )?;
         }
         registry.registry.policy_refs = policy_refs;
         registry.registry.access = access;
-        registry.registry.policies = policies;
         registry.validate()?;
         let token = credential
             .map(|change| registry.change_credentials(self.metadata.authenticator(), proof, change))
@@ -256,7 +248,7 @@ impl Store {
     pub(crate) fn application_policy_settings(
         &self,
         refs: &crate::models::policy::PolicyRefs,
-    ) -> Result<(AccessPolicy, Registration)> {
+    ) -> Result<AccessPolicy> {
         let snapshot = self.metadata.snapshot()?;
         let catalog = crate::core::policy::persistence::load(&self.metadata, &snapshot)?;
         crate::core::policy::adopt::application_settings(&catalog, refs)

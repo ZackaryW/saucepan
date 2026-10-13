@@ -411,7 +411,7 @@ fn registration_keys_are_idempotent_and_policy_changes_cannot_invalidate_survivi
             &Default::default(),
         )
         .unwrap();
-    let mut policies = saucepan::models::claim::policy::Registration {
+    let mut policies = policy_fixture::Registration {
         maximum_keep: 1,
         ..Default::default()
     };

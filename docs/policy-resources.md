@@ -65,6 +65,14 @@ their selection and context. Source changes retain provider data and discovery s
 The transition implementation translates references into existing execution settings;
 removing those nested public inputs remains part of the pending contract cutover.
 
+Claim execution and registry validation use the shared policy resolver. Claims
+persist adopted evidence and effective choices, without an `overrides` object;
+registries persist policy references, without a separate policy bundle. A new
+application default does not change a surviving claim. Tightening an explicit
+constraint is rejected if it would invalidate that claim. Managed retention and
+protection defaults do not apply to caller-owned output, while applicable update
+constraints still apply.
+
 Definitions are retained after detachment, reclaim and uninstall so historical
 references remain meaningful. There is no definition deletion or overwrite operation.
 Journal recovery verifies definitions using the selected basic/keyring mode. Unknown

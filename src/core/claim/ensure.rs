@@ -211,20 +211,11 @@ impl Store {
             .map(|existing| existing.claim.policy_refs.clone())
             .map(Ok)
             .unwrap_or_else(|| self.adopted_refs(input.adopted.as_deref()))?;
-        let (id, relative, mut overrides) = if let Some(existing) = existing {
-            (
-                existing.claim.uuid,
-                existing.relative,
-                existing.claim.overrides,
-            )
+        let (id, relative) = if let Some(existing) = existing {
+            (existing.claim.uuid, existing.relative)
         } else {
-            (Uuid::new_v4(), None, input.overrides.clone())
+            (Uuid::new_v4(), None)
         };
-        // An explicit new_entry call can advance the same claim without changing
-        // retention/recovery ownership. Persist the requested acquisition mode.
-        if effective.output.identical == Identical::NewEntry {
-            overrides.identical = Some(Identical::NewEntry);
-        }
         lease.project(&acquired.entry, relative.as_deref())?;
         acquired.directory = lease.directory().to_path_buf();
         let claim = Claim {
@@ -234,7 +225,6 @@ impl Store {
             request,
             entry_uuid: acquired.entry.uuid,
             context: input.context.clone(),
-            overrides,
             effective,
         };
         registry.claims.insert(id, claim.clone());
