@@ -1,4 +1,6 @@
+pub mod acquisition;
 use super::{policy::Policies, source::Resolved};
+pub use acquisition::AcquisitionState;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, path::PathBuf};
 use uuid::Uuid;

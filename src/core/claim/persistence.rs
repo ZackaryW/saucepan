@@ -509,7 +509,9 @@ pub enum Publication {
 pub fn record_path(identity: Identity) -> Result<String> {
     match (identity.kind, identity.owner, identity.member) {
         (Kind::Application, Some(app), None) => Ok(format!("index/{app}/index.json")),
-        (Kind::Output | Kind::Retrieval, None, Some(id)) => Ok(format!("index/{id}/index.json")),
+        (Kind::Output | Kind::Retrieval | Kind::Acquisition, None, Some(id)) => {
+            Ok(format!("index/{id}/index.json"))
+        }
         (Kind::Source, None, Some(id)) => Ok(format!("source/{id}.json")),
         (Kind::Registry, Some(app), None) => Ok(format!("claims/{app}/index.json")),
         (Kind::Claim, Some(app), Some(id)) => Ok(format!("claims/{app}/{id}.json")),

@@ -177,7 +177,12 @@ impl Store {
             .expected_sha256;
         }
         Ok(RetrievedResource {
-            request: request.clone(),
+            request: RetrieveRequest {
+                source: SourceInput::Registered {
+                    source_uuid: record.source_uuid,
+                },
+                ..request.clone()
+            },
             source: self.source(record.source_uuid)?.source,
             store: Some(self.clone()),
             descriptor: RetrievedDescriptor {

@@ -66,6 +66,11 @@ pub(crate) fn record_identity(record: &Record) -> Identity {
             owner: None,
             member: Some(output.uuid),
         },
+        Record::Acquisition(record) => Identity {
+            kind: Kind::Acquisition,
+            owner: None,
+            member: Some(record.uuid),
+        },
         Record::Retrieval(record) => Identity {
             kind: Kind::Retrieval,
             owner: None,
@@ -181,7 +186,7 @@ impl Store {
         for reference in snapshot.catalog.records.values() {
             if matches!(
                 reference.identity.kind,
-                Kind::Application | Kind::Output | Kind::Retrieval
+                Kind::Application | Kind::Output | Kind::Retrieval | Kind::Acquisition
             ) {
                 let record: Record =
                     snapshot.read(self.metadata.authenticator(), reference.identity)?;

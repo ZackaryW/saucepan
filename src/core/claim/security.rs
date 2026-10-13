@@ -178,6 +178,7 @@ pub enum Kind {
     Application,
     Output,
     Retrieval,
+    Acquisition,
     Source,
     Registry,
     Claim,

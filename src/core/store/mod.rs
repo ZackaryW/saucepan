@@ -17,6 +17,7 @@ use uuid::Uuid;
 pub(crate) mod composition;
 mod materialize;
 mod reclaim;
+mod updates;
 pub use composition::{AcquiredResource, Acquirer};
 
 pub(crate) struct Acquisition {
@@ -175,6 +176,18 @@ impl Store {
         retain: bool,
         force_new: bool,
     ) -> Result<Acquisition> {
+        self.publish_prepared_state(request, prepared, claim, retain, force_new, None)
+    }
+
+    pub(crate) fn publish_prepared_state(
+        &self,
+        request: &Request,
+        prepared: super::source::Prepared,
+        claim: Option<super::claim::operations::ClaimTarget>,
+        retain: bool,
+        force_new: bool,
+        state: Option<crate::models::store::AcquisitionState>,
+    ) -> Result<Acquisition> {
         let content = prepared.temp.path().join("content");
         let files = manifest(&content)?;
         for bin in &request.selection.bin {
@@ -201,6 +214,19 @@ impl Store {
         }
         let _lock = self.lock()?;
         let records = self.records()?;
+        if let Some(next) = &state {
+            let current = records
+                .iter()
+                .find_map(|record| match record {
+                    Record::Acquisition(state) if state.uuid == next.uuid => Some(state.revision),
+                    _ => None,
+                })
+                .unwrap_or(0);
+            ensure!(
+                current.checked_add(1) == Some(next.revision),
+                Error::new(ErrorCode::RevisionConflict, "acquisition state changed")
+            );
+        }
         let outputs: Vec<_> = records
             .iter()
             .filter_map(|r| {
@@ -214,7 +240,26 @@ impl Store {
         let reusable = if !force_new && request.policies.identical == Identical::Reuse {
             outputs
                 .iter()
-                .filter(|e| e.fingerprint == fingerprint && e.state == Availability::Ready)
+                .filter(|e| {
+                    e.state == Availability::Ready
+                        && (e.fingerprint == fingerprint
+                            || state.as_ref().is_some_and(|state| {
+                                !matches!(
+                                    state.acquisition.update_policy,
+                                    crate::models::policy::UpdatePolicy::Manual {}
+                                ) && e.item_key == item_key
+                                    && e.files == files
+                                    && e.request.policies.eviction == request.policies.eviction
+                                    && e.request.policies.protection == request.policies.protection
+                                    && updates::selected_dependencies(
+                                        &e.dependencies,
+                                        request.selection.folder.as_deref(),
+                                    ) == updates::selected_dependencies(
+                                        &prepared.dependencies,
+                                        request.selection.folder.as_deref(),
+                                    )
+                            }))
+                })
                 .find_map(|entry| match self.metadata_path(entry) {
                     Ok(_) => Some(Ok(entry)),
                     Err(error)
@@ -231,12 +276,22 @@ impl Store {
         if let Some(entry) = reusable {
             let directory = self.verified_path(entry)?;
             let mut committed_claim = None;
+            let mut records = Vec::new();
+            let mut registries = Vec::new();
             if let Some(target) = &claim {
                 let (record, registry) = self.claim_record(target, request, entry.uuid)?;
                 committed_claim = Some(registry.claims[&target.id].clone());
+                records.push(record);
+                registries.push(registry);
+            }
+            if let Some(mut state) = state {
+                state.selected = entry.uuid;
+                records.push(Record::Acquisition(Box::new(state)));
+            }
+            if !records.is_empty() {
                 self.commit(Journal {
-                    records: vec![record],
-                    registries: vec![registry],
+                    records,
+                    registries,
                     stage: None,
                     ..Default::default()
                 })?;
@@ -285,6 +340,10 @@ impl Store {
             .unwrap()
             .to_owned();
         let mut records = vec![Record::Output(Box::new(entry.clone()))];
+        if let Some(mut state) = state {
+            state.selected = entry.uuid;
+            records.push(Record::Acquisition(Box::new(state)));
+        }
         let mut registries = Vec::new();
         let mut committed_claim = None;
         if let Some(target) = &claim {

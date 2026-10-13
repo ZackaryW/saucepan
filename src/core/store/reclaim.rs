@@ -37,7 +37,7 @@ impl Store {
             .collect();
         for record in records {
             match record {
-                Record::Retrieval(_) => {}
+                Record::Retrieval(_) | Record::Acquisition(_) => {}
                 Record::Output(e) => {
                     groups.entry(e.item_key.clone()).or_default().push(*e);
                 }

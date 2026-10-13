@@ -19,6 +19,43 @@ use anyhow::{Result, ensure};
 
 pub struct Acquirer;
 impl Acquirer {
+    /// Root-free fresh retrieval followed by independent materialization.
+    pub fn retrieve_and_acquire(
+        retrieval: &crate::models::retrieval::RetrieveRequest,
+        request: &AcquisitionRequest,
+    ) -> Result<AcquiredResource> {
+        validate_composition(retrieval, request, request.update_policy.due(None, 0))?;
+        let retrieved = crate::core::retrieval::Retriever::retrieve(retrieval)?;
+        Self::materialize_checked(&retrieved, request)
+    }
+
+    /// Release this source lease before orchestrating an update. The caller may
+    /// retain prior acquired-output leases independently.
+    pub fn refresh(
+        retrieved: RetrievedResource,
+        request: &AcquisitionRequest,
+    ) -> Result<AcquiredResource> {
+        let retrieval = retrieved.request.clone();
+        let store = retrieved.store.clone();
+        drop(retrieved);
+        match store {
+            Some(store) => store.acquire_composed(&retrieval, request),
+            None => Self::retrieve_and_acquire(&retrieval, request),
+        }
+    }
+
+    pub(crate) fn materialize_checked(
+        retrieved: &RetrievedResource,
+        request: &AcquisitionRequest,
+    ) -> Result<AcquiredResource> {
+        let mut offline = request.clone();
+        offline.update_policy = UpdatePolicy::Manual {};
+        let mut result = Self::acquire(retrieved, &offline)?;
+        result.descriptor.update_policy = request.update_policy;
+        result.descriptor.checked_source =
+            (!retrieved.descriptor.stale).then(|| retrieved.descriptor.resolved.clone());
+        Ok(result)
+    }
     /// Materialize a retrieval without fetching. Update orchestration uses the
     /// owning acquisition intent; callers may reuse this input for several copies.
     pub fn acquire(
@@ -40,29 +77,23 @@ impl Acquirer {
                     "managed output requires its retrieval store",
                 )
             })?;
-            let legacy = managed_request(retrieved, request)?;
-            let prepared = prepare(retrieved, request, Some(&store.root.join(".staging")))?;
-            let result = store.publish_prepared(&legacy, prepared, None, true, false)?;
-            return Ok(AcquiredResource {
-                descriptor: AcquiredDescriptor {
-                    ownership: Ownership::Managed {
-                        uuid: result.acquired.entry.uuid,
-                    },
-                    path: result.acquired.directory,
-                    selected_source: result.acquired.entry.resolved,
-                    checked_source: Some(retrieved.descriptor.resolved.clone()),
-                    verification: retrieved.descriptor.verification.clone(),
-                    reused: result.acquired.reused,
-                    changed: !result.acquired.reused,
-                    stale: retrieved.descriptor.stale,
-                    update_policy: request.update_policy,
-                    revision_policy: effective_revision(request)?,
-                    reclaim: Some(result.acquired.reclaim),
-                },
-                _temporary: None,
-                _lease: result.lease,
-                _retrieval: None,
-            });
+            ensure!(
+                store.session.is_none(),
+                Error::new(
+                    ErrorCode::AccessDenied,
+                    "use scoped application acquisition"
+                )
+            );
+            let key = super::updates::intent_key(&retrieved.request, request)?;
+            // A retained source lease cannot wait for an intent whose owner may
+            // itself be waiting to refresh that source. Fail immediately instead.
+            let _intent = crate::utils::lock::LockGuard::acquire(
+                &store.root.join(format!(".locks/acquisition-{key}")),
+                crate::utils::lock::LockMode::Exclusive,
+                std::time::Duration::ZERO,
+            )?;
+            let previous = store.acquisition_by_key(&key)?;
+            return store.publish_acquisition(retrieved, request, key, previous.as_ref());
         }
         let destination = match &request.destination {
             Destination::Directory { path } => {
@@ -148,7 +179,10 @@ pub(crate) fn prepare(
     })
 }
 
-fn managed_request(retrieved: &RetrievedResource, request: &AcquisitionRequest) -> Result<Request> {
+pub(crate) fn managed_request(
+    retrieved: &RetrievedResource,
+    request: &AcquisitionRequest,
+) -> Result<Request> {
     let SourceInput::Registered { source_uuid } = retrieved.descriptor.source else {
         return Err(
             Error::new(ErrorCode::InvalidRequest, "managed source identity missing").into(),

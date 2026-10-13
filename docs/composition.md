@@ -2,7 +2,7 @@
 
 The new request models separate three policy decisions. Native inline fresh
 retrieval is available through `Retriever`, and managed retrieval through `Store`.
-Offline acquisition is available through `Acquirer`; automatic update orchestration
+Offline acquisition is available through `Acquirer`; app-scoped update integration
 and new CLI commands are still being integrated.
 
 | Policy | Responsibility | Managed default |
@@ -135,3 +135,28 @@ let second = Acquirer::acquire(&repository, &AcquisitionRequest {
 The integration fixture in `tests/acquisition_composition.rs` runs this pattern
 with the Git origin removed after retrieval. It also verifies independent output
 lifetimes and cached ZIP extraction surviving source-material purge.
+
+Managed automatic updates use `store.acquire_composed(&retrieval, &acquisition)`.
+This entry point owns the fetch/lease order; use it when `update_policy` is
+`always` or `max_age`. A borrowed handle remains an offline input. To release a
+handle and perform an update, use `Acquirer::refresh(handle, &acquisition)`;
+previous acquired-output handles can remain alive throughout the update.
+`Acquirer::retrieve_and_acquire` composes inline fresh operations without a store.
+
+For example, keep retrieval's 24-hour default, set acquisition update to
+`UpdatePolicy::MaxAge { seconds: 60 }`, and revision policy to
+`RevisionPolicy::None {}`. A call before 60 seconds reuses the selected output.
+At 60 seconds, it checks the origin even within the source TTL. If only another
+Git folder changed, it keeps the selected output and reports the new commit as
+`checked_source`. A changed selected folder creates a new output; the older one
+is eligible for reclaim once its live consumers and other retention demands end.
+The local Git fixture in `tests/acquisition_updates.rs` executes this sequence.
+
+Successful check state is a distinct `acquisition` index record. It publishes in
+the same journal as a selected managed output and never rewrites that output's
+original provenance. Failed checks preserve the previous selection and timestamp;
+explicit stale fallback returns the previous selection with `stale: true`.
+Requests with different effective update/revision/verification policies have
+separate check proofs. Explicit `new_entry` still creates an output even when
+content is unchanged. App-scoped update integration is still in progress.
+

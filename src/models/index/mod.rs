@@ -48,6 +48,7 @@ pub enum Record {
     Application(Application),
     Output(Box<OutputEntry>),
     Retrieval(Box<super::retrieval::RetrievalRecord>),
+    Acquisition(Box<super::store::AcquisitionState>),
 }
 impl Record {
     pub fn uuid(&self) -> Uuid {
@@ -55,6 +56,7 @@ impl Record {
             Self::Application(a) => a.uuid,
             Self::Output(e) => e.uuid,
             Self::Retrieval(e) => e.uuid,
+            Self::Acquisition(e) => e.uuid,
         }
     }
 }
