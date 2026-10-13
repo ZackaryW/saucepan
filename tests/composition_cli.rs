@@ -1,10 +1,13 @@
 use saucepan::{
     core::Store,
     models::{
-        policy::UpdatePolicy,
-        retrieval::{CachePolicy, RetrieveRequest, SourceInput},
+        policy::{
+            Freshness, PolicyRecord,
+            requests::{Acquisition, Retrieval},
+        },
+        retrieval::{CachePolicy, SourceInput},
         source::Source,
-        store::{AcquisitionRequest, Destination, Selector},
+        store::{Destination, Selector},
     },
 };
 use serde_json::{Value, json};
@@ -18,17 +21,81 @@ use std::{
 fn save(path: &Path, value: &impl serde::Serialize) {
     fs::write(path, serde_json::to_vec(value).unwrap()).unwrap();
 }
-fn cli() -> Command {
+fn cli(temp: &tempfile::TempDir) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_saucepan"));
     command
         .args(["--error-format", "json"])
         .env_remove("HOME")
         .env_remove("USERPROFILE");
+    let catalog = temp.path().join("portable-policies.json");
+    if catalog.exists() {
+        command.arg("--policies").arg(catalog);
+    }
     command
 }
-fn request(input: &Path, cache: CachePolicy) -> RetrieveRequest {
-    RetrieveRequest {
-        provenance: Vec::new(),
+fn definition(directory: &Path, mut value: Value) -> uuid::Uuid {
+    let path = directory.join("portable-policies.json");
+    let mut records: Vec<Value> = if path.exists() {
+        serde_json::from_slice(&fs::read(&path).unwrap()).unwrap()
+    } else {
+        vec![]
+    };
+    let id = uuid::Uuid::parse_str(
+        &saucepan::core::claim::persistence::digest(&serde_json::to_vec(&value).unwrap())[..32],
+    )
+    .unwrap();
+    value["uuid"] = json!(id);
+    if !records.contains(&value) {
+        records.push(value);
+        save(&path, &records);
+    }
+    id
+}
+fn catalog(temp: &tempfile::TempDir) -> saucepan::core::policy::catalog::PolicyCatalog {
+    let path = temp.path().join("portable-policies.json");
+    saucepan::core::policy::catalog::PolicyCatalog::new(if path.exists() {
+        serde_json::from_slice::<Vec<PolicyRecord>>(&fs::read(path).unwrap()).unwrap()
+    } else {
+        vec![]
+    })
+    .unwrap()
+}
+fn set_cache(request: &mut Retrieval, cache: CachePolicy, directory: &Path) {
+    let mut refs = vec![];
+    request.destination = None;
+    match cache {
+        CachePolicy::Cached {
+            freshness,
+            allow_stale,
+        } => {
+            if let Some(freshness) = freshness {
+                let mut value = serde_json::to_value(freshness).unwrap();
+                value["type"] = json!("refresh_policy");
+                refs.push(definition(directory, value));
+            }
+            if allow_stale {
+                refs.push(definition(
+                    directory,
+                    json!({"type":"stale_policy","allow_stale":true}),
+                ));
+            }
+        }
+        CachePolicy::Temporary {} => refs.push(definition(
+            directory,
+            json!({"type":"cache_policy","mode":"temporary"}),
+        )),
+        CachePolicy::NoStore { destination } => {
+            request.destination = Some(destination);
+            refs.push(definition(
+                directory,
+                json!({"type":"cache_policy","mode":"no_store"}),
+            ));
+        }
+    }
+    request.policy_refs = refs.try_into().unwrap();
+}
+fn request(input: &Path, cache: CachePolicy) -> Retrieval {
+    let mut request = Retrieval {
         source: SourceInput::Inline {
             source: Source::Local {
                 path: input.to_owned(),
@@ -36,11 +103,14 @@ fn request(input: &Path, cache: CachePolicy) -> RetrieveRequest {
         },
         selector: Selector::Local,
         asset: Default::default(),
-        cache,
-        verification: Default::default(),
+        policy_refs: Default::default(),
+        destination: None,
         expected_sha256: None,
-    }
+    };
+    set_cache(&mut request, cache, input.parent().unwrap());
+    request
 }
+
 fn wait_for(path: &Path) {
     let start = Instant::now();
     while !path.exists() {
@@ -131,7 +201,7 @@ fn caller_receipts_work_without_root_and_cannot_forge_managed_ownership() {
             },
         ),
     );
-    let output = cli()
+    let output = cli(&temp)
         .arg("--root")
         .arg(temp.path().join("absent"))
         .arg("retrieve")
@@ -148,7 +218,7 @@ fn caller_receipts_work_without_root_and_cannot_forge_managed_ownership() {
     let acquire = temp.path().join("acquire.json");
     let mut value = json!({"retrieval":{"mode":"caller","request":receipt["request"],"descriptor":receipt["descriptor"]},"acquisition":{"destination":{"mode":"directory","path":acquired}}});
     save(&acquire, &value);
-    let output = cli()
+    let output = cli(&temp)
         .arg("acquire-retrieved")
         .arg(&acquire)
         .output()
@@ -165,7 +235,7 @@ fn caller_receipts_work_without_root_and_cannot_forge_managed_ownership() {
     value["acquisition"]["destination"]["path"] = json!(temp.path().join("forged"));
     save(&acquire, &value);
     assert!(
-        !cli()
+        !cli(&temp)
             .arg("acquire-retrieved")
             .arg(&acquire)
             .output()
@@ -175,9 +245,76 @@ fn caller_receipts_work_without_root_and_cannot_forge_managed_ownership() {
     );
     assert!(!temp.path().join("forged").exists());
     save(&file, &request(&input, CachePolicy::Temporary {}));
-    let output = cli().arg("retrieve").arg(&file).output().unwrap();
+    let output = cli(&temp).arg("retrieve").arg(&file).output().unwrap();
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("run-retrieved"));
+}
+
+#[test]
+fn referenced_cli_rejects_inline_settings_and_catalog_shadowing_before_effects() {
+    let temp = tempfile::tempdir().unwrap();
+    let input = temp.path().join("input");
+    fs::write(&input, b"payload").unwrap();
+    let request = request(
+        &input,
+        CachePolicy::NoStore {
+            destination: temp.path().join("download"),
+        },
+    );
+    let file = temp.path().join("request.json");
+    for field in ["cache", "verification", "provenance"] {
+        let mut mixed = serde_json::to_value(&request).unwrap();
+        mixed[field] = json!({});
+        save(&file, &mixed);
+        let output = cli(&temp).arg("retrieve").arg(&file).output().unwrap();
+        assert!(!output.status.success());
+        assert!(output.stdout.is_empty());
+        assert!(!temp.path().join("download").exists());
+    }
+    let store = Store::create(&temp.path().join("root")).unwrap();
+    let source = store
+        .register_source(Source::Local { path: input })
+        .unwrap();
+    let definitions: Vec<PolicyRecord> =
+        serde_json::from_slice(&fs::read(temp.path().join("portable-policies.json")).unwrap())
+            .unwrap();
+    store.register_policies(&definitions).unwrap();
+    let mut request = request;
+    request.source = SourceInput::Registered {
+        source_uuid: source.uuid,
+    };
+    save(&file, &request);
+    let before = saucepan::utils::tree::inspect(store.root(), Default::default()).unwrap();
+    let output = cli(&temp)
+        .arg("--root")
+        .arg(store.root())
+        .arg("retrieve")
+        .arg(&file)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(!temp.path().join("download").exists());
+    assert_eq!(
+        before,
+        saucepan::utils::tree::inspect(store.root(), Default::default()).unwrap()
+    );
+    // With persistent definitions only, fresh retrieval and receipt reopening
+    // are observational even when the native caller holds a normal Store.
+    let retrieved = store
+        .retrieve_referenced(&request, &Default::default(), &Default::default())
+        .unwrap();
+    let descriptor = retrieved.descriptor().clone();
+    drop(retrieved);
+    let reopened = store
+        .open_caller_referenced(&request, &descriptor, &Default::default(), None)
+        .unwrap();
+    assert_eq!(fs::read(reopened.source_path()).unwrap(), b"payload");
+    drop(reopened);
+    assert_eq!(
+        before,
+        saucepan::utils::tree::inspect(store.root(), Default::default()).unwrap()
+    );
 }
 
 #[test]
@@ -188,7 +325,7 @@ fn source_configuration_lookup_purge_and_managed_acquisition_are_distinct() {
     let store = Store::create(&temp.path().join("root")).unwrap();
     let file = temp.path().join("retrieve.json");
     save(&file, &request(&input, CachePolicy::default()));
-    let output = cli()
+    let output = cli(&temp)
         .arg("--root")
         .arg(store.root())
         .arg("retrieve")
@@ -201,7 +338,7 @@ fn source_configuration_lookup_purge_and_managed_acquisition_are_distinct() {
     let source = receipt["descriptor"]["source"]["source_uuid"]
         .as_str()
         .unwrap();
-    let output = cli()
+    let output = cli(&temp)
         .arg("--root")
         .arg(store.root())
         .args(["source-path", id])
@@ -213,9 +350,18 @@ fn source_configuration_lookup_purge_and_managed_acquisition_are_distinct() {
         receipt["descriptor"]["path"]
     );
     let policy = temp.path().join("policy.json");
-    save(&policy, &json!({"mode":"cache_only"}));
+    let policy_id = uuid::Uuid::new_v4();
+    let record: PolicyRecord = serde_json::from_value(
+        json!({"uuid":policy_id,"type":"refresh_policy","mode":"cache_only"}),
+    )
+    .unwrap();
+    store.register_policies(&[record]).unwrap();
+    save(
+        &policy,
+        &json!({"expected_revision":0,"policy_refs":[policy_id]}),
+    );
     assert!(
-        cli()
+        cli(&temp)
             .arg("--root")
             .arg(store.root())
             .args(["configure-source", source])
@@ -230,7 +376,7 @@ fn source_configuration_lookup_purge_and_managed_acquisition_are_distinct() {
         &acquire,
         &json!({"retrieval":{"mode":"managed","uuid":id},"acquisition":{}}),
     );
-    let output = cli()
+    let output = cli(&temp)
         .arg("--root")
         .arg(store.root())
         .arg("acquire-retrieved")
@@ -244,7 +390,7 @@ fn source_configuration_lookup_purge_and_managed_acquisition_are_distinct() {
     );
     let result: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert!(
-        cli()
+        cli(&temp)
             .arg("--root")
             .arg(store.root())
             .args(["purge-retrieval", id])
@@ -267,13 +413,13 @@ fn temporary_consumers_preserve_streams_literal_arguments_exit_codes_and_cleanup
         if acquired {
             save(
                 &request_file,
-                &json!({"retrieval":request,"acquisition":AcquisitionRequest { destination: Destination::Temporary {}, update_policy: UpdatePolicy::Always {}, ..Default::default() }}),
+                &json!({"retrieval":request,"acquisition":Acquisition { destination: Destination::Temporary {}, policy_refs: vec![definition(temp.path(), json!({"type":"update_policy","mode":"always"}))].try_into().unwrap(), ..Default::default() }}),
             );
         } else {
             save(&request_file, &request);
         }
         let report = temp.path().join("report.json");
-        let mut command = cli();
+        let mut command = cli(&temp);
         command
             .arg(if acquired {
                 "run-acquired"
@@ -331,13 +477,15 @@ fn children_retain_temporary_and_cached_sources_after_wrapper_death() {
             },
         );
         let id = if cached {
-            let retrieved = store.retrieve(&request).unwrap();
+            let retrieved = store
+                .retrieve_referenced(&request, &Default::default(), &Default::default())
+                .unwrap();
             let saucepan::models::retrieval::Ownership::Managed { uuid } =
                 retrieved.descriptor().ownership
             else {
                 panic!()
             };
-            request = retrieved.request().clone();
+            request.source = retrieved.descriptor().source.clone();
             Some(uuid)
         } else {
             None
@@ -345,7 +493,7 @@ fn children_retain_temporary_and_cached_sources_after_wrapper_death() {
         save(&request_file, &request);
         let report = temp.path().join("report.json");
         let release = temp.path().join("release");
-        let mut command = cli();
+        let mut command = cli(&temp);
         command
             .arg("--root")
             .arg(store.root())
@@ -372,13 +520,20 @@ fn children_retain_temporary_and_cached_sources_after_wrapper_death() {
         assert!(path.exists());
         if let Some(id) = id {
             assert!(!store.purge_retrieval(id).unwrap());
-            request.cache = CachePolicy::Cached {
-                freshness: Some(saucepan::models::policy::Freshness::Always {}),
-                allow_stale: false,
-            };
+            set_cache(
+                &mut request,
+                CachePolicy::Cached {
+                    freshness: Some(Freshness::Always {}),
+                    allow_stale: false,
+                },
+                temp.path(),
+            );
+            store
+                .register_policies(&catalog(&temp).records().cloned().collect::<Vec<_>>())
+                .unwrap();
             assert!(
                 store
-                    .retrieve(&request)
+                    .retrieve_referenced(&request, &Default::default(), &Default::default())
                     .err()
                     .unwrap()
                     .to_string()
@@ -389,7 +544,7 @@ fn children_retain_temporary_and_cached_sources_after_wrapper_death() {
         let sweep = temp.path().join("sweep.json");
         save(&sweep, &self::request(&input, CachePolicy::Temporary {}));
         let sweep_once = || {
-            let output = cli()
+            let output = cli(&temp)
                 .arg("run-retrieved")
                 .arg(&sweep)
                 .arg("--")
@@ -493,7 +648,11 @@ fn fresh_zip_and_git_consumers_ignore_preexisting_caches_without_home() {
                 reference: "main".into(),
             };
         }
-        drop(store.retrieve(&retrieval).unwrap());
+        drop(
+            store
+                .retrieve_referenced(&retrieval, &Default::default(), &Default::default())
+                .unwrap(),
+        );
         let before = snapshot(store.root());
         if repository {
             fs::write(input.join("selected/file"), b"fresh").unwrap();
@@ -508,13 +667,17 @@ fn fresh_zip_and_git_consumers_ignore_preexisting_caches_without_home() {
         for caller in [false, true] {
             for acquired in [false, true] {
                 let suffix = format!("{caller}-{acquired}");
-                retrieval.cache = if caller {
-                    CachePolicy::NoStore {
-                        destination: temp.path().join(format!("download-{suffix}")),
-                    }
-                } else {
-                    CachePolicy::Temporary {}
-                };
+                set_cache(
+                    &mut retrieval,
+                    if caller {
+                        CachePolicy::NoStore {
+                            destination: temp.path().join(format!("download-{suffix}")),
+                        }
+                    } else {
+                        CachePolicy::Temporary {}
+                    },
+                    temp.path(),
+                );
                 let file = temp.path().join(format!("request-{suffix}.json"));
                 if acquired {
                     save(
@@ -527,7 +690,7 @@ fn fresh_zip_and_git_consumers_ignore_preexisting_caches_without_home() {
                     save(&file, &retrieval);
                 }
                 let report = temp.path().join(format!("report-{suffix}.json"));
-                let mut command = cli();
+                let mut command = cli(&temp);
                 command
                     .arg("--root")
                     .arg(store.root())
@@ -570,10 +733,10 @@ fn fresh_zip_and_git_consumers_ignore_preexisting_caches_without_home() {
         }
         // An unavailable fresh origin must not fall back to the populated cache.
         fs::rename(&input, temp.path().join("unavailable")).unwrap();
-        retrieval.cache = CachePolicy::Temporary {};
+        set_cache(&mut retrieval, CachePolicy::Temporary {}, temp.path());
         let file = temp.path().join("failure.json");
         save(&file, &retrieval);
-        let output = cli()
+        let output = cli(&temp)
             .arg("--root")
             .arg(store.root())
             .arg("run-retrieved")

@@ -3,15 +3,23 @@ use super::Args;
 use crate::{
     core::{
         Store, consumer,
-        retrieval::{RegisteredRetriever, RetrieveOptions, RetrievedResource, Retriever},
+        policy::{
+            catalog::PolicyCatalog,
+            prepare::{self, Attachments},
+        },
+        retrieval::{RetrieveOptions, RetrievedResource, Retriever},
         store::{AcquiredResource, Acquirer},
     },
     error::{Error, ErrorCode},
     models::{
         claim::Scope,
-        policy::{Freshness, UpdatePolicy},
-        retrieval::{CachePolicy, RetrieveRequest, RetrievedDescriptor, SourceInput},
-        store::{AcquisitionRequest, Destination},
+        policy::{
+            PolicyRefs,
+            record::CacheMode,
+            requests::{Acquisition, Retrieval},
+        },
+        retrieval::{RetrievedDescriptor, SourceInput},
+        store::Destination,
     },
 };
 use anyhow::{Result, ensure};
@@ -43,7 +51,7 @@ pub(super) enum CompositionCommand {
         #[arg(long)]
         scope: Option<String>,
     },
-    /// Set the default source freshness using a policy JSON file.
+    /// Replace source policy references at an expected attachment revision.
     ConfigureSource { source: Uuid, file: PathBuf },
     /// Retire cached retrieval material when no source consumers are live.
     PurgeRetrieval { retrieval: Uuid },
@@ -67,14 +75,14 @@ pub(super) enum CompositionCommand {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct CompositionRequest {
-    retrieval: RetrieveRequest,
-    acquisition: AcquisitionRequest,
+    retrieval: Retrieval,
+    acquisition: Acquisition,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct AcquireRetrievedRequest {
     retrieval: MaterialInput,
-    acquisition: AcquisitionRequest,
+    acquisition: Acquisition,
 }
 #[derive(Deserialize)]
 #[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
@@ -83,7 +91,7 @@ enum MaterialInput {
         uuid: Uuid,
     },
     Caller {
-        request: Box<RetrieveRequest>,
+        request: Box<Retrieval>,
         descriptor: Box<RetrievedDescriptor>,
     },
 }
@@ -109,110 +117,114 @@ fn command(args: &[OsString]) -> Command {
     process.args(&args[1..]);
     process
 }
-fn retrieve(
+
+fn bind(args: &Args, store: Store) -> Result<Store> {
+    match args.as_app {
+        Some(app) => Ok(store
+            .session(
+                app,
+                super::credentials::read(args.credential_file.as_deref())?,
+            )?
+            .into_store()),
+        None => Ok(store),
+    }
+}
+fn execution_store(
     args: &Args,
-    request: &RetrieveRequest,
-    scope: Option<&Scope>,
-) -> Result<RetrievedResource> {
-    if matches!(request.cache, CachePolicy::Cached { .. }) {
-        let store = Store::open(&root(args)?)?;
-        match args.as_app {
-            Some(app) => store
-                .session(
-                    app,
-                    super::credentials::read(args.credential_file.as_deref())?,
-                )?
-                .retrieve(request, scope, &options(args)),
-            None => store.retrieve_with(request, &options(args)),
-        }
-    } else if matches!(request.source, SourceInput::Registered { .. }) {
-        let reader = RegisteredRetriever::open(&root(args)?)?;
-        match args.as_app {
-            Some(app) => reader
-                .session(
-                    app,
-                    super::credentials::read(args.credential_file.as_deref())?,
-                )?
-                .retrieve(request, scope, &options(args)),
-            None => reader.retrieve(request, &options(args)),
-        }
+    request: &Retrieval,
+    catalog: &PolicyCatalog,
+) -> Result<(Option<Store>, CacheMode)> {
+    let metadata_needed = matches!(request.source, SourceInput::Registered { .. })
+        || request
+            .policy_refs
+            .ids()
+            .iter()
+            .chain(request.asset.filter_refs.ids())
+            .any(|id| catalog.get(*id).is_err());
+    let metadata = if metadata_needed {
+        Some(bind(
+            args,
+            Store::open_metadata(&root(args)?, &crate::core::claim::security::NativeKeyring)?,
+        )?)
+    } else {
+        None
+    };
+    let mode = if let Some(store) = &metadata {
+        store.referenced_cache_mode(request, catalog)?
+    } else {
+        let empty = PolicyRefs::default();
+        prepare::retrieval(
+            catalog,
+            &Attachments {
+                source: &empty,
+                application: &empty,
+            },
+            request,
+        )?
+        .policies
+        .behavior
+        .cache
+    };
+    if matches!(mode, CacheMode::Cached) {
+        Ok((Some(bind(args, Store::open(&root(args)?)?)?), mode))
     } else {
         ensure!(
-            args.as_app.is_none(),
+            args.as_app.is_none() || metadata.is_some(),
             Error::new(
                 ErrorCode::AccessDenied,
                 "application operations require registered sources"
             )
         );
-        Retriever::retrieve_with(request, &options(args))
+        Ok((metadata, mode))
+    }
+}
+fn retrieve(
+    args: &Args,
+    request: &Retrieval,
+    catalog: &PolicyCatalog,
+    scope: Option<&Scope>,
+    retained: bool,
+) -> Result<RetrievedResource> {
+    let (store, mode) = execution_store(args, request, catalog)?;
+    ensure!(
+        retained || mode != CacheMode::Temporary,
+        Error::new(
+            ErrorCode::InvalidRequest,
+            "temporary retrieval requires run-retrieved or run-acquired"
+        )
+    );
+    match store {
+        Some(store) => store.retrieve_referenced_scoped(request, catalog, scope, &options(args)),
+        None => Retriever::retrieve_referenced(request, catalog, &options(args)),
     }
 }
 fn compose(
     args: &Args,
     request: &CompositionRequest,
+    catalog: &PolicyCatalog,
     scope: Option<&Scope>,
 ) -> Result<AcquiredResource> {
-    crate::core::policy::composition::validate_composition(
-        &request.retrieval,
-        &request.acquisition,
-        false,
-    )?;
-    if matches!(request.retrieval.cache, CachePolicy::Cached { .. }) {
-        let store = Store::open(&root(args)?)?;
-        match args.as_app {
-            Some(app) => store
-                .session(
-                    app,
-                    super::credentials::read(args.credential_file.as_deref())?,
-                )?
-                .acquire_composed(
-                    &request.retrieval,
-                    &request.acquisition,
-                    scope,
-                    &options(args),
-                ),
-            None => store.acquire_composed_with(
-                &request.retrieval,
-                &request.acquisition,
-                &options(args),
-            ),
-        }
-    } else if matches!(request.retrieval.source, SourceInput::Registered { .. }) {
-        let reader = RegisteredRetriever::open(&root(args)?)?;
-        match args.as_app {
-            Some(app) => reader
-                .session(
-                    app,
-                    super::credentials::read(args.credential_file.as_deref())?,
-                )?
-                .acquire_composed(
-                    &request.retrieval,
-                    &request.acquisition,
-                    scope,
-                    &options(args),
-                ),
-            None => {
-                reader.acquire_composed(&request.retrieval, &request.acquisition, &options(args))
-            }
-        }
-    } else {
-        ensure!(
-            args.as_app.is_none(),
-            Error::new(
-                ErrorCode::AccessDenied,
-                "application operations require registered sources"
-            )
-        );
-        Acquirer::retrieve_and_acquire_with(
+    let (store, _) = execution_store(args, &request.retrieval, catalog)?;
+    match store {
+        Some(store) => store.compose_referenced_scoped(
             &request.retrieval,
             &request.acquisition,
+            catalog,
+            scope,
             &options(args),
-        )
+        ),
+        None => Acquirer::compose_referenced(
+            &request.retrieval,
+            &request.acquisition,
+            catalog,
+            &options(args),
+        ),
     }
 }
 fn material(
     args: &Args,
     input: &MaterialInput,
+    catalog: &PolicyCatalog,
     scope: Option<&Scope>,
 ) -> Result<RetrievedResource> {
     match input {
@@ -233,16 +245,14 @@ fn material(
             descriptor,
         } => {
             if matches!(request.source, SourceInput::Registered { .. }) {
-                let reader = RegisteredRetriever::open(&root(args)?)?;
-                match args.as_app {
-                    Some(app) => reader
-                        .session(
-                            app,
-                            super::credentials::read(args.credential_file.as_deref())?,
-                        )?
-                        .open_caller(request, descriptor, scope),
-                    None => reader.open_caller(request, descriptor),
-                }
+                bind(
+                    args,
+                    Store::open_metadata(
+                        &root(args)?,
+                        &crate::core::claim::security::NativeKeyring,
+                    )?,
+                )?
+                .open_caller_referenced(request, descriptor, catalog, scope)
             } else {
                 ensure!(
                     args.as_app.is_none(),
@@ -251,7 +261,7 @@ fn material(
                         "application material requires a registered source"
                     )
                 );
-                Retriever::open_caller(request, descriptor)
+                Retriever::open_caller_referenced(request, descriptor, catalog)
             }
         }
     }
@@ -272,21 +282,25 @@ pub(super) fn run(input: &CompositionCommand, args: &Args) -> Result<()> {
             "credential-file requires as-app for composition commands"
         )
     );
+    let catalog = match &args.portable_policies {
+        Some(file) => PolicyCatalog::new(read::<Vec<crate::models::policy::PolicyRecord>>(file)?)?,
+        None => PolicyCatalog::default(),
+    };
     let value = match input {
         CompositionCommand::Retrieve {
             file,
             scope: selected_scope,
         } => {
-            let request: RetrieveRequest = read(file)?;
-            ensure!(
-                !matches!(request.cache, CachePolicy::Temporary {}),
-                Error::new(
-                    ErrorCode::InvalidRequest,
-                    "temporary retrieval requires run-retrieved or run-acquired"
-                )
-            );
-            let resource = retrieve(args, &request, scope(selected_scope)?.as_ref())?;
-            serde_json::json!({"request": resource.request(), "descriptor": resource.descriptor()})
+            let mut request: Retrieval = read(file)?;
+            let resource = retrieve(
+                args,
+                &request,
+                &catalog,
+                scope(selected_scope)?.as_ref(),
+                false,
+            )?;
+            request.source = resource.descriptor().source.clone();
+            serde_json::json!({"request": request, "descriptor": resource.descriptor()})
         }
         CompositionCommand::AcquireRetrieved {
             file,
@@ -300,12 +314,15 @@ pub(super) fn run(input: &CompositionCommand, args: &Args) -> Result<()> {
                     "temporary acquisition requires run-acquired"
                 )
             );
-            let retrieved = material(args, &request.retrieval, scope(selected_scope)?.as_ref())?;
-            let result = if matches!(request.acquisition.update_policy, UpdatePolicy::Manual {}) {
-                Acquirer::acquire(&retrieved, &request.acquisition)?
-            } else {
-                Acquirer::refresh_with(retrieved, &request.acquisition, &options(args))?
-            };
+            let selected = scope(selected_scope)?;
+            let retrieved = material(args, &request.retrieval, &catalog, selected.as_ref())?;
+            let result = Acquirer::acquire_or_refresh_referenced(
+                retrieved,
+                &request.acquisition,
+                &catalog,
+                selected.as_ref(),
+                &options(args),
+            )?;
             serde_json::to_value(result.descriptor())?
         }
         CompositionCommand::SourcePath {
@@ -332,10 +349,18 @@ pub(super) fn run(input: &CompositionCommand, args: &Args) -> Result<()> {
                     "source configuration requires administration"
                 )
             );
-            let policy: Freshness = read(file)?;
-            serde_json::to_value(
-                Store::open(&root(args)?)?.configure_source_freshness(*source, policy)?,
-            )?
+            #[derive(Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct Configuration {
+                expected_revision: u64,
+                policy_refs: PolicyRefs,
+            }
+            let configuration: Configuration = read(file)?;
+            serde_json::to_value(Store::open(&root(args)?)?.adopt_source_policies(
+                *source,
+                configuration.expected_revision,
+                configuration.policy_refs,
+            )?)?
         }
         CompositionCommand::PurgeRetrieval { retrieval } => {
             ensure!(
@@ -352,7 +377,13 @@ pub(super) fn run(input: &CompositionCommand, args: &Args) -> Result<()> {
             scope: selected_scope,
             command: child,
         } => {
-            let resource = retrieve(args, &read(file)?, scope(selected_scope)?.as_ref())?;
+            let resource = retrieve(
+                args,
+                &read(file)?,
+                &catalog,
+                scope(selected_scope)?.as_ref(),
+                true,
+            )?;
             let code = consumer::run_retrieved(resource, command(child))?;
             std::process::exit(code);
         }
@@ -361,7 +392,12 @@ pub(super) fn run(input: &CompositionCommand, args: &Args) -> Result<()> {
             scope: selected_scope,
             command: child,
         } => {
-            let resource = compose(args, &read(file)?, scope(selected_scope)?.as_ref())?;
+            let resource = compose(
+                args,
+                &read(file)?,
+                &catalog,
+                scope(selected_scope)?.as_ref(),
+            )?;
             let code = consumer::run_acquired(resource, command(child))?;
             std::process::exit(code);
         }

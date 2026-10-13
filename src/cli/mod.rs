@@ -41,6 +41,9 @@ struct Args {
     /// Store directory; defaults to .saucepan in the user's home directory.
     #[arg(long, global = true)]
     root: Option<PathBuf>,
+    /// Portable leaf policy catalog for retrieve/acquisition commands.
+    #[arg(long = "policies", global = true)]
+    portable_policies: Option<PathBuf>,
     #[arg(long, global = true)]
     force_refresh: bool,
     #[arg(long, global = true)]
@@ -293,6 +296,18 @@ pub fn run() -> Result<()> {
     if let Commands::Composition(command) = &args.command {
         return composition::run(command, &args);
     }
+    run_store(args)
+}
+
+// Keep the store command frame out of root-free composition execution.
+fn run_store(args: Args) -> Result<()> {
+    anyhow::ensure!(
+        args.portable_policies.is_none(),
+        crate::error::Error::new(
+            crate::error::ErrorCode::InvalidRequest,
+            "--policies is supported by retrieval/acquisition commands"
+        )
+    );
     let explicit_root = args.root.is_some();
     let root = root::resolve(args.root)?;
     let options = crate::core::source::AcquireOptions {

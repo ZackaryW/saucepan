@@ -4,10 +4,9 @@ The flat policy contract gives each definition its own immutable UUID. Applicati
 sources and claims associate those records through `policy_refs`; release selection
 uses an ordered `filter_refs` list. Policy definitions never reference other policies.
 
-Implementation status: typed records, in-memory and persistent catalogs, the pure
-evaluator and native association adoption are available. CLI lookup and the complete
-operation-contract cutover are being implemented under `flatten-policy-resources`;
-the examples below are contract examples, not commands supported by the current CLI.
+Implementation status: typed records, catalogs, evaluation, association adoption,
+CLI lookup and reference-based composition commands are available. The remaining
+legacy operation inputs are being removed under `flatten-policy-resources`.
 
 ```json
 [
@@ -78,3 +77,30 @@ operations publish a new immutable definition and its source association in one
 metadata transaction. Source records persist references and attachment revisions;
 visibility and freshness are derived when read. Repeating an attached choice is a
 no-op, and replaced definitions remain available by UUID.
+
+Save the first JSON array in this guide as `policies.json`. Against a freshly
+initialized root, register and inspect a complete definition without an app UUID:
+
+```powershell
+saucepan init
+saucepan register-policies policies.json
+saucepan policy 10000000-0000-4000-8000-000000000003
+```
+
+`--root PATH` is optional and overrides the default home `.saucepan` root.
+`--as-app UUID` restricts inspection to readable associations, with
+`--credential-file PATH` when that application requires proof.
+
+Composition commands (`retrieve`, `acquire-retrieved`, `run-retrieved`,
+`run-acquired`) accept reference-only requests. `--policies FILE` supplies an array
+of portable definitions for fresh operations. Inline temporary/no-store requests
+do not resolve a home or store; registered fresh requests read verified metadata
+without recovery or cache access. Portable definitions cannot shadow persistent
+UUIDs, even with identical bytes. Register definitions explicitly before managed
+publication and omit those definitions from the portable catalog.
+
+Caller receipts contain a reference-only request and a normalized source
+descriptor. Reopening validates caller ownership and the material again; serialized
+descriptors cannot manufacture managed ownership or a lease. Automatic acquisition
+updates use an owned source handle so it can be replaced safely. Borrowed native
+acquisition retains its original source guard through the copy operation.

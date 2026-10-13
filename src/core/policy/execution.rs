@@ -26,6 +26,22 @@ use crate::{
 use anyhow::{Result, ensure};
 
 impl Retriever {
+    pub fn open_caller_referenced(
+        input: &Retrieval,
+        descriptor: &crate::models::retrieval::RetrievedDescriptor,
+        catalog: &PolicyCatalog,
+    ) -> Result<RetrievedResource> {
+        let empty = PolicyRefs::default();
+        let plan = prepare::retrieval(
+            catalog,
+            &Attachments {
+                source: &empty,
+                application: &empty,
+            },
+            input,
+        )?;
+        Self::open_caller(&plan.request, descriptor)
+    }
     /// Inline fresh operations use only this caller-owned catalog. They never
     /// resolve a home directory or initialize a store/keyring.
     pub fn retrieve_referenced(
@@ -54,37 +70,40 @@ impl Acquirer {
         portable: &PolicyCatalog,
         scope: Option<&Scope>,
     ) -> Result<AcquiredResource> {
-        let empty = PolicyRefs::default();
-        let request = if let Some(store) = &retrieved.store {
-            let source_input = Retrieval {
-                source: retrieved.request.source.clone(),
-                selector: retrieved.request.selector.clone(),
-                asset: Default::default(),
-                policy_refs: Default::default(),
-                destination: None,
-                expected_sha256: None,
-            };
-            let context = Context::new(store, &source_input, portable)?;
-            let plan = prepare::acquisition(&context.catalog, &context.attachments(), input)?;
-            if matches!(input.destination, Destination::Managed {}) {
-                context.durable(&source_input, Some(input))?;
-            }
-            context.authorize(&plan.policies, &source_input, scope, Action::Acquire)?;
-            store.check_policy_fence()?;
-            plan.request
-        } else {
-            prepare::acquisition(
-                portable,
-                &Attachments {
-                    source: &empty,
-                    application: &empty,
-                },
-                input,
-            )?
-            .request
+        let (request, store) = acquisition_for_handle(retrieved, input, portable, scope)?;
+        // The borrowed original keeps its source guard alive throughout this
+        // call. Only the derived execution context is replaced.
+        let checked = RetrievedResource {
+            request: retrieved.request.clone(),
+            source: retrieved.source.clone(),
+            store,
+            authorization: retrieved.authorization.clone(),
+            descriptor: retrieved.descriptor.clone(),
+            _temporary: retrieved._temporary.clone(),
+            _coordination: None,
         };
-        Self::acquire(retrieved, &request)
+        Self::acquire(&checked, &request)
     }
+    /// Own the handle when an automatic update may replace its source lease.
+    pub fn acquire_or_refresh_referenced(
+        mut retrieved: RetrievedResource,
+        input: &Acquisition,
+        portable: &PolicyCatalog,
+        scope: Option<&Scope>,
+        options: &RetrieveOptions,
+    ) -> Result<AcquiredResource> {
+        let (request, store) = acquisition_for_handle(&retrieved, input, portable, scope)?;
+        retrieved.store = store;
+        if matches!(
+            request.update_policy,
+            crate::models::policy::UpdatePolicy::Manual {}
+        ) {
+            Self::acquire(&retrieved, &request)
+        } else {
+            Self::refresh_with(retrieved, &request, options)
+        }
+    }
+
     pub fn compose_referenced(
         retrieval: &Retrieval,
         acquisition: &Acquisition,
@@ -99,6 +118,50 @@ impl Acquirer {
         let retrieval = prepare::retrieval(catalog, &attachments, retrieval)?;
         let acquisition = prepare::acquisition(catalog, &attachments, acquisition)?;
         Self::retrieve_and_acquire_with(&retrieval.request, &acquisition.request, options)
+    }
+}
+
+fn acquisition_for_handle(
+    retrieved: &RetrievedResource,
+    input: &Acquisition,
+    portable: &PolicyCatalog,
+    scope: Option<&Scope>,
+) -> Result<(crate::models::store::AcquisitionRequest, Option<Store>)> {
+    let empty = PolicyRefs::default();
+    if let Some(store) = &retrieved.store {
+        let source_input = Retrieval {
+            source: retrieved.request.source.clone(),
+            selector: retrieved.request.selector.clone(),
+            asset: Default::default(),
+            policy_refs: Default::default(),
+            destination: None,
+            expected_sha256: None,
+        };
+        let mut context = Context::new(store, &source_input, portable)?;
+        let plan = prepare::acquisition(&context.catalog, &context.attachments(), input)?;
+        if matches!(input.destination, Destination::Managed {}) {
+            context.durable(&source_input, Some(input))?;
+        }
+        context.authorize(&plan.policies, &source_input, scope, Action::Acquire)?;
+        context.store.policy_fence = context
+            .store
+            .policy_fence
+            .take()
+            .map(|fence| fence.with_authority(plan.policies, scope));
+        Ok((plan.request, Some(context.store)))
+    } else {
+        Ok((
+            prepare::acquisition(
+                portable,
+                &Attachments {
+                    source: &empty,
+                    application: &empty,
+                },
+                input,
+            )?
+            .request,
+            None,
+        ))
     }
 }
 
@@ -186,6 +249,55 @@ impl Context {
 }
 
 impl Store {
+    /// Observational routing for front ends; the executing operation resolves and
+    /// fences its own snapshot again before provider work.
+    pub(crate) fn referenced_cache_mode(
+        &self,
+        input: &Retrieval,
+        portable: &PolicyCatalog,
+    ) -> Result<crate::models::policy::record::CacheMode> {
+        let context = Context::new(self, input, portable)?;
+        Ok(
+            prepare::retrieval(&context.catalog, &context.attachments(), input)?
+                .policies
+                .behavior
+                .cache,
+        )
+    }
+
+    pub fn open_caller_referenced(
+        &self,
+        input: &Retrieval,
+        descriptor: &crate::models::retrieval::RetrievedDescriptor,
+        portable: &PolicyCatalog,
+        scope: Option<&Scope>,
+    ) -> Result<RetrievedResource> {
+        let mut context = Context::new(self, input, portable)?;
+        context.store.metadata_only = true;
+        let plan = prepare::retrieval(&context.catalog, &context.attachments(), input)?;
+        context.authorize(&plan.policies, input, scope, Action::Acquire)?;
+        let authorization = match &self.session {
+            Some(identity) => {
+                let SourceInput::Registered { source_uuid } = input.source else {
+                    return Err(Error::new(
+                        ErrorCode::AccessDenied,
+                        "application material requires a registered source",
+                    )
+                    .into());
+                };
+                Some(
+                    context
+                        .store
+                        .begin_composition(identity.app, scope, source_uuid, None)?,
+                )
+            }
+            None => None,
+        };
+        context
+            .store
+            .open_caller_authorized(&plan.request, descriptor, authorization)
+    }
+
     pub fn retrieve_referenced(
         &self,
         input: &Retrieval,
