@@ -64,6 +64,21 @@ pub fn executable(meta: &fs::Metadata) -> bool {
 
 /// Stable source and new private destination are caller responsibilities.
 pub fn copy_tree(source: &Path, destination: &Path, limits: TreeLimits) -> io::Result<TreeSummary> {
+    copy_tree_inner(source, destination, limits, true)
+}
+
+/// Copy with the same containment, limits and change checks, without computing
+/// file digests. This deliberately returns no ambiguous manifest with absent hashes.
+pub fn copy_tree_unhashed(source: &Path, destination: &Path, limits: TreeLimits) -> io::Result<()> {
+    copy_tree_inner(source, destination, limits, false).map(|_| ())
+}
+
+fn copy_tree_inner(
+    source: &Path,
+    destination: &Path,
+    limits: TreeLimits,
+    hash: bool,
+) -> io::Result<TreeSummary> {
     if !plain_metadata(source)?.is_dir() {
         return Err(io::Error::other("source must be a directory"));
     }
@@ -78,6 +93,7 @@ pub fn copy_tree(source: &Path, destination: &Path, limits: TreeLimits) -> io::R
         &mut bytes,
         &mut summary,
         true,
+        hash,
         &mut |_| {},
     )?;
     Ok(summary)
@@ -103,6 +119,7 @@ pub(crate) fn inspect_observed(
         &mut bytes,
         &mut summary,
         false,
+        true,
         observer,
     )?;
     Ok(summary)
@@ -116,6 +133,7 @@ fn visit(
     bytes: &mut u64,
     summary: &mut TreeSummary,
     copy: bool,
+    hash: bool,
     observer: &mut dyn FnMut(IoEvent),
 ) -> io::Result<()> {
     observer(IoEvent::Directory);
@@ -154,7 +172,9 @@ fn visit(
             if copy {
                 fs::create_dir(&target)?;
             }
-            visit(root, &path, &target, limits, bytes, summary, copy, observer)?;
+            visit(
+                root, &path, &target, limits, bytes, summary, copy, hash, observer,
+            )?;
         } else {
             let mut input = fs::File::open(&path)?;
             observer(IoEvent::Open);
@@ -168,7 +188,7 @@ fn visit(
             } else {
                 None
             };
-            let mut hash = Sha256::new();
+            let mut hash = hash.then(Sha256::new);
             let mut buffer = [0u8; 65536];
             let mut length = 0;
             loop {
@@ -184,7 +204,9 @@ fn visit(
                 if *bytes > limits.bytes {
                     return Err(io::Error::other("byte limit exceeded"));
                 }
-                hash.update(&buffer[..n]);
+                if let Some(hash) = &mut hash {
+                    hash.update(&buffer[..n]);
+                }
                 if let Some(out) = &mut output {
                     out.write_all(&buffer[..n])?;
                 }
@@ -202,7 +224,7 @@ fn visit(
             summary.insert(
                 key,
                 Entry {
-                    digest: Some(format!("{:x}", hash.finalize())),
+                    digest: hash.map(|hash| format!("{:x}", hash.finalize())),
                     executable: executable(&meta),
                 },
             );

@@ -11,7 +11,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
     io::{Read, Write},
-    path::Path,
+    path::{Path, PathBuf},
     process::Command,
     time::Duration,
 };
@@ -33,11 +33,27 @@ pub struct Export {
     pub dependencies: BTreeMap<String, String>,
     pub executables: BTreeSet<String>,
 }
+/// Exact repository inputs; callers choose cache ownership and coordination.
+#[derive(Clone, Copy)]
+pub struct RepositoryMaterial<'a> {
+    pub origin: &'a str,
+    pub repository: &'a Path,
+    pub commit: &'a str,
+    pub dependencies: &'a Path,
+}
 #[derive(Default)]
 struct Inventory {
     result: Export,
     entries: BTreeMap<String, links::Entry>,
     bytes: u64,
+    fetch_dependencies: bool,
+    scratch: PathBuf,
+}
+
+struct PreparedInventory {
+    _scratch: tempfile::TempDir,
+    input: PathBuf,
+    inventory: Inventory,
 }
 
 // Git for Windows does not accept Rust's verbatim canonical path spelling in
@@ -130,6 +146,7 @@ impl Git {
                 "http.lowSpeedTime=30",
             ])
             .env("GIT_TERMINAL_PROMPT", "0")
+            .env("GIT_NO_LAZY_FETCH", "1")
             .env("GIT_LFS_SKIP_SMUDGE", "1");
         for name in [
             "GIT_DIR",
@@ -243,14 +260,61 @@ impl Git {
         cache: &Path,
         destination: &Path,
     ) -> Result<Export> {
+        let material = RepositoryMaterial {
+            origin,
+            repository: repo,
+            commit,
+            dependencies: cache,
+        };
+        let prepared = self.prepare_inventory(material, cache, true)?;
+        self.publish_inventory(prepared, destination)
+    }
+
+    /// Obtain dependency objects before handing repository data to offline users.
+    /// Scratch belongs to the caller and is never a reusable material cache.
+    pub fn hydrate(&self, material: RepositoryMaterial<'_>, scratch: &Path) -> Result<Export> {
+        Ok(self
+            .prepare_inventory(material, scratch, true)?
+            .inventory
+            .result)
+    }
+
+    /// Export only locally present objects. Missing submodules/LFS objects fail;
+    /// this path cannot clone, fetch, configure LFS or write dependency caches.
+    pub fn export_offline(
+        &self,
+        material: RepositoryMaterial<'_>,
+        scratch: &Path,
+        destination: &Path,
+    ) -> Result<Export> {
+        let prepared = self.prepare_inventory(material, scratch, false)?;
+        self.publish_inventory(prepared, destination)
+    }
+
+    fn prepare_inventory(
+        &self,
+        material: RepositoryMaterial<'_>,
+        scratch: &Path,
+        fetch_dependencies: bool,
+    ) -> Result<PreparedInventory> {
+        let RepositoryMaterial {
+            origin,
+            repository: repo,
+            commit,
+            dependencies: cache,
+        } = material;
         ensure!(
             matches!(commit.len(), 40 | 64) && commit.bytes().all(|b| b.is_ascii_hexdigit()),
             "export requires an exact commit ID"
         );
-        let scratch = tempfile::tempdir_in(cache)?;
+        let scratch = tempfile::tempdir_in(scratch)?;
         let input = scratch.path().join("input");
         fs::create_dir(&input)?;
-        let mut inventory = Inventory::default();
+        let mut inventory = Inventory {
+            fetch_dependencies,
+            scratch: scratch.path().to_owned(),
+            ..Inventory::default()
+        };
         self.inventory(
             (origin, repo),
             commit,
@@ -259,6 +323,19 @@ impl Git {
             &mut inventory,
             0,
         )?;
+        Ok(PreparedInventory {
+            _scratch: scratch,
+            input,
+            inventory,
+        })
+    }
+
+    fn publish_inventory(&self, prepared: PreparedInventory, destination: &Path) -> Result<Export> {
+        let PreparedInventory {
+            _scratch,
+            input,
+            inventory,
+        } = prepared;
         let mut result = Export {
             dependencies: inventory.result.dependencies.clone(),
             executables: BTreeSet::new(),
@@ -347,14 +424,33 @@ impl Git {
                     if header[0] == "040000" {
                         continue;
                     }
-                    let child = self.submodule_origin(origin, repo, commit, name, cache)?;
+                    let child =
+                        self.submodule_origin(origin, repo, commit, name, &inventory.scratch)?;
                     let child_cache = cache
                         .join("submodules")
                         .join(tree::digest(child.as_bytes())?);
-                    fs::create_dir_all(&child_cache)?;
                     let child_repo = child_cache.join("repo");
-                    self.repository(&child, &child_repo)?;
-                    let resolved = self.resolve(&child_repo, header[2], true)?;
+                    let resolved = if inventory.fetch_dependencies {
+                        fs::create_dir_all(&child_cache)?;
+                        self.repository(&child, &child_repo)?;
+                        self.resolve(&child_repo, header[2], true)?
+                    } else {
+                        ensure!(
+                            plain_metadata(&child_repo)?.is_dir(),
+                            "submodule unavailable offline"
+                        );
+                        let resolved = self.text(
+                            &child_repo,
+                            &[
+                                "rev-parse",
+                                "--verify",
+                                "--end-of-options",
+                                &format!("{}^{{commit}}", header[2]),
+                            ],
+                        )?;
+                        ensure!(resolved == header[2], "submodule commit mismatch");
+                        resolved
+                    };
                     inventory
                         .result
                         .dependencies
@@ -394,7 +490,9 @@ impl Git {
                         status.status.success() && fs::metadata(&dest)?.len() == size,
                         "Git blob unavailable"
                     );
-                    if let Some(oid) = self.expand_lfs(repo, commit, &dest)? {
+                    if let Some(oid) =
+                        self.expand_lfs(repo, commit, &dest, inventory.fetch_dependencies)?
+                    {
                         inventory
                             .result
                             .dependencies
@@ -475,12 +573,36 @@ impl Git {
             } else {
                 locator
             };
-            result = Some(normalize(&locator)?);
+            // Dependency cache identity must not depend on the origin filesystem
+            // still existing at export time. URL parsing normalizes relative URL
+            // segments without canonicalizing a local transport path.
+            let normalized = if Path::new(&locator).is_absolute() {
+                url::Url::from_file_path(&locator)
+                    .map_err(|_| anyhow::anyhow!("invalid local submodule origin"))?
+                    .to_string()
+            } else if let Ok(url) = url::Url::parse(&locator)
+                && url.scheme() == "file"
+            {
+                ensure!(
+                    url.query().is_none() && url.fragment().is_none(),
+                    "invalid submodule file URL"
+                );
+                url.to_string()
+            } else {
+                normalize(&locator)?
+            };
+            result = Some(normalized);
         }
         result.context("missing submodule origin")
     }
 
-    fn expand_lfs(&self, repo: &Path, commit: &str, file: &Path) -> Result<Option<String>> {
+    fn expand_lfs(
+        &self,
+        repo: &Path,
+        commit: &str,
+        file: &Path,
+        fetch: bool,
+    ) -> Result<Option<String>> {
         let mut head = Vec::new();
         fs::File::open(file)?.take(1025).read_to_end(&mut head)?;
         if !head.starts_with(b"version https://git-lfs.github.com/spec/v1") {
@@ -517,6 +639,7 @@ impl Git {
             .join(&oid[2..4])
             .join(oid);
         if !object.try_exists()? {
+            ensure!(fetch, "LFS object unavailable offline");
             self.run(
                 repo,
                 &[

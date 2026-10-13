@@ -1,4 +1,7 @@
-use saucepan::utils::{source::git::Git, tree::TreeLimits};
+use saucepan::utils::{
+    source::git::{Git, RepositoryMaterial},
+    tree::TreeLimits,
+};
 use std::{fs, path::Path, process::Command, time::Duration};
 
 fn git(repo: &Path, args: &[&str]) -> String {
@@ -201,4 +204,73 @@ fn empty_export_and_broken_committed_link() {
             .is_err()
     );
     assert!(!out.exists());
+}
+
+#[test]
+fn offline_export_requires_hydrated_dependencies_and_never_repairs_them() {
+    let tmp = tempfile::tempdir().unwrap();
+    let origin = tmp.path().join("origin");
+    let child = tmp.path().join("dependency");
+    init(&child);
+    fs::write(child.join("child"), b"dependency").unwrap();
+    commit(&child);
+    init(&origin);
+    git(&origin, &["lfs", "install", "--local"]);
+    git(&origin, &["lfs", "track", "*.dat"]);
+    fs::write(origin.join("payload.dat"), b"LFS dependency").unwrap();
+    git(
+        &origin,
+        &["submodule", "add", child.to_str().unwrap(), "dep"],
+    );
+    let revision = commit(&origin);
+    let cache = tmp.path().join("cache");
+    fs::create_dir(&cache).unwrap();
+    let repo = cache.join("repo");
+    let utility = Git::default();
+    utility.repository(origin.to_str().unwrap(), &repo).unwrap();
+    let origin_url = saucepan::utils::source::git::normalize(origin.to_str().unwrap()).unwrap();
+    let material = RepositoryMaterial {
+        origin: &origin_url,
+        repository: &repo,
+        commit: &revision,
+        dependencies: &cache,
+    };
+    let failed = tmp.path().join("before-hydration");
+    assert!(
+        utility
+            .export_offline(material, tmp.path(), &failed)
+            .is_err()
+    );
+    assert!(!cache.join("submodules").exists());
+    assert!(!failed.exists());
+    let hydrated = utility.hydrate(material, tmp.path()).unwrap();
+    let output = tmp.path().join("offline");
+    // Both remotes disappear. Every dependency needed by export must already exist.
+    fs::rename(&origin, tmp.path().join("offline-origin")).unwrap();
+    fs::rename(&child, tmp.path().join("offline-child")).unwrap();
+    let exported = utility
+        .export_offline(material, tmp.path(), &output)
+        .unwrap();
+    assert_eq!(exported.dependencies, hydrated.dependencies);
+    assert_eq!(
+        fs::read(output.join("payload.dat")).unwrap(),
+        b"LFS dependency"
+    );
+    assert_eq!(fs::read(output.join("dep/child")).unwrap(), b"dependency");
+    let oid = &hydrated.dependencies["lfs:payload.dat"];
+    let object = repo
+        .join("lfs/objects")
+        .join(&oid[..2])
+        .join(&oid[2..4])
+        .join(oid);
+    fs::remove_file(&object).unwrap();
+    // Restore reachable remotes; offline export must still refuse missing material.
+    fs::rename(tmp.path().join("offline-origin"), &origin).unwrap();
+    fs::rename(tmp.path().join("offline-child"), &child).unwrap();
+    assert!(
+        utility
+            .export_offline(material, tmp.path(), &tmp.path().join("missing-lfs"))
+            .is_err()
+    );
+    assert!(!object.exists());
 }

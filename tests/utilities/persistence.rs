@@ -79,3 +79,71 @@ fn locks_coordinate_processes_and_release() {
     drop(two);
     let _exclusive = LockGuard::acquire(&path, LockMode::Exclusive, Duration::ZERO).unwrap();
 }
+
+#[test]
+fn delivery_child() {
+    if let Some(root) = std::env::var_os("SAUCEPAN_TEST_DELIVERY") {
+        let root = std::path::PathBuf::from(root);
+        let id = std::env::var("SAUCEPAN_TEST_DELIVERY_ID").unwrap();
+        let result = saucepan::utils::fs::staged_directory_coordinated(
+            &root.join("destination"),
+            &root.join("delivery.lock"),
+            Duration::from_secs(10),
+            |stage| fs::write(stage.join("winner"), &id),
+        );
+        let outcome = match result {
+            Ok(()) => "published",
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => "occupied",
+            Err(error) => panic!("{error}"),
+        };
+        fs::write(root.join(id), outcome).unwrap();
+    }
+}
+
+#[test]
+fn cooperating_deliveries_preserve_the_winner() {
+    let root = tempfile::tempdir().unwrap();
+    let mut children = Vec::new();
+    for id in ["a", "b"] {
+        children.push(
+            Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "persistence::delivery_child"])
+                .env("SAUCEPAN_TEST_DELIVERY", root.path())
+                .env("SAUCEPAN_TEST_DELIVERY_ID", id)
+                .spawn()
+                .unwrap(),
+        );
+    }
+    for mut child in children {
+        assert!(child.wait().unwrap().success());
+    }
+    let mut results: Vec<_> = ["a", "b"]
+        .map(|id| fs::read_to_string(root.path().join(id)).unwrap())
+        .into();
+    results.sort();
+    assert_eq!(results, ["occupied", "published"]);
+    let winner = fs::read_to_string(root.path().join("destination/winner")).unwrap();
+    assert_eq!(
+        fs::read_to_string(root.path().join(winner)).unwrap(),
+        "published"
+    );
+}
+
+#[test]
+fn destination_preflight_rejects_overlap_and_preserves_occupied_paths() {
+    use saucepan::utils::path::disjoint_destination;
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    fs::create_dir(&source).unwrap();
+    assert!(disjoint_destination(&source, &source.join("inside")).is_err());
+    assert!(disjoint_destination(&source, root.path()).is_err());
+    assert!(disjoint_destination(&source, &source).is_err());
+    let destination = root.path().join("out");
+    assert_eq!(
+        disjoint_destination(&source, &destination).unwrap(),
+        root.path().canonicalize().unwrap().join("out")
+    );
+    fs::write(&destination, b"occupied").unwrap();
+    assert!(disjoint_destination(&source, &destination).is_err());
+    assert_eq!(fs::read(destination).unwrap(), b"occupied");
+}

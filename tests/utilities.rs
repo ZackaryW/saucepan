@@ -6,5 +6,7 @@ mod git;
 mod persistence;
 #[path = "utilities/process.rs"]
 mod process;
+#[path = "utilities/transfer.rs"]
+mod transfer;
 #[path = "utilities/tree.rs"]
 mod tree;

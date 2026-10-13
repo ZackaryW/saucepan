@@ -10,12 +10,13 @@ use crate::{
         archive::extract_zip,
         lock::{LockGuard, LockMode},
         path::relative_path,
+        transfer::copy_bounded,
         tree::{self, TreeLimits},
     },
 };
 use anyhow::{Context, Result, bail, ensure};
 use serde::Deserialize;
-use std::{collections::BTreeMap, fs, io::Read, time::Duration};
+use std::{collections::BTreeMap, fs, time::Duration};
 
 #[derive(Deserialize)]
 struct Release {
@@ -287,19 +288,14 @@ impl Store {
         let mut response = agent.get(&url).header("User-Agent", "saucepan").call()?;
         let asset = temp.path().join("download");
         let mut output = fs::File::create(&asset)?;
-        let count = std::io::copy(
-            &mut response
-                .body_mut()
-                .as_reader()
-                .take(TreeLimits::default().bytes + 1),
+        let transferred = copy_bounded(
+            response.body_mut().as_reader(),
             &mut output,
+            TreeLimits::default().bytes,
+            true,
         )?;
-        ensure!(
-            count <= TreeLimits::default().bytes,
-            "download byte limit exceeded"
-        );
         drop(output);
-        let digest = tree::digest(fs::File::open(&asset)?)?;
+        let digest = transferred.sha256.context("download digest missing")?;
         if let Some(expected) = expected {
             let expected = expected
                 .strip_prefix("sha256:")

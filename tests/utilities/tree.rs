@@ -1,6 +1,33 @@
 use saucepan::utils::tree::{TreeLimits, copy_tree, inspect};
 use std::fs;
 #[test]
+fn unhashed_copy_preserves_structure_limits_and_independence() {
+    use saucepan::utils::tree::copy_tree_unhashed;
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    fs::create_dir_all(source.join("nested")).unwrap();
+    fs::write(source.join("nested/file"), b"original").unwrap();
+    let out = root.path().join("out");
+    copy_tree_unhashed(&source, &out, TreeLimits::default()).unwrap();
+    assert_eq!(
+        inspect(&source, TreeLimits::default()).unwrap(),
+        inspect(&out, TreeLimits::default()).unwrap()
+    );
+    fs::write(source.join("nested/file"), b"changed").unwrap();
+    assert_eq!(fs::read(out.join("nested/file")).unwrap(), b"original");
+    assert!(
+        copy_tree_unhashed(
+            &source,
+            &root.path().join("limited"),
+            TreeLimits {
+                entries: 8,
+                bytes: 2
+            }
+        )
+        .is_err()
+    );
+}
+#[test]
 fn tree_copy_is_bounded_and_independent() {
     let temp = tempfile::tempdir().unwrap();
     let input = temp.path().join("in");

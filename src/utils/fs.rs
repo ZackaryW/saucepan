@@ -1,5 +1,19 @@
 use std::{fs::File, io, path::Path};
 
+/// Serialize cooperating publishers using a stable caller-supplied lock outside
+/// the destination. Keep the lock file: unlinking it allows two lock identities.
+/// The parent must be trusted; this is not protection from arbitrary OS writers.
+pub fn staged_directory_coordinated(
+    path: &Path,
+    lock_path: &Path,
+    timeout: std::time::Duration,
+    prepare: impl FnOnce(&Path) -> io::Result<()>,
+) -> io::Result<()> {
+    let _guard =
+        super::lock::LockGuard::acquire(lock_path, super::lock::LockMode::Exclusive, timeout)?;
+    staged_directory(path, prepare)
+}
+
 /// Single-file replacement, not a transaction or directory durability guarantee.
 pub fn atomic_write(
     path: &Path,

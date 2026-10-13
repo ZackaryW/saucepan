@@ -3,6 +3,38 @@ use std::{
     path::{Path, PathBuf},
 };
 
+/// Resolve a new destination under an existing parent and reject either direction
+/// of overlap with existing source data. Does not create or reserve anything.
+pub fn disjoint_destination(source: &Path, destination: &Path) -> io::Result<PathBuf> {
+    let invalid = || {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "source and destination must be disjoint",
+        )
+    };
+    let name = match destination.components().next_back() {
+        Some(std::path::Component::Normal(name)) => name,
+        _ => return Err(invalid()),
+    };
+    let parent = destination
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let destination = parent.canonicalize()?.join(name);
+    let source = source.canonicalize()?;
+    if destination.starts_with(&source) || source.starts_with(&destination) {
+        return Err(invalid());
+    }
+    match destination.symlink_metadata() {
+        Ok(_) => Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "destination occupied",
+        )),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(destination),
+        Err(error) => Err(error),
+    }
+}
+
 /// Strict portable relative names. Existing filesystem components require separate checks.
 pub fn relative_path(value: &str) -> io::Result<PathBuf> {
     let bad = || io::Error::new(io::ErrorKind::InvalidInput, "invalid relative path");
