@@ -13,6 +13,7 @@ use anyhow::{Result, ensure};
 use std::{collections::BTreeMap, fs};
 pub(crate) mod git;
 mod remote;
+pub(crate) mod retrieve;
 
 #[derive(Debug, Clone, Default)]
 pub struct AcquireOptions {

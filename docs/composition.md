@@ -1,7 +1,8 @@
 # Retrieval and acquisition contracts
 
-The new request models separate three policy decisions. Runtime integration is
-in progress; these examples describe the typed contracts, not available CLI commands.
+The new request models separate three policy decisions. Native inline fresh
+retrieval is available through `Retriever`; managed retrieval, acquisition
+composition and new CLI commands are still being integrated.
 
 | Policy | Responsibility | Managed default |
 | --- | --- | --- |
@@ -57,6 +58,19 @@ Native handles are `core::retrieval::RetrievedResource` (`source_path()`) and
 `core::store::AcquiredResource` (`path()`). Their fields are private and they do
 not implement deserialization or cloning. Their `descriptor()` references expose
 observational metadata separately from native lifetime ownership.
+
+For fresh native retrieval, pass a `RetrieveRequest` to
+`core::retrieval::Retriever::retrieve(&request)`. This entry point accepts inline
+temporary/no-store requests without opening a store or locating a home directory.
+It rejects registered/cached requests that require an owning store. Keep temporary
+handles alive while reading their paths. No-store publication transfers ownership
+to the caller. Git delivery is a directory containing `repo` and dependencies;
+`source_path()` identifies the bare `repo` directory inside it. Downloads and local
+files use the exact requested destination filename. Parent directories must exist.
+
+The native example `cargo run --example retrieve-source -- REQUEST.json` inspects
+source metadata while retaining the handle. It emits a descriptor only for
+caller-owned results; temporary paths are not advertised after their owner exits.
 
 Only managed outputs accept `revision_policy`. `{"history":"none"}` means keep
 the newest revision; `{"history":"latest","keep":3}` includes the newest among

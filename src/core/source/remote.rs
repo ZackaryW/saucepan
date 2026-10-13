@@ -34,7 +34,7 @@ struct ReleaseAsset {
     digest: Option<String>,
 }
 
-fn agent() -> ureq::Agent {
+pub(super) fn agent() -> ureq::Agent {
     ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(60)))
         .build()
@@ -65,7 +65,11 @@ fn encode_path(value: &str) -> String {
         })
         .collect()
 }
-fn discover(source: &Source, selector: &Selector, options: &AcquireOptions) -> Result<Resolved> {
+pub(super) fn discover(
+    source: &Source,
+    selector: &Selector,
+    options: &AcquireOptions,
+) -> Result<Resolved> {
     let agent = agent();
     match source {
         Source::GithubRelease { repo } => {

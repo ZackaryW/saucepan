@@ -1,5 +1,30 @@
 use std::{fs::File, io, path::Path};
 
+/// Publish a completed directory from the same filesystem under cooperative
+/// serialization. The caller retains ownership of prepared data on failure.
+pub fn publish_prepared_directory(
+    prepared: &Path,
+    destination: &Path,
+    lock_path: &Path,
+) -> io::Result<()> {
+    let _guard = super::lock::LockGuard::acquire(
+        lock_path,
+        super::lock::LockMode::Exclusive,
+        std::time::Duration::from_secs(30),
+    )?;
+    match destination.symlink_metadata() {
+        Ok(_) => {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "destination occupied",
+            ));
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
+    std::fs::rename(prepared, destination)
+}
+
 /// Serialize cooperating publishers using a stable caller-supplied lock outside
 /// the destination. Keep the lock file: unlinking it allows two lock identities.
 /// The parent must be trusted; this is not protection from arbitrary OS writers.

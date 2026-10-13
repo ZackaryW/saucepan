@@ -307,6 +307,7 @@ impl Git {
             matches!(commit.len(), 40 | 64) && commit.bytes().all(|b| b.is_ascii_hexdigit()),
             "export requires an exact commit ID"
         );
+        self.run(repo, &["fsck", "--strict", "--no-reflogs", commit])?;
         let scratch = tempfile::tempdir_in(scratch)?;
         let input = scratch.path().join("input");
         fs::create_dir(&input)?;
@@ -455,6 +456,10 @@ impl Git {
                         .result
                         .dependencies
                         .insert(logical.clone(), resolved.clone());
+                    self.run(
+                        &child_repo,
+                        &["fsck", "--strict", "--no-reflogs", &resolved],
+                    )?;
                     self.inventory(
                         (&child, &child_repo),
                         &resolved,
@@ -640,6 +645,17 @@ impl Git {
             .join(oid);
         if !object.try_exists()? {
             ensure!(fetch, "LFS object unavailable offline");
+            // A command-line -c override is inherited by the local LFS remote
+            // helper and incorrectly redirects its object lookup to our cache.
+            // Use repository-local configuration, restoring it before the
+            // repository can be delivered to a different directory.
+            let config = self.run(repo, &["config", "--local", "--null", "--list"])?;
+            let previous = config
+                .split(|byte| *byte == 0)
+                .filter_map(|entry| entry.strip_prefix(b"lfs.storage\n"))
+                .map(std::str::from_utf8)
+                .collect::<Result<Vec<_>, _>>()?;
+            ensure!(previous.len() <= 1, "ambiguous LFS storage configuration");
             self.run(
                 repo,
                 &[
@@ -649,7 +665,7 @@ impl Git {
                     storage.to_str().context("invalid LFS storage")?,
                 ],
             )?;
-            self.run(
+            let fetched = self.run(
                 repo,
                 &[
                     "-c",
@@ -659,7 +675,14 @@ impl Git {
                     "origin",
                     commit,
                 ],
-            )?;
+            );
+            let restored = if let Some(previous) = previous.first() {
+                self.run(repo, &["config", "--local", "lfs.storage", previous])
+            } else {
+                self.run(repo, &["config", "--local", "--unset-all", "lfs.storage"])
+            };
+            restored.context("restore repository LFS configuration")?;
+            fetched?;
         }
         ensure!(
             plain_metadata(&object)?.len() == size

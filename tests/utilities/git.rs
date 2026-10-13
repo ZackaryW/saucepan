@@ -244,6 +244,7 @@ fn offline_export_requires_hydrated_dependencies_and_never_repairs_them() {
     assert!(!cache.join("submodules").exists());
     assert!(!failed.exists());
     let hydrated = utility.hydrate(material, tmp.path()).unwrap();
+    assert!(!git(&repo, &["config", "--local", "--list"]).contains("lfs.storage="));
     let output = tmp.path().join("offline");
     // Both remotes disappear. Every dependency needed by export must already exist.
     fs::rename(&origin, tmp.path().join("offline-origin")).unwrap();
