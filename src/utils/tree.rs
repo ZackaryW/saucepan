@@ -47,7 +47,7 @@ pub fn digest(reader: impl Read) -> io::Result<String> {
         }
         hash.update(&buffer[..n]);
     }
-    Ok(format!("{:x}", hash.finalize()))
+    Ok(hex::encode(hash.finalize()))
 }
 pub fn executable(meta: &fs::Metadata) -> bool {
     #[cfg(unix)]
@@ -224,7 +224,7 @@ fn visit(
             summary.insert(
                 key,
                 Entry {
-                    digest: hash.map(|hash| format!("{:x}", hash.finalize())),
+                    digest: hash.map(|hash| hex::encode(hash.finalize())),
                     executable: executable(&meta),
                 },
             );

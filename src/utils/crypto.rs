@@ -1,7 +1,7 @@
 //! Byte-oriented cryptographic primitives. Callers own key custody, domain labels,
 //! payload serialization, and record contracts; no application policy lives here.
 use hmac::{Hmac, Mac};
-use sha2_crypto::Sha256;
+use sha2::Sha256;
 use std::io::{self, Read};
 use zeroize::Zeroizing;
 
@@ -64,17 +64,13 @@ fn authentication_error() -> io::Error {
 mod tests {
     use super::*;
 
-    fn hex(bytes: &[u8]) -> String {
-        bytes.iter().map(|b| format!("{b:02x}")).collect()
-    }
-
     #[test]
     fn hkdf_matches_rfc5869_case_one_and_separates_contexts() {
         let salt: Vec<u8> = (0..=12).collect();
         let info: Vec<u8> = (240..=249).collect();
         let key = derive_key::<42>(&[0x0b; 22], Some(&salt), &info).unwrap();
         assert_eq!(
-            hex(key.as_ref()),
+            hex::encode(key.as_ref()),
             "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865"
         );
         assert_ne!(
@@ -89,7 +85,7 @@ mod tests {
         let key = [0x0b; 20];
         let tag = authenticate(&key, b"Hi There".as_slice()).unwrap();
         assert_eq!(
-            hex(&tag),
+            hex::encode(tag),
             "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7"
         );
         verify(&key, b"Hi There".as_slice(), &tag).unwrap();

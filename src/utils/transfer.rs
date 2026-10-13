@@ -43,6 +43,6 @@ pub fn copy_bounded(
     }
     Ok(Transferred {
         bytes,
-        sha256: sha256.map(|hash| format!("{:x}", hash.finalize())),
+        sha256: sha256.map(|hash| hex::encode(hash.finalize())),
     })
 }

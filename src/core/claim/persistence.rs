@@ -579,7 +579,7 @@ pub fn record_path(identity: Identity) -> Result<String> {
     }
 }
 pub fn digest(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
+    hex::encode(Sha256::digest(bytes))
 }
 fn transaction_identity() -> Identity {
     Identity {
