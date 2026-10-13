@@ -3,7 +3,9 @@ use crate::{
     utils::path::relative_path,
 };
 use anyhow::{Result, ensure};
+pub mod catalog;
 pub mod composition;
+pub mod resolve;
 pub fn validate(request: &Request) -> Result<()> {
     let Eviction::Latest { keep } = request.policies.eviction;
     ensure!(keep > 0, "retention must be positive");

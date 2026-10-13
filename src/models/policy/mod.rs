@@ -1,6 +1,11 @@
 use serde::{Deserialize, Serialize};
 mod composition;
+pub mod effective;
+pub mod record;
+pub mod references;
 pub use composition::{Freshness, PayloadVerification, RevisionPolicy, UpdatePolicy};
+pub use record::{PolicyDefinition, PolicyRecord};
+pub use references::PolicyRefs;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
