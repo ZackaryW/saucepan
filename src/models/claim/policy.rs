@@ -58,7 +58,7 @@ impl ReclaimPolicy {
     }
 }
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct Effective {
     pub output: Policies,
     pub reclaim: ReclaimPolicy,

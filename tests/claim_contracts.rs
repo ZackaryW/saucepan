@@ -312,6 +312,9 @@ fn registry_and_claim_round_trip_validate_the_new_contract() {
     };
     registry.validate().unwrap();
     let encoded = serde_json::to_value(&registry).unwrap();
+    let mut incomplete = encoded.clone();
+    incomplete.as_object_mut().unwrap().remove("policy_refs");
+    assert!(serde_json::from_value::<Registry>(incomplete).is_err());
     assert!(encoded.get("policies").is_none());
     let mut old_registry = encoded.clone();
     old_registry["policies"] = json!({});
@@ -334,7 +337,12 @@ fn registry_and_claim_round_trip_validate_the_new_contract() {
         scope: scope("project-a"),
         entry_uuid: Uuid::new_v4(),
         request: saucepan::models::store::OutputPlan {
-            adopted: None,
+            adopted: Some(Box::new(
+                saucepan::models::claim::adopted::AdoptedPolicies::from_plan(
+                    &Default::default(),
+                    Default::default(),
+                ),
+            )),
             source_uuid: Uuid::new_v4(),
             selector: Selector::Local,
             selection: Default::default(),
@@ -352,6 +360,9 @@ fn registry_and_claim_round_trip_validate_the_new_contract() {
         serde_json::to_value(&claim.request).unwrap()
     );
     let decoded: Claim = serde_json::from_value(serde_json::to_value(&claim).unwrap()).unwrap();
+    let mut incomplete = serde_json::to_value(&claim).unwrap();
+    incomplete.as_object_mut().unwrap().remove("policy_refs");
+    assert!(serde_json::from_value::<Claim>(incomplete).is_err());
     let mut old_claim = serde_json::to_value(&claim).unwrap();
     assert!(old_claim.get("overrides").is_none());
     old_claim["overrides"] = json!({});

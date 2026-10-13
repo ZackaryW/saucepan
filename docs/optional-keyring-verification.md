@@ -1,5 +1,7 @@
 # Optional keyring verification
 
+Historical checkpoint: these results predate the flat-policy contract. Use [flat-policy verification](policy-verification.md) for current evidence; earlier harness payloads are not supported inputs.
+
 Verified on Windows x86_64 with Rust 1.98.1 on 2026-10-10. New stores use basic
 checksum integrity; protected metadata and independently optional app credentials
 remain supported. This report supersedes earlier setup instructions requiring a

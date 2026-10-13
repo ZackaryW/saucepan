@@ -95,7 +95,6 @@ impl From<Scope> for String {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Claim {
-    #[serde(default)]
     pub policy_refs: crate::models::policy::PolicyRefs,
     pub uuid: Uuid,
     pub scope: Scope,
@@ -115,7 +114,6 @@ impl Claim {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Registry {
-    #[serde(default)]
     pub policy_refs: crate::models::policy::PolicyRefs,
     pub app: Uuid,
     pub revision: u64,

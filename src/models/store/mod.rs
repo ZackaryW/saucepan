@@ -70,7 +70,7 @@ impl Default for SelectionPolicy {
     }
 }
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct Selection {
     pub platform: Option<Platform>,
     pub filters: Vec<AssetFilter>,

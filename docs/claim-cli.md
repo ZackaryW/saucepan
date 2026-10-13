@@ -57,8 +57,7 @@ Ensure returns `claim`, `view`, and `acquired`. A contained directory can return
 the same owner plus `view.relative`. `run-claim` retains the whole output while the
 child uses `SAUCEPAN_RESOURCE_DIR`. Ordinary paths and JSON results do not retain
 a lease. `acquire --app APP_UUID --scope SCOPE` remains supported for complete
-acquisition requests with explicit policy values; it does not introduce an older
-persisted schema. Prefer `ensure-claim` for registered defaults.
+acquisition requests with explicit policy references. Both use the common resolver; `ensure-claim` also returns covered-view ownership.
 For a directory claim, add `--relative packages/example` only when that folder
 exists in the owning output; a whole-output or single-file claim needs no relative
 view.

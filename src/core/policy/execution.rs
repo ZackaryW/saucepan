@@ -397,6 +397,17 @@ impl Store {
     }
 }
 impl AppSession {
+    pub fn open_caller_referenced(
+        &self,
+        input: &Retrieval,
+        descriptor: &crate::models::retrieval::RetrievedDescriptor,
+        portable: &PolicyCatalog,
+        scope: Option<&Scope>,
+    ) -> Result<RetrievedResource> {
+        self.store
+            .open_caller_referenced(input, descriptor, portable, scope)
+    }
+
     pub fn retrieve_referenced(
         &self,
         input: &Retrieval,

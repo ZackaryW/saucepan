@@ -1,14 +1,13 @@
 # Native scoped consumer
 
-For the flat-policy native flow, use `AppSession::ensure_referenced` with
-`models::claim::request::Ensure`: supply an explicit `scope`, source UUID,
+For the flat-policy native flow, use `AppSession::ensure` with
+`models::claim::EnsureRequest`: supply an explicit `scope`, source UUID,
 selector, content selection, optional context and registered `policy_refs`.
 Use `selection.filter_refs` for ordered release asset filters. Obtain a guarded
 covered-view lease from the returned claim/view using the existing session API;
 the claim response's path alone does not extend the files' lifetime.
 
-The reference flow is covered by `tests/policy_claims.rs`. The standalone example
-below still uses the earlier request DTO until the public-contract cutover.
+The standalone example and `tests/policy_acceptance.rs` use that same canonical contract. The acceptance fixture combines two scopes, explicit policy adoption, Git subpath updates, guarded copies, reclaim, exact recovery and a root-free no-store fetch.
 
 Build the Rust example with `cargo build --offline --example scoped-consumer`.
 Register the application/source using [the CLI examples](claim-cli.md), then

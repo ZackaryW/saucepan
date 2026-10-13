@@ -1,5 +1,7 @@
 # Claim registry verification
 
+Historical checkpoint: these results predate the flat-policy contract. Use [flat-policy verification](policy-verification.md) for current evidence; earlier harness payloads are not supported inputs.
+
 This report records the earlier protected-only checkpoint. Current ordinary
 acceptance uses basic integrity without keyring access; see
 [optional keyring verification](optional-keyring-verification.md) for the later

@@ -17,7 +17,7 @@ pub enum SourceInput {
 
 /// Retrieval selects an original asset; folder/format/bin belong to acquisition.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct AssetSelection {
     pub platform: Option<Platform>,
     pub filters: Vec<AssetFilter>,
@@ -28,9 +28,7 @@ pub struct AssetSelection {
 #[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CachePolicy {
     Cached {
-        #[serde(default)]
         freshness: Option<Freshness>,
-        #[serde(default)]
         allow_stale: bool,
     },
     Temporary {},
@@ -50,15 +48,11 @@ impl Default for CachePolicy {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RetrievalPlan {
-    #[serde(default)]
     pub provenance: Vec<crate::models::policy::effective::PolicyEvidence>,
     pub source: SourceInput,
     pub selector: Selector,
-    #[serde(default)]
     pub asset: AssetSelection,
-    #[serde(default)]
     pub cache: CachePolicy,
-    #[serde(default)]
     pub verification: PayloadVerification,
     pub expected_sha256: Option<String>,
 }

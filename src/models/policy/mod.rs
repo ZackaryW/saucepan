@@ -22,7 +22,7 @@ pub enum Protection {
     UseableApp,
 }
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct Policies {
     pub identical: Identical,
     pub revision: RevisionPolicy,

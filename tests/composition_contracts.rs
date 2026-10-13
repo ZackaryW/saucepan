@@ -9,12 +9,32 @@ use saucepan::{
 use serde_json::json;
 
 fn retrieval(cache: CachePolicy) -> RetrievalPlan {
-    let mut request: RetrievalPlan = serde_json::from_value(json!({
-        "source": {"kind":"inline", "source":{"type":"url", "url":"https://example.invalid/tool.zip"}},
-        "selector":{"type":"url"}
-    })).unwrap();
-    request.cache = cache;
-    request
+    RetrievalPlan {
+        provenance: vec![],
+        source: saucepan::models::retrieval::SourceInput::Inline {
+            source: saucepan::models::source::Source::Url {
+                url: "https://example.invalid/tool.zip".into(),
+            },
+        },
+        selector: saucepan::models::store::Selector::Url,
+        asset: Default::default(),
+        cache,
+        verification: Default::default(),
+        expected_sha256: None,
+    }
+}
+
+#[test]
+fn persisted_retrieval_evidence_does_not_fill_missing_fields() {
+    let value = serde_json::to_value(retrieval(CachePolicy::default())).unwrap();
+    for field in ["provenance", "asset", "cache", "verification"] {
+        let mut incomplete = value.clone();
+        incomplete.as_object_mut().unwrap().remove(field);
+        assert!(
+            serde_json::from_value::<RetrievalPlan>(incomplete).is_err(),
+            "{field}"
+        );
+    }
 }
 
 #[test]

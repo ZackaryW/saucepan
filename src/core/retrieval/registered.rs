@@ -25,6 +25,16 @@ pub struct RegisteredAppRetriever {
     session: AppSession,
 }
 impl RegisteredRetriever {
+    pub fn open_caller_referenced(
+        &self,
+        input: &crate::models::policy::requests::Retrieval,
+        descriptor: &crate::models::retrieval::RetrievedDescriptor,
+        catalog: &crate::core::policy::catalog::PolicyCatalog,
+    ) -> Result<RetrievedResource> {
+        self.store
+            .open_caller_referenced(input, descriptor, catalog, None)
+    }
+
     pub fn retrieve_referenced(
         &self,
         input: &crate::models::policy::requests::Retrieval,
@@ -76,6 +86,17 @@ impl RegisteredRetriever {
     }
 }
 impl RegisteredAppRetriever {
+    pub fn open_caller_referenced(
+        &self,
+        input: &crate::models::policy::requests::Retrieval,
+        descriptor: &crate::models::retrieval::RetrievedDescriptor,
+        catalog: &crate::core::policy::catalog::PolicyCatalog,
+        scope: Option<&Scope>,
+    ) -> Result<RetrievedResource> {
+        self.session
+            .open_caller_referenced(input, descriptor, catalog, scope)
+    }
+
     pub fn retrieve_referenced(
         &self,
         input: &crate::models::policy::requests::Retrieval,

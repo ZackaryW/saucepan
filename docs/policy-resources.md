@@ -146,3 +146,5 @@ Omitting it uses attached defaults, then metadata verification. The convenience
 leaf definition; combining it with `--policy` is rejected. `verify UUID` selects
 full verification through that same route. These read-time choices never adopt
 policies or rewrite retrieval/acquisition evidence.
+
+Managed refresh and stale choices also use policy references; the former global flags are removed. Native path mode conveniences compile to transient verification definitions through the same resolver. Composed outputs preserve both stages' verified definition evidence for replay. Persisted application, source and output records must be complete; earlier missing-field layouts are rejected.

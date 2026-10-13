@@ -2,9 +2,10 @@
 
 The [repository README](../README.md) introduces the current Rust implementation.
 The [main OpenSpec specs](../openspec/specs/README.md) define the synchronized
-contract. The [composition guide](composition.md) describes the new retrieval and
-acquisition APIs; their active `compose-retrieval-and-acquisition` change awaits
-synchronization and archive.
+contract before the active changes. The [composition guide](composition.md) and
+[policy guide](policy-resources.md) describe the implemented flat contract.
+`compose-retrieval-and-acquisition` must be synchronized/archived before
+`flatten-policy-resources`; neither is archived by this implementation.
 [Archived changes](../openspec/changes/archive/README.md) preserve decisions at
 their original checkpoints; they are not alternative current contracts.
 
@@ -12,6 +13,7 @@ their original checkpoints; they are not alternative current contracts.
 
 | Topic | Guide |
 | --- | --- |
+| Immutable policy definitions, UUID lookup and explicit adoption | [Policy resources](policy-resources.md) |
 | Retrieval, copied results, fresh delivery and independent policies | [Composition](composition.md) |
 | Default store, anonymous lookup and optional app identity | [Source discovery](source-query.md) |
 | Registration, scoped claims, credentials and CLI errors | [Claim CLI](claim-cli.md) |
@@ -42,50 +44,25 @@ earlier layouts are not migrated and old-reader compatibility is not promised.
 
 ## Verification evidence
 
-[Composition verification](composition-verification.md) records the 2026-10-13
-Windows suite, traced Git update flow and fresh ZIP/Git process consumers.
-
-[Optional keyring verification](optional-keyring-verification.md) records the
-dated basic-mode two-build release/bootstrap/update acceptance and separately
-selected Windows native-custody checks.
-
-[Claim registry verification](claim-verification.md) records a Windows x86_64
-checkpoint using the current authenticated layout. Its counts and binary digests
-belong to that dated run, before the later source-query CLI changes. Relevant
-current checks are:
+[Flat-policy verification](policy-verification.md) records the current Windows
+checks and the combined two-scope Git consumer fixture. Run:
 
 ```powershell
-cargo test --offline --test claim_acceptance
-cargo test --offline --test source_query_cli --test query_cli
-cargo fmt --check
-cargo clippy --offline --all-targets -- -D warnings
+cargo test --locked --test policy_acceptance
+cargo test --locked --all-targets
+cargo fmt --all -- --check
+cargo clippy --locked --all-targets -- -D warnings
 openspec validate --all --strict
 ```
 
-The integrated claim fixture uses real built binaries and a fresh basic temporary
-root with local provider inputs. `tests/remote.rs` covers release discovery and ZIP
-selection. The updated `scripts/lifecycle_acceptance.py` now verifies the combined
-release-to-self-update flow with separate scoped claims and basic integrity; see
-the report above. Linux/macOS runtime behavior and Rust 1.89 execution remain
-unverified here.
+The optional native credential-manager checks require separate selection. Basic
+integrity and injected-key tests do not establish OS keyring availability.
+Linux/macOS execution and the minimum Rust version require their own validation.
 
-[Mock acceptance](mock-acceptance.md), [resource-access verification](resource-access-verification.md)
-and [lifecycle verification](lifecycle-verification.md) are historical reports.
-Their binary identities, counts, Python harness commands and earlier layouts
-describe the recorded checkpoints. The Python scripts are development harnesses,
-not runtime dependencies. The lifecycle harness has since been updated as described
-above; other old-layout recipes must not modify a current store or reopen preserved
-`mock/` with the current manager.
-
-On 2026-10-10 the completed changes were synchronized and archived; strict
-validation passed for all 18 main specs. Documentation reconciliation does not
-constitute a new full acceptance or cross-platform verification run. Focused
-checks performed while reconciling documentation are recorded below separately
-from the historical reports.
-
-The 2026-10-10 reconciliation checks passed on Windows: 14 test entry points
-across `query_cli`, `source_query_cli`, `registry_security`, `cli`, and the selected
-protected-shim lifecycle test. The source-query count includes its child-fixture
-entry point. Documentation checks also validated local links, JSON examples and
-all 18 main specs. The full suite and historical Python acceptance harnesses were
-not rerun for these documentation edits.
+[Composition](composition-verification.md), [optional keyring](optional-keyring-verification.md),
+[claim registry](claim-verification.md), [mock acceptance](mock-acceptance.md),
+[resource access](resource-access-verification.md) and [lifecycle](lifecycle-verification.md)
+reports preserve dated evidence from earlier contracts. Their earlier JSON
+payloads and Python acceptance harnesses are not current flat-contract recipes.
+Do not run them against a current store or reopen preserved historical mock data
+with the current manager. No migration or compatibility decoder is provided.

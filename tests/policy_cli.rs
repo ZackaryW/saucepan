@@ -340,3 +340,12 @@ fn adoption_reports_its_revision_and_rejects_stale_or_unauthorized_changes() {
     error(run(root, &source_command), "revision_conflict");
     assert_eq!(before, fs::read(root.join("root.json")).unwrap());
 }
+#[test]
+fn removed_behavior_flags_are_rejected_before_store_initialization() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("absent");
+    for flag in ["--force-refresh", "--allow-stale"] {
+        error(run(&root, &[flag, "init"]), "invalid_request");
+        assert!(!root.exists());
+    }
+}

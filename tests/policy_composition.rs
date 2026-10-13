@@ -607,3 +607,48 @@ fn composed_outputs_preserve_retrieval_choices_for_replay() {
     null["adopted"] = json!(null);
     assert!(serde_json::from_value::<saucepan::models::store::OutputPlan>(null).is_err());
 }
+#[test]
+fn scoped_caller_receipts_reopen_through_portable_references_without_store_writes() {
+    let temp = tempfile::tempdir().unwrap();
+    let file = temp.path().join("input");
+    fs::write(&file, b"payload").unwrap();
+    let store = Store::create(&temp.path().join("root")).unwrap();
+    let source = store.register_source(Source::Local { path: file }).unwrap();
+    let app = store.register_app("reader".into()).unwrap();
+    let access = record(json!({"type":"access_policy","scopes":["project"]}));
+    store
+        .register_policies(std::slice::from_ref(&access))
+        .unwrap();
+    store
+        .adopt_application_policies(app.uuid, app.revision, refs(&[&access]), None)
+        .unwrap();
+    let no_store = record(json!({"type":"cache_policy","mode":"no_store"}));
+    let mut request = input(SourceInput::Registered {
+        source_uuid: source.uuid,
+    });
+    request.policy_refs = refs(&[&no_store]);
+    request.destination = Some(temp.path().join("caller"));
+    let catalog = PolicyCatalog::new([no_store]).unwrap();
+    let scope = "project".to_string().try_into().unwrap();
+    let session = store.session(app.uuid, None).unwrap();
+    let before = tree(store.root());
+    let resource = session
+        .retrieve_referenced(&request, &catalog, Some(&scope), &Default::default())
+        .unwrap();
+    let descriptor = resource.descriptor().clone();
+    drop(resource);
+    let reader = RegisteredRetriever::open(store.root())
+        .unwrap()
+        .session(app.uuid, None)
+        .unwrap();
+    let reopened = reader
+        .open_caller_referenced(&request, &descriptor, &catalog, Some(&scope))
+        .unwrap();
+    assert_eq!(fs::read(reopened.source_path()).unwrap(), b"payload");
+    assert!(
+        reader
+            .open_caller_referenced(&request, &descriptor, &catalog, None)
+            .is_err()
+    );
+    assert_eq!(tree(store.root()), before);
+}

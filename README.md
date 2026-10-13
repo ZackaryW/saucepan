@@ -21,7 +21,7 @@ HMAC metadata protection, initialize a separate root with
 `saucepan --root ./protected init --integrity keyring`. Later commands and shims
 use the stored mode automatically. An unavailable protected key fails access;
 it never switches the store to basic mode. App credentials remain separately
-opt-in in either mode.
+opt-in; credential-protected apps require a keyring-mode store.
 
 Sources are private until explicitly published, so an empty anonymous query can be expected. Use `--root ./scratch` for a separate store; the override always wins and never falls back to the default. Queries do not initialize missing stores. The historical `mock/` installation remains an earlier acceptance fixture and is not migrated. The following acquisition examples use a fresh disposable root:
 
@@ -101,7 +101,7 @@ Saucepan's own release request can be installed with `bootstrap request.json PAT
 
 `replace-shim` maintains a registered launcher, while `adopt-shim` explicitly registers a verified existing pair. `uninstall APP_UUID` releases claims and disables new launches before cleaning verified owned files; cached outputs and existing consumers remain subject to normal retention and leases. Busy or changed files leave inspectable pending work. Use administrative `operations` and `reconcile --operation OPERATION_UUID` from a directly invoked binary to inspect receipts and finish cleanup after the launcher exits. `operations --app APP_UUID` is available while the app registration remains usable and applies its policies and optional credentials.
 
-See [application lifecycle](docs/application-lifecycle.md) for commands, ownership and recovery rules, and [verification evidence](docs/lifecycle-verification.md) for executed scenarios. Earlier script reports describe historical checkpoints. Earlier layouts are rejected without migration. Current claim-registry acceptance is covered by `cargo test --offline --test claim_acceptance`; it uses the built binary and shim in a disposable root.
+See [application lifecycle](docs/application-lifecycle.md) for commands, ownership and recovery rules, and [current verification evidence](docs/policy-verification.md) for executed scenarios. Earlier script reports describe historical checkpoints. Earlier layouts are rejected without migration. Current claim-registry acceptance is covered by `cargo test --offline --test claim_acceptance`; it uses the built binary and shim in a disposable root.
 
 
 The Rust app-facing API is `Store::session(app, optional_credential)`. It evaluates
@@ -113,4 +113,4 @@ a relative view of that owner. Different scopes update independently. Recovery
 uses `report_unavailable` (default), `restore_exact`, or `refresh`.
 See [application policy contracts](docs/claim-policies.md), [CLI commands and JSON
 errors](docs/claim-cli.md), the [native consumer example](docs/scoped-consumer.md),
-and [current verification evidence](docs/claim-verification.md).
+and [current verification evidence](docs/policy-verification.md).
