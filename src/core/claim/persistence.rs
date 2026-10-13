@@ -83,6 +83,9 @@ struct Transaction {
 pub struct ContentPublication {
     pub stage: String,
     pub output: Uuid,
+    /// Absent for acquired outputs; present for source-owned retrieval material.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retrieval_source: Option<Uuid>,
     pub files: BTreeMap<String, crate::models::store::FileEntry>,
 }
 
@@ -402,7 +405,11 @@ impl Metadata {
                 return Err(integrity_error());
             }
             let input = beneath(&self.root, &format!(".staging/{}/content", content.stage))?;
-            let output = beneath(&self.root, &format!("store/{}", content.output))?;
+            let relative = match content.retrieval_source {
+                Some(source) => format!("source/{source}/retrieval/{}", content.output),
+                None => format!("store/{}", content.output),
+            };
+            let output = beneath(&self.root, &relative)?;
             let path = if output.exists() { &output } else { &input };
             if !path.exists() {
                 // No content or metadata was published. An abandoned prepared
@@ -418,6 +425,7 @@ impl Metadata {
                 return Err(integrity_error());
             }
             if !output.exists() {
+                fs::create_dir_all(output.parent().ok_or_else(integrity_error)?)?;
                 fs::rename(input, output)?;
             }
             observer(Publication::Content)?;
@@ -501,7 +509,7 @@ pub enum Publication {
 pub fn record_path(identity: Identity) -> Result<String> {
     match (identity.kind, identity.owner, identity.member) {
         (Kind::Application, Some(app), None) => Ok(format!("index/{app}/index.json")),
-        (Kind::Output, None, Some(id)) => Ok(format!("index/{id}/index.json")),
+        (Kind::Output | Kind::Retrieval, None, Some(id)) => Ok(format!("index/{id}/index.json")),
         (Kind::Source, None, Some(id)) => Ok(format!("source/{id}.json")),
         (Kind::Registry, Some(app), None) => Ok(format!("claims/{app}/index.json")),
         (Kind::Claim, Some(app), Some(id)) => Ok(format!("claims/{app}/{id}.json")),

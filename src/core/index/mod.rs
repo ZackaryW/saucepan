@@ -24,6 +24,8 @@ pub(crate) struct Journal {
     pub records: Vec<Record>,
     pub registries: Vec<RegistryState>,
     pub stage: Option<(String, Uuid)>,
+    #[serde(default)]
+    pub retrieval_stage: Option<(String, Uuid)>,
     pub operation: Option<crate::models::index::lifecycle::Operation>,
     pub retire: Option<(Uuid, Uuid)>,
 }
@@ -63,6 +65,11 @@ pub(crate) fn record_identity(record: &Record) -> Identity {
             kind: Kind::Output,
             owner: None,
             member: Some(output.uuid),
+        },
+        Record::Retrieval(record) => Identity {
+            kind: Kind::Retrieval,
+            owner: None,
+            member: Some(record.uuid),
         },
     }
 }
@@ -172,7 +179,10 @@ impl Store {
         let snapshot = self.metadata.snapshot()?;
         let mut out = Vec::new();
         for reference in snapshot.catalog.records.values() {
-            if matches!(reference.identity.kind, Kind::Application | Kind::Output) {
+            if matches!(
+                reference.identity.kind,
+                Kind::Application | Kind::Output | Kind::Retrieval
+            ) {
                 let record: Record =
                     snapshot.read(self.metadata.authenticator(), reference.identity)?;
                 ensure!(
@@ -254,6 +264,7 @@ impl Store {
             source,
             public_discovery: false,
             refresh: Default::default(),
+            retrieval_freshness: None,
             discovery: BTreeMap::new(),
         };
         self.save_source(&record)?;
@@ -371,12 +382,41 @@ impl Store {
                 Ok::<_, anyhow::Error>(ContentPublication {
                     stage,
                     output,
+                    retrieval_source: None,
                     files,
                 })
             })
             .transpose()?;
-        self.metadata
-            .publish_staged(&snapshot, writes, deletes, content, observer)?;
+        ensure!(
+            content.is_none() || journal.retrieval_stage.is_none(),
+            "one content publication per transaction"
+        );
+        let retrieval = journal
+            .retrieval_stage
+            .map(|(stage, id)| {
+                let record = journal
+                    .records
+                    .iter()
+                    .find_map(|record| match record {
+                        Record::Retrieval(record) if record.uuid == id => Some(record),
+                        _ => None,
+                    })
+                    .context("publication lacks retrieval record")?;
+                Ok::<_, anyhow::Error>(ContentPublication {
+                    stage,
+                    output: id,
+                    retrieval_source: Some(record.source_uuid),
+                    files: record.files.clone(),
+                })
+            })
+            .transpose()?;
+        self.metadata.publish_staged(
+            &snapshot,
+            writes,
+            deletes,
+            content.or(retrieval),
+            observer,
+        )?;
         Ok(())
     }
     pub(crate) fn recover_locked(&self) -> Result<()> {

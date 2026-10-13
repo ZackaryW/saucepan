@@ -291,6 +291,17 @@ impl Git {
         self.publish_inventory(prepared, destination)
     }
 
+    pub fn inspect_offline(
+        &self,
+        material: RepositoryMaterial<'_>,
+        scratch: &Path,
+    ) -> Result<Export> {
+        Ok(self
+            .prepare_inventory(material, scratch, false)?
+            .inventory
+            .result)
+    }
+
     fn prepare_inventory(
         &self,
         material: RepositoryMaterial<'_>,

@@ -67,7 +67,7 @@ pub fn validate_composition(
         && matches!(
             retrieval.cache,
             CachePolicy::Cached {
-                freshness: Freshness::CacheOnly {},
+                freshness: Some(Freshness::CacheOnly {}),
                 ..
             }
         )

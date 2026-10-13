@@ -29,7 +29,7 @@ pub struct AssetSelection {
 pub enum CachePolicy {
     Cached {
         #[serde(default)]
-        freshness: Freshness,
+        freshness: Option<Freshness>,
         #[serde(default)]
         allow_stale: bool,
     },
@@ -41,7 +41,7 @@ pub enum CachePolicy {
 impl Default for CachePolicy {
     fn default() -> Self {
         Self::Cached {
-            freshness: Freshness::default(),
+            freshness: None,
             allow_stale: false,
         }
     }
@@ -100,4 +100,29 @@ pub struct RetrievedDescriptor {
     pub checked_at: Option<u64>,
     pub reused: bool,
     pub stale: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RetrievalState {
+    Ready,
+    PurgePending,
+    Purged,
+}
+
+/// Store-relative material identity. Runtime paths and native leases are derived
+/// from the owning root, never deserialized as an access capability.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RetrievalRecord {
+    pub uuid: Uuid,
+    pub source_uuid: Uuid,
+    pub request: RetrieveRequest,
+    pub kind: MaterialKind,
+    pub resolved: Resolved,
+    pub dependencies: BTreeMap<String, String>,
+    pub verification: VerificationEvidence,
+    pub files: BTreeMap<String, crate::models::store::FileEntry>,
+    pub checked_at: u64,
+    pub state: RetrievalState,
 }

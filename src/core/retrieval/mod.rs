@@ -4,7 +4,11 @@ use crate::{
     utils::lock::LockGuard,
 };
 use std::{path::Path, rc::Rc};
+mod access;
 mod fresh;
+mod managed;
+#[cfg(test)]
+mod tests;
 pub use fresh::{RetrieveOptions, Retriever};
 
 /// A source path and its native lifetime. Only retrieval operations may construct

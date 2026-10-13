@@ -47,12 +47,14 @@ impl Application {
 pub enum Record {
     Application(Application),
     Output(Box<OutputEntry>),
+    Retrieval(Box<super::retrieval::RetrievalRecord>),
 }
 impl Record {
     pub fn uuid(&self) -> Uuid {
         match self {
             Self::Application(a) => a.uuid,
             Self::Output(e) => e.uuid,
+            Self::Retrieval(e) => e.uuid,
         }
     }
 }

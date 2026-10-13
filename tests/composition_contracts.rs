@@ -107,7 +107,7 @@ fn contradictions_fail_without_io() {
     assert!(validate_retrieval(&request).is_err());
     request.expected_sha256 = None;
     request.cache = CachePolicy::Cached {
-        freshness: Freshness::CacheOnly {},
+        freshness: Some(Freshness::CacheOnly {}),
         allow_stale: false,
     };
     assert!(validate_composition(&request, &AcquisitionRequest::default(), true).is_err());

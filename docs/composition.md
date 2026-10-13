@@ -1,8 +1,8 @@
 # Retrieval and acquisition contracts
 
 The new request models separate three policy decisions. Native inline fresh
-retrieval is available through `Retriever`; managed retrieval, acquisition
-composition and new CLI commands are still being integrated.
+retrieval is available through `Retriever`, and managed retrieval through `Store`.
+Acquisition composition and new CLI commands are still being integrated.
 
 | Policy | Responsibility | Managed default |
 | --- | --- | --- |
@@ -71,6 +71,21 @@ files use the exact requested destination filename. Parent directories must exis
 The native example `cargo run --example retrieve-source -- REQUEST.json` inspects
 source metadata while retaining the handle. It emits a descriptor only for
 caller-owned results; temporary paths are not advertised after their owner exits.
+
+Managed native retrieval uses `store.retrieve(&request)` with cached mode.
+It registers an inline source or uses a registered UUID, publishes a retrieval
+record under `index/<uuid>/index.json`, and stores original non-Git material under
+`source/<source-uuid>/retrieval/<uuid>/material`. Git repository/dependency caches
+remain under the source directory. No acquired output or claim is created.
+`store.source_path(uuid)` is a bare address; `store.lease_retrieval(uuid)` retains
+coordinated access without refreshing. `store.purge_retrieval(uuid)` returns false
+while source consumers are live; after they release, retry to retire that record.
+Purge does not prune shared Git objects or delete acquired copies or registrations.
+
+`store.configure_source_freshness(uuid, policy)` sets the native retrieval default.
+Omitting cached `freshness` inherits it, or the original source TTL when none is
+configured. Per-call overrides do not modify the source. Original material has
+its own journaled publication and integrity checks, separate from output reclaim.
 
 Only managed outputs accept `revision_policy`. `{"history":"none"}` means keep
 the newest revision; `{"history":"latest","keep":3}` includes the newest among

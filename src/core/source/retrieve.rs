@@ -82,6 +82,17 @@ pub(crate) fn fresh(
     scratch: &Path,
     options: &AcquireOptions,
 ) -> Result<Material> {
+    obtain(source, request, work, scratch, options, None)
+}
+
+pub(crate) fn obtain(
+    source: &Source,
+    request: &RetrieveRequest,
+    work: &Path,
+    scratch: &Path,
+    options: &AcquireOptions,
+    exact: Option<&Resolved>,
+) -> Result<Material> {
     validate(source, request)?;
     match git::normalize(source.clone())? {
         Source::Git { origin } => {
@@ -94,7 +105,11 @@ pub(crate) fn fresh(
             let path = work.join("repo");
             let git = Git::default();
             git.repository(&origin, &path)?;
-            let commit = git.resolve(&path, reference, pinned)?;
+            let commit = match exact {
+                Some(Resolved::Git { commit }) => git.resolve(&path, commit, true)?,
+                Some(_) => bail!("invalid Git provenance"),
+                None => git.resolve(&path, reference, pinned)?,
+            };
             let dependencies = git
                 .hydrate(
                     RepositoryMaterial {
@@ -157,9 +172,10 @@ pub(crate) fn fresh(
             let (resolved, url, expected) = match &source {
                 Source::Url { url } => (None, url.clone(), expected_digest(request, None)?),
                 _ => {
-                    let Resolved::Release { id, tag, assets } =
-                        remote::discover(&source, &request.selector, options)?
-                    else {
+                    let Resolved::Release { id, tag, assets } = (match exact {
+                        Some(resolved) => resolved.clone(),
+                        None => remote::discover(&source, &request.selector, options)?,
+                    }) else {
                         bail!("invalid release discovery")
                     };
                     let selection = Selection {
@@ -219,7 +235,10 @@ pub(crate) fn fresh(
     }
 }
 
-fn expected_digest(request: &RetrieveRequest, upstream: Option<&str>) -> Result<Option<String>> {
+pub(crate) fn expected_digest(
+    request: &RetrieveRequest,
+    upstream: Option<&str>,
+) -> Result<Option<String>> {
     if request.verification == PayloadVerification::None {
         return Ok(None);
     }
@@ -256,7 +275,10 @@ fn expected_digest(request: &RetrieveRequest, upstream: Option<&str>) -> Result<
     Ok(expected.map(str::to_ascii_lowercase))
 }
 
-fn verify_digest(expected: Option<&str>, actual: Option<&str>) -> Result<VerificationEvidence> {
+pub(crate) fn verify_digest(
+    expected: Option<&str>,
+    actual: Option<&str>,
+) -> Result<VerificationEvidence> {
     if let Some(expected) = expected {
         ensure!(
             actual.is_some_and(|actual| actual.eq_ignore_ascii_case(expected)),

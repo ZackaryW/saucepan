@@ -65,7 +65,7 @@ fn encode_path(value: &str) -> String {
         })
         .collect()
 }
-pub(super) fn discover(
+pub(crate) fn discover(
     source: &Source,
     selector: &Selector,
     options: &AcquireOptions,

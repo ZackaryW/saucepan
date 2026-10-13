@@ -274,3 +274,51 @@ fn git_retrieval_is_a_fresh_repository_with_exact_provenance() {
     assert!(owned_path.exists());
     assert!(first.descriptor().verification.git_objects_validated);
 }
+
+#[test]
+fn managed_git_cache_only_reads_survive_missing_origin_and_purge_keeps_objects() {
+    use saucepan::models::policy::Freshness;
+    let root = tempfile::tempdir().unwrap();
+    let origin = root.path().join("origin");
+    fs::create_dir(&origin).unwrap();
+    git(&origin, &["init", "-b", "main"]);
+    fs::write(origin.join("file"), b"pinned").unwrap();
+    git(&origin, &["add", "."]);
+    git(&origin, &["commit", "-m", "fixture"]);
+    let store = Store::create(&root.path().join("root")).unwrap();
+    let source = store
+        .register_source(Source::Git {
+            origin: origin.to_str().unwrap().into(),
+        })
+        .unwrap();
+    let mut req = request(
+        source.source,
+        Selector::Ref {
+            reference: "main".into(),
+        },
+    );
+    req.source = SourceInput::Registered {
+        source_uuid: source.uuid,
+    };
+    req.cache = CachePolicy::default();
+    let cached = store.retrieve(&req).unwrap();
+    let Ownership::Managed { uuid } = cached.descriptor().ownership else {
+        panic!("managed")
+    };
+    let path = cached.source_path().to_owned();
+    drop(cached);
+    fs::rename(&origin, root.path().join("offline-origin")).unwrap();
+    req.cache = CachePolicy::Cached {
+        freshness: Some(Freshness::CacheOnly {}),
+        allow_stale: false,
+    };
+    let offline = store.retrieve(&req).unwrap();
+    assert_eq!(offline.source_path(), path);
+    assert!(!store.purge_retrieval(uuid).unwrap());
+    let lease = store.lease_retrieval(uuid).unwrap();
+    drop(offline);
+    drop(lease);
+    assert!(store.purge_retrieval(uuid).unwrap());
+    assert!(path.exists(), "purge must not prune shared Git data");
+    assert!(store.source_path(uuid).is_err());
+}

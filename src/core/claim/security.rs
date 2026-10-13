@@ -177,6 +177,7 @@ pub enum Kind {
     Catalog,
     Application,
     Output,
+    Retrieval,
     Source,
     Registry,
     Claim,
