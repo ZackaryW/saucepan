@@ -4,25 +4,28 @@ These main specs describe the synchronized Saucepan baseline. [Archived changes]
 record historical decisions and are not alternative versions to inherit at runtime.
 Adding a provider or policy type does not establish backward schema compatibility.
 
-The synchronized baseline includes authenticated application claim registries,
+The synchronized baseline includes integrity-verified application claim registries,
 explicit scopes, covered ensure, optional credentials, registered recovery and
 consumer error codes. Source discovery supports anonymous public lookup, optional
 application identity and direct CLI filters, with the user-home `.saucepan` store
-as the default. Current usage and verification:
+as the default. New stores use basic checksums without keyring access; explicit
+keyring mode retains HMAC protection. App credentials remain independently opt-in
+in both modes. Current usage and verification:
 
 | Implemented responsibility | Documentation |
 | --- | --- |
 | Registry, scope, access and output policy | [Claim policies](../../docs/claim-policies.md) |
-| Readable HMAC records and native key custody | [Claim integrity](../../docs/claim-integrity.md) |
+| Basic checksums, optional HMAC protection and native key custody | [Claim integrity](../../docs/claim-integrity.md) |
 | CLI registration, credentials, recovery and machine errors | [Claim CLI](../../docs/claim-cli.md) |
 | Native scoped/view lifetime integration | [Scoped consumer](../../docs/scoped-consumer.md) |
 | Source discovery, visibility and CLI filters | [Source query](../../docs/source-query.md) |
-| Integrated acceptance and host limitations | [Verification](../../docs/claim-verification.md) |
+| Integrated acceptance and host limitations | [Verification](../../docs/optional-keyring-verification.md) |
 
 See the [documentation map](../../docs/README.md) for the distinction between
 current contracts, dated execution evidence and remaining verification gaps.
 
-This implementation accepts only its current authenticated contract. Historical
+This implementation accepts its explicit basic contract and supported protected
+contract; protected stores never fall back to basic verification. Historical
 references to inline claims or older record defaults do not imply a decoder or
 migration path for those stores.
 

@@ -9,7 +9,7 @@ Let consumers choose the integrity work performed during resource access while p
 ### Requirement: Access-time verification is explicit
 Resource access SHALL support `metadata` and `full` verification modes. Ordinary path resolution and routine managed launch SHALL default to metadata mode. Metadata mode SHALL validate record identity, output kind, ready state, root existence/type, and filesystem containment without traversing or reading output payload files. A selected managed executable SHALL additionally be declared in the output and present as a regular contained file. Unknown modes SHALL fail before launching a consumer.
 
-Both modes SHALL verify the authenticated metadata contract in [claim-security](../claim-security/spec.md). Metadata mode SHALL NOT skip HMAC verification; its reduced work concerns output payload scanning, not record authenticity or registered launcher-file verification.
+Both access-time modes SHALL verify the store-selected metadata integrity contract in [claim-security](../claim-security/spec.md): checksums in basic stores and HMAC in keyring-protected stores. Access-time mode SHALL NOT select or weaken the store's integrity mode. Metadata mode SHALL NOT skip required record verification; its reduced work concerns output payload scanning, not metadata integrity or registered launcher-file verification.
 
 #### Scenario: Looking up a large output
 - **WHEN** a caller resolves a ready output using the default mode with no pending recovery
