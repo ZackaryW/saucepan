@@ -307,9 +307,7 @@ impl Store {
 fn request_overrides(request: &Request) -> Overrides {
     Overrides {
         identical: Some(request.policies.identical),
-        keep: Some(match request.policies.eviction {
-            crate::models::policy::Eviction::Latest { keep } => keep,
-        }),
+        revision: Some(request.policies.revision),
         reclaim: None,
         useable_app: Some(request.policies.protection.is_some()),
         update_policy: None,

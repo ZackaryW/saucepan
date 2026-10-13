@@ -61,7 +61,7 @@ impl Authorization {
             let revision = crate::core::policy::composition::effective_revision(acquisition)?;
             let effective = registry.registry.policies.evaluate(&Overrides {
                 identical: Some(acquisition.identical),
-                keep: revision.map(|policy| policy.keep()).transpose()?,
+                revision,
                 useable_app: Some(acquisition.protection.is_some()),
                 update_policy: Some(acquisition.update_policy),
                 ..Default::default()

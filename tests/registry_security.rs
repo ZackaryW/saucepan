@@ -415,7 +415,8 @@ fn registration_keys_are_idempotent_and_policy_changes_cannot_invalidate_survivi
         maximum_keep: 1,
         ..Default::default()
     };
-    policies.defaults.output.eviction = saucepan::models::policy::Eviction::Latest { keep: 1 };
+    policies.defaults.output.revision =
+        saucepan::models::policy::RevisionPolicy::Latest { keep: 1 };
     let policy_refs = policy_fixture::register(&store, Default::default(), policies).unwrap();
     let before = fs::read(store.root().join("root.json")).unwrap();
     assert_eq!(

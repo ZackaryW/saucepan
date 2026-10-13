@@ -120,7 +120,8 @@ fn two_scopes_read_nested_packages_while_external_reclaim_waits_for_native_lifet
             context: [("package".into(), "tool".into())].into(),
             overrides: Default::default(),
         };
-        request.overrides.keep = Some(1);
+        request.overrides.revision =
+            Some(saucepan::models::policy::RevisionPolicy::Latest { keep: 1 });
         let owner = session.ensure(&request, &Default::default()).unwrap();
         request.scope = "project-b".to_string().try_into().unwrap();
         let b = session.ensure(&request, &Default::default()).unwrap();
@@ -210,7 +211,7 @@ fn failed_view_verification_drops_ownership_and_unavailable_claim_has_a_stable_c
         context: Default::default(),
         overrides: Default::default(),
     };
-    request.overrides.keep = Some(1);
+    request.overrides.revision = Some(saucepan::models::policy::RevisionPolicy::Latest { keep: 1 });
     let session = store.session(app, None).unwrap();
     let first = session.ensure(&request, &Default::default()).unwrap();
     fs::write(first.acquired.directory.join("resource"), "changed").unwrap();

@@ -1,6 +1,6 @@
 mod native_root;
 use saucepan::models::{
-    policy::{Eviction, Identical},
+    policy::{Identical, RevisionPolicy},
     source::Source,
     store::{Request, Selector},
 };
@@ -36,7 +36,7 @@ fn immutable_versions_and_policy_reuse() {
     let second = store.acquire(&req).unwrap();
     assert_ne!(first.entry.uuid, second.entry.uuid);
     req.policies.identical = Identical::Reuse;
-    req.policies.eviction = Eviction::Latest { keep: 3 };
+    req.policies.revision = RevisionPolicy::Latest { keep: 3 };
     assert_ne!(store.acquire(&req).unwrap().entry.uuid, first.entry.uuid);
     fs::write(dir.path().join("input/index.json"), "new").unwrap();
     let third = store.acquire(&req).unwrap();

@@ -2,7 +2,7 @@ mod native_root;
 use saucepan::{
     core::Store,
     models::{
-        policy::{Eviction, Identical},
+        policy::{Identical, RevisionPolicy},
         source::Source,
         store::{Availability, Request, Selector, VerificationMode},
     },
@@ -72,7 +72,7 @@ fn setup() -> (tempfile::TempDir, native_root::NativeStore, Request) {
         policies: Default::default(),
     };
     request.policies.identical = Identical::NewEntry;
-    request.policies.eviction = Eviction::Latest { keep: 1 };
+    request.policies.revision = RevisionPolicy::Latest { keep: 1 };
     (tmp, store, request)
 }
 

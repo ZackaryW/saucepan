@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
     models::{
-        policy::{Eviction, Identical},
+        policy::{Identical, RevisionPolicy},
         source::Source,
         store::{Request, Selector},
     },
@@ -27,7 +27,7 @@ fn observed_io_and_paused_scan_do_not_serialize_unrelated_operations() {
         policies: Default::default(),
     };
     request.policies.identical = Identical::NewEntry;
-    request.policies.eviction = Eviction::Latest { keep: 1 };
+    request.policies.revision = RevisionPolicy::Latest { keep: 1 };
     let first = store.acquire(&request).unwrap();
     let counts = Arc::new(Mutex::new((0, 0, 0)));
     let seen = counts.clone();

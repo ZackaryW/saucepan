@@ -7,8 +7,7 @@ The reference-based native entry points are `Retriever::retrieve_referenced`,
 `AppSession` equivalents. `Acquirer::acquire_referenced` copies a retained source
 handle offline; `Acquirer::compose_referenced` performs root-free fresh retrieval
 and copying. Metadata-only `RegisteredRetriever` has the same reference-based
-operations. The CLI and removal of the earlier input types are a pending cutover;
-the examples later in this guide describe that earlier interface until then.
+operations. CLI composition commands use these same reference-only inputs.
 
 Create a caller-owned `PolicyCatalog` from standalone definitions:
 
@@ -16,7 +15,8 @@ Create a caller-owned `PolicyCatalog` from standalone definitions:
 [
   {"uuid":"10000000-0000-4000-8000-000000000001","type":"cache_policy","mode":"temporary"},
   {"uuid":"10000000-0000-4000-8000-000000000002","type":"update_policy","mode":"always"},
-  {"uuid":"10000000-0000-4000-8000-000000000003","type":"revision_policy","history":"latest","keep":3}
+  {"uuid":"10000000-0000-4000-8000-000000000003","type":"revision_policy","history":"latest","keep":3},
+  {"uuid":"10000000-0000-4000-8000-000000000004","type":"cache_policy","mode":"no_store"}
 ]
 ```
 
@@ -54,7 +54,7 @@ change content identity. Relevant source/application attachment changes fence
 publication; unrelated catalog registration does not invalidate the operation.
 The executable fixtures are in `tests/policy_composition.rs`.
 
-## Earlier interface pending CLI cutover
+## Independent operations and lifetimes
 
 The new request models separate three policy decisions. Native inline fresh
 retrieval is available through `Retriever`, and managed retrieval through `Store`.
@@ -66,9 +66,9 @@ Offline acquisition, scoped automatic updates and CLI consumers use the same nat
 | Acquisition update | Decide when to check whether copied results have changed | Manual |
 | Revision history | Decide how many acquired revisions to retain | Latest ten |
 
-`models::retrieval::RetrieveRequest` selects a source, revision and original asset.
+`models::policy::requests::Retrieval` selects a source, revision and original asset.
 Git retrieval returns repository data and an exact commit; a ZIP stays an archive.
-Folder selection and extraction belong to `models::store::AcquisitionRequest`.
+Folder selection and extraction belong to `models::policy::requests::Acquisition`.
 
 For example, retrieve a fresh archive into an explicitly caller-owned destination:
 
@@ -79,8 +79,8 @@ For example, retrieve a fresh archive into an explicitly caller-owned destinatio
     "source": { "type": "url", "url": "https://example.invalid/tool.zip" }
   },
   "selector": { "type": "url" },
-  "cache": { "mode": "no_store", "destination": "download/tool.zip" },
-  "verification": "if_available"
+  "destination": "download/tool.zip",
+  "policy_refs": ["10000000-0000-4000-8000-000000000004"]
 }
 ```
 
@@ -90,7 +90,7 @@ Then acquire its files into another caller-owned location:
 {
   "destination": { "mode": "directory", "path": "unpacked/tool" },
   "format": "zip",
-  "update_policy": { "mode": "manual" }
+  "policy_refs": []
 }
 ```
 
@@ -115,8 +115,8 @@ Native handles are `core::retrieval::RetrievedResource` (`source_path()`) and
 not implement deserialization or cloning. Their `descriptor()` references expose
 observational metadata separately from native lifetime ownership.
 
-For fresh native retrieval, pass a `RetrieveRequest` to
-`core::retrieval::Retriever::retrieve(&request)`. This entry point accepts inline
+For fresh native retrieval, pass a `Retrieval` and its catalog to
+`Retriever::retrieve_referenced(&request, &catalog, &options)`. This entry point accepts inline
 temporary/no-store requests without opening a store or locating a home directory.
 It rejects registered/cached requests that require an owning store. Keep temporary
 handles alive while reading their paths. No-store publication transfers ownership
@@ -128,7 +128,7 @@ The native example `cargo run --example retrieve-source -- REQUEST.json` inspect
 source metadata while retaining the handle. It emits a descriptor only for
 caller-owned results; temporary paths are not advertised after their owner exits.
 
-Managed native retrieval uses `store.retrieve(&request)` with cached mode.
+Managed native retrieval uses `store.retrieve_referenced(&request, &catalog, &options)` with cached mode.
 It registers an inline source or uses a registered UUID, publishes a retrieval
 record under `index/<uuid>/index.json`, and stores original non-Git material under
 `source/<source-uuid>/retrieval/<uuid>/material`. Git repository/dependency caches
@@ -139,15 +139,15 @@ while source consumers are live; after they release, retry to retire that record
 Purge does not prune shared Git objects or delete acquired copies or registrations.
 
 `store.configure_source_freshness(uuid, policy)` sets the native retrieval default.
-Omitting cached `freshness` inherits it, or the original source TTL when none is
-configured. Per-call overrides do not modify the source. Original material has
+Omitting a request refresh policy inherits registered defaults, then the built-in
+24-hour freshness. Per-call overrides do not modify the source. Original material has
 its own journaled publication and integrity checks, separate from output reclaim.
 
-Only managed outputs accept `revision_policy`. `{"history":"none"}` means keep
+Only managed outputs accept references to `revision_policy` definitions. `{"history":"none"}` means keep
 the newest revision; `{"history":"latest","keep":3}` includes the newest among
 the three. Live leases, active protection and other surviving retention demands
-can defer deletion. Existing convenience `policies.eviction` settings translate
-to the same retention evaluator. New requests reject that spelling.
+can defer deletion. `RevisionPolicy` is the single history representation; no
+eviction adapter changes `none` into `latest, keep: 1`.
 
 Update modes are `manual`, `always`, and `max_age` with `seconds`. A due update
 checks the selected content before reuse, even within the retrieval cache TTL.
@@ -160,7 +160,7 @@ cannot be combined with `none`. Required verification needs an expected digest;
 a self-computed storage identity is not proof of upstream authenticity. Structural
 validation and managed metadata/manifest integrity retain their own contracts.
 
-For offline acquisition, use `Acquirer::acquire(&retrieved, &selection)` with
+For offline acquisition, use `Acquirer::acquire_referenced(&retrieved, &selection, &catalog, scope)` with
 manual update mode. Managed destinations use the retrieval's owning store;
 temporary and directory destinations create independent copies. The source guard
 may be dropped after copying. Temporary acquired paths last until their handle
@@ -170,20 +170,20 @@ One repository can supply two subpaths without another provider request:
 
 ```rust
 use saucepan::core::store::Acquirer;
-use saucepan::models::store::{AcquisitionRequest, Destination};
+use saucepan::models::{policy::requests::Acquisition, store::Destination};
 
-let repository = store.retrieve(&git_request)?;
+let repository = store.retrieve_referenced(&git_request, &catalog, &options)?;
 let source_path = repository.source_path(); // bare repository, exact commit in descriptor
-let first = Acquirer::acquire(&repository, &AcquisitionRequest {
+let first = Acquirer::acquire_referenced(&repository, &Acquisition {
     folder: Some("plugins/first".into()),
     destination: Destination::Temporary {},
     ..Default::default()
-})?;
-let second = Acquirer::acquire(&repository, &AcquisitionRequest {
+}, &catalog, None)?;
+let second = Acquirer::acquire_referenced(&repository, &Acquisition {
     folder: Some("plugins/second".into()),
     destination: Destination::Temporary {},
     ..Default::default()
-})?;
+}, &catalog, None)?;
 // first.path() and second.path() are copied directories, independent of source_path.
 ```
 
@@ -191,12 +191,12 @@ The integration fixture in `tests/acquisition_composition.rs` runs this pattern
 with the Git origin removed after retrieval. It also verifies independent output
 lifetimes and cached ZIP extraction surviving source-material purge.
 
-Managed automatic updates use `store.acquire_composed(&retrieval, &acquisition)`.
+Managed automatic updates use `store.compose_referenced(&retrieval, &acquisition, &catalog, &options)`.
 This entry point owns the fetch/lease order; use it when `update_policy` is
 `always` or `max_age`. A borrowed handle remains an offline input. To release a
-handle and perform an update, use `Acquirer::refresh(handle, &acquisition)`;
+handle and perform an update, use `Acquirer::acquire_or_refresh_referenced(handle, &acquisition, &catalog, scope, &options)`;
 previous acquired-output handles can remain alive throughout the update.
-`Acquirer::retrieve_and_acquire` composes inline fresh operations without a store.
+`Acquirer::compose_referenced` composes inline fresh operations without a store.
 
 For example, keep retrieval's 24-hour default, set acquisition update to
 `UpdatePolicy::MaxAge { seconds: 60 }`, and revision policy to
@@ -217,15 +217,16 @@ source freshness or update intervals. Explicit `new_entry` still creates an outp
 content is unchanged. App-scoped updates use the same check/publication state with separate scope identity.
 
 
-App-scoped native operations use `session.retrieve(&request, scope, &options)`
-and `session.acquire_composed(&retrieval, &acquisition, scope, &options)`.
+App-scoped native operations use `session.retrieve_referenced(&request, &catalog, scope, &options)`
+and `session.compose_referenced(&retrieval, &acquisition, &catalog, scope, &options)`.
 They may create no claim while still enforcing configured source, action and
 scope restrictions. A restricted app cannot omit scope to become an administrative
 caller. Its unclaimed selection/check state includes app and explicit scope.
 Anonymous operations do not synthesize an app.
 
-For existing claims, set `overrides.update_policy` (or the registered policy
-default) and use the existing `session.ensure` method. Due checks require the
+For claims, reference an `update_policy` definition (or use a registered default)
+and call `session.ensure_referenced`. Existing claims require explicit adoption
+to change their selected policy; repeated ensure calls do not adopt new defaults. Due checks require the
 update action, retain the claim UUID/context, and publish check state with the
 selected output and claim. They do not activate binaries or change bindings.
 `allow_automatic_updates` and `minimum_update_interval` bound registered update
@@ -237,8 +238,8 @@ and policy limits still apply. With required credentials, use the existing
 credential-bearing session constructor; omitting a claim never omits that proof.
 
 For registered fresh operations, open `RegisteredRetriever::open(root)` instead
-of opening/recovering a normal `Store`. Its `retrieve` method provides trusted
-administrative access; `.session(app, credential)?.retrieve(...)` retains app
+of opening/recovering a normal `Store`. Its `retrieve_referenced` method provides trusted
+administrative access; `.session(app, credential)?.retrieve_referenced(...)` retains app
 restrictions. Both accept only registered temporary/no_store requests. Basic
 integrity needs no keyring. Pending metadata transactions return
 `recovery_required`; reconcile through a normal store operation separately.
@@ -254,6 +255,9 @@ caller-owned file, directory or bare Git repository. Inline fresh commands do no
 resolve a home or store, even if `--root` is supplied. Cached and registered-source
 commands use the ordinary default `.saucepan` root or an explicit `--root`.
 
+Pass `--policies policies.json` for the portable catalog above. Omit the sidecar
+when using persistent definitions: portable UUIDs cannot shadow registered UUIDs.
+
 For a cached receipt, `acquire-retrieved selection.json` accepts:
 
 ```json
@@ -265,15 +269,15 @@ For a cached receipt, `acquire-retrieved selection.json` accepts:
 
 For a no-store receipt, set `retrieval.mode` to `caller` and include its `request`
 and `descriptor` fields. Set the acquisition destination to a new directory.
-`Retriever::open_caller` is the corresponding native operation. Reopening checks
+`Retriever::open_caller_referenced` is the corresponding native operation. Reopening checks
 representation, path, Git objects/dependencies and requested digests; it discards
 serialized check/verification evidence. Caller-supplied provenance and expected
 digests remain caller assertions, not independently authenticated origin proof.
 A caller receipt cannot grant managed ownership or create a managed output.
 
 `source-path RETRIEVAL_UUID` returns an address without fetching or retaining a
-lease. `configure-source SOURCE_UUID freshness.json` accepts, for example,
-`{"mode":"max_age","seconds":86400}`. `purge-retrieval RETRIEVAL_UUID` retires
+lease. `configure-source SOURCE_UUID policies.json` accepts
+`{"expected_revision":0,"policy_refs":["REGISTERED_POLICY_UUID"]}`. `purge-retrieval RETRIEVAL_UUID` retires
 source material only when no source consumers are live. It preserves acquired
 outputs and source registration; Git objects shared with other retrievals remain.
 
@@ -292,7 +296,7 @@ as long as the consumer needs it:
   "retrieval": {
     "source": { "kind": "inline", "source": { "type": "github_repo", "repo": "owner/project" } },
     "selector": { "type": "ref", "reference": "main" },
-    "cache": { "mode": "temporary" }
+    "policy_refs": ["10000000-0000-4000-8000-000000000001"]
   },
   "acquisition": {
     "destination": { "mode": "temporary" },

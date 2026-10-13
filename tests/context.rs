@@ -1,7 +1,7 @@
 mod native_root;
 use saucepan::models::{
     index::{Claim, ClaimContext, validate_context},
-    policy::{Eviction, Identical},
+    policy::{Identical, RevisionPolicy},
     source::Source,
     store::{Availability, Request, Selector},
 };
@@ -58,7 +58,7 @@ fn context_publication_replacement_reclaim_and_release() {
         selection: Default::default(),
         policies: Default::default(),
     };
-    request.policies.eviction = Eviction::Latest { keep: 1 };
+    request.policies.revision = RevisionPolicy::Latest { keep: 1 };
     let a = store
         .acquire_for_with_context(
             app.uuid,

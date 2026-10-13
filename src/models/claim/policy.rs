@@ -1,7 +1,7 @@
 use super::Scope;
 use crate::{
     error::{Error, ErrorCode, Result},
-    models::policy::{Eviction, Identical, Policies, UpdatePolicy},
+    models::policy::{Identical, Policies, RevisionPolicy, UpdatePolicy},
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -66,7 +66,7 @@ pub struct Effective {
 }
 impl Effective {
     pub fn validate(&self) -> Result<()> {
-        if matches!(self.output.eviction, Eviction::Latest { keep: 0 }) {
+        if matches!(self.output.revision, RevisionPolicy::Latest { keep: 0 }) {
             return Err(Error::new(
                 ErrorCode::InvalidRequest,
                 "retention must be positive",
@@ -79,7 +79,7 @@ impl Effective {
 #[serde(default, deny_unknown_fields)]
 pub struct Overrides {
     pub identical: Option<Identical>,
-    pub keep: Option<usize>,
+    pub revision: Option<RevisionPolicy>,
     pub reclaim: Option<ReclaimPolicy>,
     /// Output protection is registered by the app; overrides cannot remove it.
     pub useable_app: Option<bool>,
@@ -119,7 +119,7 @@ impl Registration {
     pub fn validate(&self) -> Result<()> {
         self.defaults.validate()?;
         self.validate_update(self.defaults.update_policy)?;
-        let Eviction::Latest { keep } = self.defaults.output.eviction;
+        let keep = self.defaults.output.revision.keep()?;
         if self.minimum_keep == 0
             || self.minimum_keep > self.maximum_keep
             || !(self.minimum_keep..=self.maximum_keep).contains(&keep)
@@ -144,8 +144,8 @@ impl Registration {
         if let Some(value) = overrides.identical {
             effective.output.identical = value;
         }
-        if let Some(keep) = overrides.keep {
-            effective.output.eviction = Eviction::Latest { keep };
+        if let Some(revision) = overrides.revision {
+            effective.output.revision = revision;
         }
         if let Some(reclaim) = &overrides.reclaim {
             effective.reclaim = reclaim.clone();
@@ -166,7 +166,11 @@ impl Registration {
             effective.output.protection =
                 protect.then_some(crate::models::policy::Protection::UseableApp);
         }
-        let Eviction::Latest { keep } = effective.output.eviction;
+        let keep = effective
+            .output
+            .revision
+            .keep()
+            .map_err(|_| Error::new(ErrorCode::PolicyConflict, "invalid revision policy"))?;
         if !(self.minimum_keep..=self.maximum_keep).contains(&keep)
             || !self.allowed_identical.contains(&effective.output.identical)
             || !self.allowed_reclaim.contains(&effective.reclaim.strategy())

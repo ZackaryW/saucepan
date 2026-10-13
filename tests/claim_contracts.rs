@@ -275,7 +275,7 @@ fn registered_policies_apply_defaults_and_reject_out_of_bounds_or_unknown_overri
         assert_eq!(
             registration
                 .evaluate(&Overrides {
-                    keep: Some(keep),
+                    revision: Some(saucepan::models::policy::RevisionPolicy::Latest { keep }),
                     ..Default::default()
                 })
                 .unwrap_err()
@@ -286,7 +286,7 @@ fn registered_policies_apply_defaults_and_reject_out_of_bounds_or_unknown_overri
     assert!(
         registration
             .evaluate(&Overrides {
-                keep: Some(5),
+                revision: Some(saucepan::models::policy::RevisionPolicy::Latest { keep: 5 }),
                 ..Default::default()
             })
             .is_ok()

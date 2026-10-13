@@ -626,9 +626,9 @@ fn managed_update_rejects_aba_and_foreign_rollback() {
 
 #[test]
 fn uninstall_preserves_shared_outputs_and_live_target_then_reconciles() {
-    use saucepan::models::{policy::Eviction, store::Availability};
+    use saucepan::models::{policy::RevisionPolicy, store::Availability};
     let (_tmp, store, mut input) = setup();
-    input.request.policies.eviction = Eviction::Latest { keep: 1 };
+    input.request.policies.revision = RevisionPolicy::Latest { keep: 1 };
     let installed = store
         .install_application(&input, &shim(), &Default::default(), None)
         .unwrap();

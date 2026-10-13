@@ -13,12 +13,13 @@ use uuid::Uuid;
 
 pub fn register(store: &Store, access: AccessPolicy, settings: Registration) -> Result<PolicyRefs> {
     settings.validate()?;
-    let saucepan::models::policy::Eviction::Latest { keep } = settings.defaults.output.eviction;
+    let mut revision = serde_json::to_value(settings.defaults.output.revision)?;
+    revision["type"] = json!("revision_policy");
     let mut values = vec![
         json!({"type":"access_policy","sources":access.sources,"scopes":access.scopes,"actions":access.actions}),
         json!({"type":"claim_visibility_policy","public_scopes":access.public_scopes}),
         json!({"type":"identical_pull_policy","strategy":settings.defaults.output.identical}),
-        json!({"type":"revision_policy","history":"latest","keep":keep}),
+        revision,
         json!({"type":"reclaim_policy","strategy":settings.defaults.reclaim.strategy()}),
         json!({"type":"policy_constraints","minimum_keep":settings.minimum_keep,"maximum_keep":settings.maximum_keep,
             "allowed_identical":settings.allowed_identical,"allowed_reclaim":settings.allowed_reclaim,

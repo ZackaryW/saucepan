@@ -16,16 +16,6 @@ pub enum Identical {
     NewEntry,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "strategy", rename_all = "snake_case", deny_unknown_fields)]
-pub enum Eviction {
-    Latest { keep: usize },
-}
-impl Default for Eviction {
-    fn default() -> Self {
-        Self::Latest { keep: 10 }
-    }
-}
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Protection {
     UseableApp,
@@ -34,7 +24,7 @@ pub enum Protection {
 #[serde(default, deny_unknown_fields)]
 pub struct Policies {
     pub identical: Identical,
-    pub eviction: Eviction,
+    pub revision: RevisionPolicy,
     pub protection: Option<Protection>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

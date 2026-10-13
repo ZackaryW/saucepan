@@ -146,8 +146,9 @@ fn automatic_claims_retain_adopted_evidence_through_publication_and_reopen() {
         .unwrap();
     let app = store.register_app("updates".into()).unwrap();
     let update = policy(json!({"type":"update_policy","mode":"always"}));
+    let no_history = policy(json!({"type":"revision_policy","history":"none"}));
     store
-        .register_policies(std::slice::from_ref(&update))
+        .register_policies(&[update.clone(), no_history.clone()])
         .unwrap();
     let request = Ensure {
         scope: "main".to_string().try_into().unwrap(),
@@ -155,12 +156,17 @@ fn automatic_claims_retain_adopted_evidence_through_publication_and_reopen() {
         selector: Selector::Local,
         selection: Default::default(),
         context: Default::default(),
-        policy_refs: refs(&[&update]),
+        policy_refs: refs(&[&update, &no_history]),
     };
     let first = store
         .ensure_referenced(app.uuid, &request, &Default::default())
         .unwrap();
-    assert_eq!(first.claim.policy_refs, refs(&[&update]));
+    assert_eq!(
+        first.claim.effective.output.revision,
+        RevisionPolicy::None {}
+    );
+    assert!(first.claim.policy_refs.ids().contains(&update.uuid));
+    assert!(first.claim.policy_refs.ids().contains(&no_history.uuid));
     std::fs::write(&input, "two").unwrap();
     let second = store
         .ensure_referenced(app.uuid, &request, &Default::default())
@@ -169,6 +175,10 @@ fn automatic_claims_retain_adopted_evidence_through_publication_and_reopen() {
     assert_ne!(second.claim.entry_uuid, first.claim.entry_uuid);
     let reopened = Store::open(store.root()).unwrap();
     let registry = reopened.registry(app.uuid).unwrap();
+    assert_eq!(
+        registry.claims[&first.claim.uuid].request.policies.revision,
+        RevisionPolicy::None {}
+    );
     assert_eq!(
         registry.claims[&first.claim.uuid].request.adopted,
         first.claim.request.adopted

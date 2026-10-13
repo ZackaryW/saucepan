@@ -2,7 +2,6 @@ use crate::{
     core::{Store, index::Journal},
     models::{
         index::Record,
-        policy::Eviction,
         store::{Availability, ReclaimReport},
     },
     utils::{
@@ -49,7 +48,7 @@ impl Store {
                             &request.selector,
                             &request.selection,
                         ))?;
-                        let Eviction::Latest { keep } = request.policies.eviction;
+                        let keep = request.policies.revision.keep()?;
                         claimed_keep
                             .entry(key)
                             .and_modify(|n| *n = (*n).max(keep))
@@ -67,11 +66,11 @@ impl Store {
             let keep = entries
                 .iter()
                 .filter(|e| e.state != Availability::Reclaimed)
-                .map(|e| {
-                    let Eviction::Latest { keep } = e.request.policies.eviction;
-                    keep
-                })
-                .max()
+                .try_fold(None, |largest: Option<usize>, entry| {
+                    Ok::<_, crate::error::Error>(
+                        largest.max(Some(entry.request.policies.revision.keep()?)),
+                    )
+                })?
                 .max(claimed_keep.get(&key).copied())
                 .unwrap_or(10);
             report.effective_keep.insert(key, keep);

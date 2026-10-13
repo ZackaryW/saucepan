@@ -19,7 +19,7 @@ use saucepan::{
             policy::{Action, ReclaimPolicy, ReclaimStrategy},
         },
         index::lifecycle::{Installation, Phase},
-        policy::{Eviction, Identical, Protection},
+        policy::{Identical, Protection, RevisionPolicy},
         source::Source,
         store::{Availability, Platform, Request, Selector, VerificationMode},
     },
@@ -108,7 +108,7 @@ fn fresh_root_cross_feature_acceptance_with_real_binaries() {
         context: [("package".into(), "tool".into())].into(),
         overrides: Default::default(),
     };
-    request.overrides.keep = Some(1);
+    request.overrides.revision = Some(saucepan::models::policy::RevisionPolicy::Latest { keep: 1 });
     request.overrides.reclaim = Some(ReclaimPolicy::ReclaimPolicy {
         strategy: ReclaimStrategy::RestoreExact,
     });
@@ -310,7 +310,7 @@ fn fresh_root_cross_feature_acceptance_with_real_binaries() {
     binary_request.selection.bin = vec![executable.clone()];
     binary_request.selection.platform = Some(Platform::host());
     binary_request.policies.identical = Identical::NewEntry;
-    binary_request.policies.eviction = Eviction::Latest { keep: 2 };
+    binary_request.policies.revision = RevisionPolicy::Latest { keep: 2 };
     binary_request.policies.protection = Some(Protection::UseableApp);
     let probe = Probe {
         args: vec!["--version".into()],

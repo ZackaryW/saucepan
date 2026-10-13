@@ -96,9 +96,7 @@ impl Store {
                 scope: input.scope.clone(),
                 overrides: crate::models::claim::policy::Overrides {
                     identical: Some(input.request.policies.identical),
-                    keep: Some(match input.request.policies.eviction {
-                        crate::models::policy::Eviction::Latest { keep } => keep,
-                    }),
+                    revision: Some(input.request.policies.revision),
                     useable_app: Some(true),
                     reclaim: None,
                     update_policy: None,

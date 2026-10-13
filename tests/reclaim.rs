@@ -1,6 +1,6 @@
 mod native_root;
 use saucepan::models::{
-    policy::{Eviction, Identical},
+    policy::{Identical, RevisionPolicy},
     source::Source,
     store::{Availability, Request, Selector},
 };
@@ -68,7 +68,7 @@ fn latest_ten_overrides_claims_and_reacquisition() {
         store.output(first.claim.entry_uuid).unwrap().state,
         Availability::Reclaimed
     );
-    request.policies.eviction = Eviction::Latest { keep: 3 };
+    request.policies.revision = RevisionPolicy::Latest { keep: 3 };
     let custom = store.acquire(&request).unwrap();
     assert_eq!(custom.reclaim.effective_keep[&custom.entry.item_key], 10);
     request.policies.identical = Identical::Reuse;
@@ -96,7 +96,7 @@ fn deletion_failure_is_pending_and_retryable() {
         policies: Default::default(),
     };
     request.policies.identical = Identical::NewEntry;
-    request.policies.eviction = Eviction::Latest { keep: 1 };
+    request.policies.revision = RevisionPolicy::Latest { keep: 1 };
     let first = store.acquire(&request).unwrap();
     let held = fs::OpenOptions::new()
         .read(true)

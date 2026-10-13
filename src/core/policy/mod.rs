@@ -1,7 +1,4 @@
-use crate::{
-    models::{policy::Eviction, store::Request},
-    utils::path::relative_path,
-};
+use crate::{models::store::Request, utils::path::relative_path};
 use anyhow::{Result, ensure};
 pub(crate) mod adopt;
 pub(crate) mod authority;
@@ -15,7 +12,7 @@ pub mod prepare;
 pub mod resolve;
 pub(crate) mod source;
 pub fn validate(request: &Request) -> Result<()> {
-    let Eviction::Latest { keep } = request.policies.eviction;
+    let keep = request.policies.revision.keep()?;
     ensure!(keep > 0, "retention must be positive");
     for p in request
         .selection

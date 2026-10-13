@@ -270,7 +270,7 @@ pub(crate) fn managed_request(
         },
         policies: Policies {
             identical: request.identical,
-            eviction: revision.try_into()?,
+            revision,
             protection: request.protection.clone(),
         },
     })

@@ -1,7 +1,7 @@
 use saucepan::{
     core::policy::composition::{effective_revision, validate_composition, validate_retrieval},
     models::{
-        policy::{Eviction, Freshness, PayloadVerification, RevisionPolicy, UpdatePolicy},
+        policy::{Freshness, PayloadVerification, RevisionPolicy, UpdatePolicy},
         retrieval::{CachePolicy, RetrieveRequest},
         store::{AcquisitionRequest, Destination, Request},
     },
@@ -122,26 +122,26 @@ fn contradictions_fail_without_io() {
 }
 
 #[test]
-fn revision_adapter_preserves_current_convenience_defaults() {
+fn revision_policy_preserves_history_choice_and_defaults() {
     let request: Request = serde_json::from_value(
         json!({"source_uuid":uuid::Uuid::nil(),"selector":{"type":"local"}}),
     )
     .unwrap();
     assert_eq!(
-        RevisionPolicy::try_from(&request.policies.eviction).unwrap(),
+        request.policies.revision,
         RevisionPolicy::Latest { keep: 10 }
     );
-    assert_eq!(
-        Eviction::try_from(RevisionPolicy::None {}).unwrap(),
-        Eviction::Latest { keep: 1 }
-    );
-    assert!(Eviction::try_from(RevisionPolicy::Latest { keep: 0 }).is_err());
-    assert!(RevisionPolicy::try_from(&Eviction::Latest { keep: 0 }).is_err());
-    for keep in [1, 3, 10, usize::MAX] {
-        let legacy = Eviction::Latest { keep };
+    assert_eq!(RevisionPolicy::None {}.keep().unwrap(), 1);
+    assert!(RevisionPolicy::Latest { keep: 0 }.keep().is_err());
+    for policy in [
+        RevisionPolicy::None {},
+        RevisionPolicy::Latest { keep: 1 },
+        RevisionPolicy::Latest { keep: 10 },
+    ] {
         assert_eq!(
-            Eviction::try_from(RevisionPolicy::try_from(&legacy).unwrap()).unwrap(),
-            legacy
+            serde_json::from_value::<RevisionPolicy>(serde_json::to_value(policy).unwrap())
+                .unwrap(),
+            policy
         );
     }
 }
@@ -165,15 +165,36 @@ fn documented_request_examples_parse_and_validate() {
         .skip(1)
         .map(|part| serde_json::from_str(part.split("```").next().unwrap()).unwrap())
         .collect();
-    assert_eq!(values.len(), 4);
-    let retrieve: RetrieveRequest = serde_json::from_value(values[0].clone()).unwrap();
-    let acquire: AcquisitionRequest = serde_json::from_value(values[1].clone()).unwrap();
-    validate_composition(&retrieve, &acquire, false).unwrap();
-    // The managed CLI example contains a placeholder UUID but its acquisition
-    // fields are the same public contract. The final example is a full request.
-    let _: AcquisitionRequest = serde_json::from_value(values[2]["acquisition"].clone()).unwrap();
-    let retrieve: RetrieveRequest = serde_json::from_value(values[3]["retrieval"].clone()).unwrap();
-    let acquire: AcquisitionRequest =
-        serde_json::from_value(values[3]["acquisition"].clone()).unwrap();
-    validate_composition(&retrieve, &acquire, false).unwrap();
+    use saucepan::{
+        core::policy::{
+            catalog::PolicyCatalog,
+            prepare::{self, Attachments},
+        },
+        models::policy::requests::{Acquisition, Retrieval},
+    };
+    assert_eq!(values.len(), 7);
+    let catalog = PolicyCatalog::new(
+        serde_json::from_value::<Vec<saucepan::models::policy::PolicyRecord>>(values[0].clone())
+            .unwrap(),
+    )
+    .unwrap();
+    let empty = Default::default();
+    let attachments = Attachments {
+        source: &empty,
+        application: &empty,
+    };
+    for index in [1, 3] {
+        let input: Retrieval = serde_json::from_value(values[index].clone()).unwrap();
+        prepare::retrieval(&catalog, &attachments, &input).unwrap();
+    }
+    for index in [2, 4] {
+        let input: Acquisition = serde_json::from_value(values[index].clone()).unwrap();
+        prepare::acquisition(&catalog, &attachments, &input).unwrap();
+    }
+    let _: Acquisition = serde_json::from_value(values[5]["acquisition"].clone()).unwrap();
+    let retrieval: Retrieval = serde_json::from_value(values[6]["retrieval"].clone()).unwrap();
+    let acquisition: Acquisition =
+        serde_json::from_value(values[6]["acquisition"].clone()).unwrap();
+    prepare::retrieval(&catalog, &attachments, &retrieval).unwrap();
+    prepare::acquisition(&catalog, &attachments, &acquisition).unwrap();
 }

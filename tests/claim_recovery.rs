@@ -33,7 +33,7 @@ fn request(source_uuid: uuid::Uuid, strategy: ReclaimStrategy) -> EnsureRequest 
         selection: Default::default(),
         context: [("label".into(), "retained".into())].into(),
         overrides: saucepan::models::claim::policy::Overrides {
-            keep: Some(1),
+            revision: Some(saucepan::models::policy::RevisionPolicy::Latest { keep: 1 }),
             reclaim: Some(ReclaimPolicy::ReclaimPolicy { strategy }),
             ..Default::default()
         },

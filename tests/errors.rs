@@ -2,7 +2,7 @@ mod native_root;
 use saucepan::{
     error::{Error, ErrorCode},
     models::{
-        policy::{Eviction, Identical},
+        policy::{Identical, RevisionPolicy},
         source::Source,
         store::{Request, Selector, VerificationMode},
     },
@@ -52,12 +52,12 @@ fn native_store_failures_have_codes_without_message_matching() {
         selection: Default::default(),
         policies: Default::default(),
     };
-    request.policies.eviction = Eviction::Latest { keep: 0 };
+    request.policies.revision = RevisionPolicy::Latest { keep: 0 };
     assert_eq!(
         code(store.acquire(&request).unwrap_err()),
         ErrorCode::InvalidRequest
     );
-    request.policies.eviction = Eviction::Latest { keep: 1 };
+    request.policies.revision = RevisionPolicy::Latest { keep: 1 };
     request.policies.identical = Identical::NewEntry;
     let old = store.acquire(&request).unwrap();
     fs::write(&path, b"second").unwrap();

@@ -87,7 +87,7 @@ fn uninstall_fences_pending_maintenance_and_claim_publication() {
 fn durable_candidate_survives_reclaim_and_invalid_candidate_releases_protection() {
     use crate::models::{
         index::lifecycle::{Installation, Probe},
-        policy::{Eviction, Identical, Protection},
+        policy::{Identical, Protection, RevisionPolicy},
         source::Source,
         store::{Availability, Request, Selector},
     };
@@ -111,7 +111,7 @@ fn durable_candidate_survives_reclaim_and_invalid_candidate_releases_protection(
         request.selection.bin = vec![name.clone()];
         request.policies.protection = Some(Protection::UseableApp);
         request.policies.identical = Identical::NewEntry;
-        request.policies.eviction = Eviction::Latest { keep: 1 };
+        request.policies.revision = RevisionPolicy::Latest { keep: 1 };
         let input = Installation {
             scope: "fixture".to_string().try_into().unwrap(),
             name: "recovery".into(),

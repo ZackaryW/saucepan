@@ -1,5 +1,4 @@
 //! Independent policies for source retrieval, copied-result updates and history.
-use super::Eviction;
 use crate::error::{Error, ErrorCode, Result};
 use serde::{Deserialize, Serialize};
 
@@ -62,28 +61,6 @@ impl RevisionPolicy {
             )),
             Self::Latest { keep } => Ok(keep),
         }
-    }
-}
-// Both public spellings feed the existing retention evaluator. No second window.
-impl TryFrom<RevisionPolicy> for Eviction {
-    type Error = Error;
-    fn try_from(value: RevisionPolicy) -> Result<Self> {
-        Ok(Self::Latest {
-            keep: value.keep()?,
-        })
-    }
-}
-impl TryFrom<&Eviction> for RevisionPolicy {
-    type Error = Error;
-    fn try_from(value: &Eviction) -> Result<Self> {
-        let Eviction::Latest { keep } = *value;
-        let policy = if keep == 1 {
-            Self::None {}
-        } else {
-            Self::Latest { keep }
-        };
-        policy.keep()?;
-        Ok(policy)
     }
 }
 

@@ -2,7 +2,7 @@ mod native_root;
 use saucepan::{
     core::activation::Probe,
     models::{
-        policy::{Eviction, Identical, Protection},
+        policy::{Identical, Protection, RevisionPolicy},
         source::Source,
         store::{Availability, Request, Selector},
     },
@@ -160,7 +160,7 @@ fn deactivation_preserves_live_targets_claims_and_other_bindings() {
     };
     request.selection.bin = vec![name.into()];
     request.policies.protection = Some(Protection::UseableApp);
-    request.policies.eviction = Eviction::Latest { keep: 1 };
+    request.policies.revision = RevisionPolicy::Latest { keep: 1 };
     request.policies.identical = Identical::NewEntry;
     let first = store
         .acquire_for(
@@ -338,7 +338,7 @@ fn active_switch_failed_probe_rollback_streams_and_launcher_death() {
     };
     request.selection.bin = vec![name.into()];
     request.policies.protection = Some(Protection::UseableApp);
-    request.policies.eviction = Eviction::Latest { keep: 1 };
+    request.policies.revision = RevisionPolicy::Latest { keep: 1 };
     request.policies.identical = Identical::NewEntry;
     let first = store
         .acquire_for(

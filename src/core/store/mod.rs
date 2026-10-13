@@ -223,7 +223,7 @@ impl Store {
             &prepared.resolved,
             &content_digest,
             &prepared.dependencies,
-            &request.policies.eviction,
+            &request.policies.revision,
             &request.policies.protection,
         ))?;
         #[cfg(test)]
@@ -269,7 +269,7 @@ impl Store {
                                     crate::models::policy::UpdatePolicy::Manual {}
                                 ) && e.item_key == item_key
                                     && e.files == files
-                                    && e.request.policies.eviction == request.policies.eviction
+                                    && e.request.policies.revision == request.policies.revision
                                     && e.request.policies.protection == request.policies.protection
                                     && updates::selected_dependencies(
                                         &e.dependencies,

@@ -1,6 +1,6 @@
 mod native_root;
 use saucepan::models::{
-    policy::{Eviction, Identical},
+    policy::{Identical, RevisionPolicy},
     source::Source,
     store::{Availability, Request, Selector, VerificationMode},
 };
@@ -23,7 +23,7 @@ fn fixture() -> (tempfile::TempDir, native_root::NativeStore, Request) {
         policies: Default::default(),
     };
     request.policies.identical = Identical::NewEntry;
-    request.policies.eviction = Eviction::Latest { keep: 1 };
+    request.policies.revision = RevisionPolicy::Latest { keep: 1 };
     (tmp, store, request)
 }
 
@@ -188,7 +188,7 @@ fn simultaneous_claim_update_returns_one_consistent_selection() {
 #[test]
 fn metadata_and_full_access_native_and_cli_preserve_identity() {
     let (_tmp, store, mut request) = fixture();
-    request.policies.eviction = Eviction::Latest { keep: 10 };
+    request.policies.revision = RevisionPolicy::Latest { keep: 10 };
     let old = store.acquire(&request).unwrap();
     store.acquire(&request).unwrap();
     let index = store

@@ -135,18 +135,19 @@ fn reverse_overlap_context_changes_missing_projections_and_policy_conflicts_do_n
         ErrorCode::InvalidRequest
     );
     request.selection.folder = Some("pkg".into());
-    request.overrides.keep = Some(20);
+    request.overrides.revision =
+        Some(saucepan::models::policy::RevisionPolicy::Latest { keep: 20 });
     assert_eq!(
         code(session.ensure(&request, &Default::default()).unwrap_err()),
         ErrorCode::ClaimOverlap
     );
-    request.overrides.keep = Some(0);
+    request.overrides.revision = Some(saucepan::models::policy::RevisionPolicy::Latest { keep: 0 });
     assert_eq!(
         code(session.ensure(&request, &Default::default()).unwrap_err()),
         ErrorCode::PolicyConflict
     );
     assert_eq!(session.claims().unwrap().len(), 1);
-    request.overrides.keep = None;
+    request.overrides.revision = None;
     request.selection.folder = Some("pkg-other".into());
     let disjoint = session.ensure(&request, &Default::default()).unwrap();
     assert_ne!(disjoint.claim.uuid, selected.claim.uuid);
@@ -249,8 +250,8 @@ fn concurrent_registration_and_registered_defaults_are_applied_before_source_wor
             .map(|_| {
                 threads.spawn(|| {
                     let mut settings = saucepan::models::claim::policy::Registration::default();
-                    settings.defaults.output.eviction =
-                        saucepan::models::policy::Eviction::Latest { keep: 3 };
+                    settings.defaults.output.revision =
+                        saucepan::models::policy::RevisionPolicy::Latest { keep: 3 };
                     settings.maximum_keep = 4;
                     let registration = ApplicationRegistration {
                         registration_key: scope("retry-key"),
@@ -272,20 +273,20 @@ fn concurrent_registration_and_registered_defaults_are_applied_before_source_wor
     });
     assert!(ids.iter().all(|id| *id == ids[0]));
     let session = store.session(ids[0], None).unwrap();
-    request.overrides.keep = Some(5);
+    request.overrides.revision = Some(saucepan::models::policy::RevisionPolicy::Latest { keep: 5 });
     let before = fs::read(store.root().join("root.json")).unwrap();
     assert_eq!(
         code(session.ensure(&request, &Default::default()).unwrap_err()),
         ErrorCode::PolicyConflict
     );
     assert_eq!(fs::read(store.root().join("root.json")).unwrap(), before);
-    request.overrides.keep = None;
+    request.overrides.revision = None;
     let result = session.ensure(&request, &Default::default()).unwrap();
     assert_eq!(
-        result.claim.effective.output.eviction,
-        saucepan::models::policy::Eviction::Latest { keep: 3 }
+        result.claim.effective.output.revision,
+        saucepan::models::policy::RevisionPolicy::Latest { keep: 3 }
     );
-    assert_eq!(result.claim.overrides.keep, None);
+    assert_eq!(result.claim.overrides.revision, None);
     assert_eq!(
         store
             .source(request.source_uuid)

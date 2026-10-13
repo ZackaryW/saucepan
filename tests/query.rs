@@ -3,7 +3,7 @@ use saucepan::{
     core::query::{ClaimQuery, Condition, Operator},
     models::{
         index::{ClaimContext, Settings},
-        policy::Eviction,
+        policy::RevisionPolicy,
         source::Source,
         store::{Availability, Request, Selector},
     },
@@ -205,7 +205,7 @@ fn query_uses_metadata_without_refreshing_sources_or_touching_payloads() {
 #[test]
 fn results_do_not_protect_content_and_unavailable_claims_remain_searchable() {
     let (tmp, store, app, mut request) = setup();
-    request.policies.eviction = Eviction::Latest { keep: 1 };
+    request.policies.revision = RevisionPolicy::Latest { keep: 1 };
     let old = store
         .acquire_for_with_context(
             app,

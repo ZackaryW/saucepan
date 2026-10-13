@@ -3,7 +3,7 @@ use super::{AcquireOptions, Prepared};
 use crate::{
     core::{Store, retrieval::RetrieveOptions, store::composition},
     models::{
-        policy::{Freshness, PayloadVerification, RevisionPolicy},
+        policy::{Freshness, PayloadVerification},
         retrieval::{AssetSelection, CachePolicy, RetrieveRequest, SourceInput},
         source::Source,
         store::{AcquisitionRequest, Format, Request},
@@ -122,7 +122,7 @@ impl Store {
             folder: request.selection.folder.clone(),
             bin: request.selection.bin.clone(),
             identical: request.policies.identical,
-            revision_policy: Some(RevisionPolicy::try_from(&request.policies.eviction)?),
+            revision_policy: Some(request.policies.revision),
             protection: request.policies.protection.clone(),
             ..Default::default()
         };

@@ -30,7 +30,8 @@ fn recovery_keeps_newer_state_and_rejects_dependency_mismatch_before_publication
             context: Default::default(),
             overrides: Default::default(),
         };
-        request.overrides.keep = Some(1);
+        request.overrides.revision =
+            Some(saucepan::models::policy::RevisionPolicy::Latest { keep: 1 });
         request.overrides.reclaim = Some(ReclaimPolicy::ReclaimPolicy {
             strategy: ReclaimStrategy::RestoreExact,
         });

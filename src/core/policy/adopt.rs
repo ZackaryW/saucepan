@@ -46,7 +46,7 @@ pub(crate) fn effective(plan: &EvaluatedPolicies) -> Result<Effective> {
     Ok(Effective {
         output: Policies {
             identical: b.identical,
-            eviction: b.revision.try_into()?,
+            revision: b.revision,
             protection: b.useable_app.then_some(Protection::UseableApp),
         },
         reclaim: ReclaimPolicy::ReclaimPolicy {
@@ -56,10 +56,9 @@ pub(crate) fn effective(plan: &EvaluatedPolicies) -> Result<Effective> {
     })
 }
 pub(crate) fn pinned(effective: &Effective) -> Overrides {
-    let crate::models::policy::Eviction::Latest { keep } = effective.output.eviction;
     Overrides {
         identical: Some(effective.output.identical),
-        keep: Some(keep),
+        revision: Some(effective.output.revision),
         reclaim: Some(effective.reclaim.clone()),
         useable_app: Some(effective.output.protection.is_some()),
         update_policy: Some(effective.update_policy),
@@ -68,7 +67,7 @@ pub(crate) fn pinned(effective: &Effective) -> Overrides {
 fn survivor(effective: &Effective) -> Result<EvaluatedPolicies> {
     let mut plan = EvaluatedPolicies::default();
     plan.behavior.identical = effective.output.identical;
-    plan.behavior.revision = (&effective.output.eviction).try_into()?;
+    plan.behavior.revision = effective.output.revision;
     plan.behavior.update = effective.update_policy;
     plan.behavior.reclaim = effective.reclaim.strategy();
     plan.behavior.useable_app = effective.output.protection.is_some();
