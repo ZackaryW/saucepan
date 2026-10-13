@@ -19,6 +19,7 @@ fn setup() -> (tempfile::TempDir, native_root::NativeStore, Uuid, Request) {
     let app = store.register_app("consumer".into()).unwrap();
     let source = store.register_source(Source::Local { path: file }).unwrap();
     let request = Request {
+        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),

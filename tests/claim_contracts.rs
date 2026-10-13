@@ -372,6 +372,7 @@ fn registry_and_claim_round_trip_validate_the_new_contract() {
         scope: scope("project-a"),
         entry_uuid: Uuid::new_v4(),
         request: Request {
+            adopted: None,
             source_uuid: Uuid::new_v4(),
             selector: Selector::Local,
             selection: Default::default(),

@@ -84,6 +84,8 @@ pub struct Selection {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Request {
+    #[serde(default)]
+    pub adopted: Option<Box<crate::models::claim::adopted::AdoptedPolicies>>,
     pub source_uuid: Uuid,
     pub selector: Selector,
     #[serde(default)]

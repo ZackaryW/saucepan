@@ -81,6 +81,7 @@ fn app_defaults_do_not_move_claims_and_explicit_adoption_preserves_context_and_o
         .unwrap();
     let app = store.register_app("consumer".into()).unwrap();
     let request = EnsureRequest {
+        adopted: None,
         scope: "main".to_string().try_into().unwrap(),
         source_uuid: source.uuid,
         selector: Selector::Local,

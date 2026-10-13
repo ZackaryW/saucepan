@@ -17,6 +17,7 @@ fn intervening_writers_cannot_be_overwritten_by_new_entry_ensure() {
             .unwrap();
         let app = store.register_app("consumer".into()).unwrap().uuid;
         let mut request = EnsureRequest {
+            adopted: None,
             scope: "project".to_string().try_into().unwrap(),
             source_uuid: source.uuid,
             selector: Selector::Local,
@@ -118,6 +119,7 @@ fn intervening_writers_fence_automatic_ensure_check_state_and_selection() {
             .unwrap();
         let app = store.register_app("app".into()).unwrap().uuid;
         let request = EnsureRequest {
+            adopted: None,
             scope: "project".to_string().try_into().unwrap(),
             source_uuid: source.uuid,
             selector: Selector::Local,

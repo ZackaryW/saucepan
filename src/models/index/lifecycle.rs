@@ -102,6 +102,8 @@ pub struct ShimChange {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Operation {
+    #[serde(default)]
+    pub source_policy: Option<SourcePolicyObservation>,
     pub operation: Uuid,
     pub app: Uuid,
     pub action: Action,
@@ -117,4 +119,11 @@ pub struct Operation {
     pub pending: Vec<String>,
     pub reason: Option<crate::error::Error>,
     pub leftovers: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SourcePolicyObservation {
+    pub source_uuid: Uuid,
+    pub revision: u64,
 }

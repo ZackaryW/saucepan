@@ -255,6 +255,7 @@ pub(crate) fn managed_request(
     };
     let revision = effective_revision(request)?.expect("managed revision policy");
     Ok(Request {
+        adopted: request.adopted.clone(),
         source_uuid,
         selector: retrieved.request.selector.clone(),
         selection: Selection {

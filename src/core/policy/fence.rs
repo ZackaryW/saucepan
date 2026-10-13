@@ -6,12 +6,16 @@ use crate::{
 };
 use anyhow::{Result, ensure};
 use std::collections::BTreeMap;
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
 use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub struct PolicyFence {
     source: Option<(Uuid, u64, PolicyRefs)>,
-    application: Option<(Uuid, u64, PolicyRefs)>,
+    application: Option<(Uuid, Arc<AtomicU64>, PolicyRefs)>,
     definitions: BTreeMap<Uuid, String>,
     authority: Option<(
         crate::models::policy::effective::EvaluatedPolicies,
@@ -41,7 +45,7 @@ impl PolicyFence {
                     let registry = store.registry(uuid)?;
                     Ok::<_, anyhow::Error>((
                         uuid,
-                        registry.registry.revision,
+                        Arc::new(AtomicU64::new(registry.registry.revision)),
                         registry.registry.policy_refs,
                     ))
                 })
@@ -117,7 +121,8 @@ impl PolicyFence {
         if let Some((uuid, revision, refs)) = &self.application {
             let current = store.registry(*uuid)?;
             ensure!(
-                current.registry.revision == *revision && current.registry.policy_refs == *refs,
+                current.registry.revision == revision.load(Ordering::SeqCst)
+                    && current.registry.policy_refs == *refs,
                 Error::new(
                     ErrorCode::RevisionConflict,
                     "application policy associations changed"
@@ -126,9 +131,23 @@ impl PolicyFence {
         }
         Ok(())
     }
+    /// Advance only after this operation successfully published its own app
+    /// revision under the checked metadata lock. Concurrent writers never call it.
+    pub(crate) fn published(&self, app: Uuid, revision: u64) {
+        if let Some((expected_app, expected, _)) = &self.application
+            && *expected_app == app
+        {
+            expected.store(revision, Ordering::SeqCst);
+        }
+    }
 }
 
 impl Store {
+    pub(crate) fn with_policy_fence(&self, source: Uuid, app: Option<Uuid>) -> Result<Self> {
+        let mut store = self.clone();
+        store.policy_fence = Some(PolicyFence::capture(self, Some(source), app)?);
+        Ok(store)
+    }
     pub(crate) fn check_policy_action(
         &self,
         action: crate::models::claim::policy::Action,

@@ -44,6 +44,7 @@ fn probe_mutation_preserves_binding_and_corrupted_reuse_is_rejected() {
         .register_source(Source::Local { path: input })
         .unwrap();
     let mut request = Request {
+        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),
@@ -151,6 +152,7 @@ fn deactivation_preserves_live_targets_claims_and_other_bindings() {
     let app = store.register_app("deactivate".into()).unwrap();
     let other = store.register_app("other".into()).unwrap();
     let mut request = Request {
+        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),
@@ -328,6 +330,7 @@ fn active_switch_failed_probe_rollback_streams_and_launcher_death() {
         .unwrap();
     let app = store.register_app("fixture".into()).unwrap();
     let mut request = Request {
+        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),

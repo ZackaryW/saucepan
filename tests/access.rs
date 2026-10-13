@@ -16,6 +16,7 @@ fn fixture() -> (tempfile::TempDir, native_root::NativeStore, Request) {
         .register_source(Source::Local { path: input })
         .unwrap();
     let mut request = Request {
+        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),

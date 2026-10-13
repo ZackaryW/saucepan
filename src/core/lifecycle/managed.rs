@@ -32,6 +32,11 @@ impl Store {
         options: &AcquireOptions,
         operation: Option<Uuid>,
     ) -> Result<Operation> {
+        if self.policy_fence.is_none() {
+            return self
+                .with_policy_fence(input.request.source_uuid, None)?
+                .install_application(input, built_shim, options, operation);
+        }
         ensure!(!input.name.trim().is_empty(), "empty app name");
         let binary = executable(&input.request)?.to_owned();
         let sidecar = shims::sidecar(&input.shim)?;
@@ -87,7 +92,7 @@ impl Store {
             let (candidate, _guard) = self.acquire_candidate(&input.request, options)?;
             let lease = self.validate_candidate(candidate.entry.uuid, &binary, &input.probe)?;
             let claim = Claim {
-                policy_refs: Default::default(),
+                policy_refs: self.adopted_refs(input.request.adopted.as_deref())?,
                 scope: input.scope.clone(),
                 overrides: crate::models::claim::policy::Overrides {
                     identical: Some(input.request.policies.identical),
@@ -125,6 +130,7 @@ impl Store {
                 shims: vec![desired_shim],
             });
             let _lock = self.lock()?;
+            self.check_operation_policy(&op)?;
             op.status = Phase::CommitIntent;
             op.pending.clear();
             self.save_operation(&op)?;
@@ -145,6 +151,17 @@ impl Store {
         options: &AcquireOptions,
         operation: Option<Uuid>,
     ) -> Result<Operation> {
+        if self.policy_fence.is_none() {
+            let _lock = self.lock()?;
+            let registry = self.registry(app)?;
+            self.check_session(&registry)?;
+            let selected = registry.claims.get(&claim).ok_or_else(|| {
+                crate::error::Error::new(crate::error::ErrorCode::UnknownClaim, "claim missing")
+            })?;
+            let execution = self.with_policy_fence(selected.request.source_uuid, Some(app))?;
+            drop(_lock);
+            return execution.update_application(app, claim, probe, rollback, options, operation);
+        }
         let (mut op, _guard) = self.begin_operation(
             operation.unwrap_or_else(Uuid::new_v4),
             Some(app),
@@ -219,6 +236,7 @@ impl Store {
             op.desired_registry = Some(registry);
             op.desired = Some(desired);
             let _lock = self.lock()?;
+            self.check_operation_policy(&op)?;
             ensure!(
                 Some(self.application(app)?.revision) == op.expected_revision,
                 crate::error::Error::new(
@@ -289,6 +307,7 @@ impl Store {
                 .map(|s| shims::shim_lock(&self.root, &s.desired.name, LockMode::Exclusive))
                 .collect::<Result<Vec<_>>>()?;
             let _lock = self.lock()?;
+            self.check_operation_policy(op)?;
             let desired = op.desired.as_ref().context("application intent missing")?;
             if matches!(op.action, Action::Install { .. }) {
                 ensure!(
@@ -338,6 +357,19 @@ impl Store {
             }
             op.pending = vec![op.reason.as_ref().unwrap().message.clone()];
             self.save_operation(op)?;
+        }
+        Ok(())
+    }
+    fn check_operation_policy(&self, op: &Operation) -> Result<()> {
+        self.check_policy_fence()?;
+        if let Some(observed) = &op.source_policy {
+            ensure!(
+                self.source(observed.source_uuid)?.policy_revision == observed.revision,
+                crate::error::Error::new(
+                    crate::error::ErrorCode::RevisionConflict,
+                    "source policy changed during application operation"
+                )
+            );
         }
         Ok(())
     }

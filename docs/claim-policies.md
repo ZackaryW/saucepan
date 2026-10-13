@@ -1,5 +1,23 @@
 # Application claim policies
 
+The flat-policy native flow registers standalone definitions with
+`Store::register_policies`, attaches app defaults with
+`Store::adopt_application_policies`, and calls `AppSession::ensure_referenced`
+with `models::claim::request::Ensure`. Its policy input is only `policy_refs`;
+asset patterns are selected through `selection.filter_refs`.
+
+Each new claim captures the selected behavior and definition digests. Equivalent
+policy UUIDs reuse an exact or covered claim within the same explicit scope,
+without replacing its adopted references. Another scope gets its own claim.
+Later app defaults apply to new claims; explicit `adopt_claim_policies` changes an
+existing claim at its expected application revision. Identity, context, selected
+output and binding remain intact. Current access restrictions always apply, even
+to cache hits, recovery and historical output replay.
+
+`tests/policy_claims.rs` exercises defaults, coverage, separate scopes, explicit
+adoption and automatic updates. The older nested registration/override inputs
+below remain transitional until the canonical CLI/public-contract cutover.
+
 The Rust contracts live in `models::claim`; `core::claim` owns integrity-verified
 persistence, app sessions and the shared evaluator. App claims are stored in a
 separate registry. Create an app using `register_application` with an explicit

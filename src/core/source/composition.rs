@@ -21,7 +21,7 @@ impl Store {
         options: &AcquireOptions,
     ) -> Result<Prepared> {
         let source = self.source(request.source_uuid)?;
-        let retrieval = RetrieveRequest {
+        let mut retrieval = RetrieveRequest {
             provenance: Vec::new(),
             source: SourceInput::Inline {
                 source: source.source,
@@ -36,6 +36,10 @@ impl Store {
             verification: PayloadVerification::IfAvailable,
             expected_sha256: request.selection.sha256.clone(),
         };
+        if let Some(adopted) = &request.adopted {
+            retrieval.verification = adopted.behavior.payload_verification;
+            retrieval.provenance = adopted.evidence.values().cloned().collect();
+        }
         let retrieved = crate::core::retrieval::Retriever::retrieve_exact(
             &retrieval,
             &RetrieveOptions {
@@ -89,7 +93,7 @@ impl Store {
                 "downloads require raw or zip format"
             ),
         }
-        let retrieval = RetrieveRequest {
+        let mut retrieval = RetrieveRequest {
             provenance: Vec::new(),
             source: SourceInput::Registered {
                 source_uuid: request.source_uuid,
@@ -107,7 +111,8 @@ impl Store {
             verification: PayloadVerification::IfAvailable,
             expected_sha256: request.selection.sha256.clone(),
         };
-        let acquired = AcquisitionRequest {
+        let mut acquired = AcquisitionRequest {
+            adopted: request.adopted.clone(),
             format: request.selection.format,
             filename: if matches!(source.source, Source::Local { .. }) {
                 None
@@ -121,6 +126,39 @@ impl Store {
             protection: request.policies.protection.clone(),
             ..Default::default()
         };
+        if let Some(adopted) = &request.adopted {
+            let snapshot = self.metadata.snapshot()?;
+            let catalog = crate::core::policy::persistence::load(&self.metadata, &snapshot)?;
+            crate::core::policy::claims::validate_adopted(&catalog, adopted)?;
+            let behavior = &adopted.behavior;
+            ensure!(
+                behavior.cache == crate::models::policy::record::CacheMode::Cached,
+                crate::error::Error::new(
+                    crate::error::ErrorCode::PolicyConflict,
+                    "managed claims require cached retrieval"
+                )
+            );
+            ensure!(
+                !options.force_refresh || !matches!(behavior.freshness, Freshness::CacheOnly {}),
+                crate::error::Error::new(
+                    crate::error::ErrorCode::PolicyConflict,
+                    "forced update conflicts with cache_only"
+                )
+            );
+            retrieval.cache = CachePolicy::Cached {
+                freshness: Some(if options.force_refresh {
+                    Freshness::Always {}
+                } else {
+                    behavior.freshness
+                }),
+                allow_stale: behavior.allow_stale,
+            };
+            retrieval.verification = behavior.payload_verification;
+            retrieval.provenance = adopted.evidence.values().cloned().collect();
+            acquired.provenance = retrieval.provenance.clone();
+            acquired.update_policy = behavior.update;
+            acquired.revision_policy = Some(behavior.revision);
+        }
         crate::core::policy::composition::validate_composition(&retrieval, &acquired, false)?;
         Ok((retrieval, acquired))
     }

@@ -13,6 +13,7 @@ fn fixture() -> (tempfile::TempDir, Store, Application, Request) {
         .unwrap();
     let app = store.register_app("recovery".into()).unwrap();
     let request = Request {
+        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),

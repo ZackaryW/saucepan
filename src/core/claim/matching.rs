@@ -22,6 +22,23 @@ pub(super) fn select(
     request: &Request,
     effective: &Effective,
 ) -> Result<Option<Match>> {
+    select_inner(store, registry, scope, request, Some(effective))
+}
+pub(super) fn select_identity(
+    store: &Store,
+    registry: &RegistryState,
+    scope: &Scope,
+    request: &Request,
+) -> Result<Option<Match>> {
+    select_inner(store, registry, scope, request, None)
+}
+fn select_inner(
+    store: &Store,
+    registry: &RegistryState,
+    scope: &Scope,
+    request: &Request,
+    effective: Option<&Effective>,
+) -> Result<Option<Match>> {
     let mut matches = Vec::new();
     let mut overlap = false;
     for claim in registry.claims.values().filter(|claim| {
@@ -61,11 +78,13 @@ pub(super) fn select(
         }
         // Reuse/new_entry chooses acquisition behavior, not a second ownership
         // identity. Retention, protection and recovery must still agree.
-        let mut compatible = claim.effective.clone();
-        compatible.output.identical = effective.output.identical;
-        if &compatible != effective {
-            overlap = true;
-            continue;
+        if let Some(effective) = effective {
+            let mut compatible = claim.effective.clone();
+            compatible.output.identical = effective.output.identical;
+            if &compatible != effective {
+                overlap = true;
+                continue;
+            }
         }
         if exact {
             matches.push((

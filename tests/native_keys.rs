@@ -55,6 +55,7 @@ fn protected_manager_and_real_shim_share_native_custody() {
         .unwrap();
     let name = manager.file_name().unwrap().to_str().unwrap();
     let mut request = Request {
+        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),

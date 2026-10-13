@@ -51,6 +51,12 @@ impl Store {
                 .with_context(|| Error::new(ErrorCode::UnknownClaim, "claim missing"))?
                 .clone();
             self.authorize_claim(&registry, &claim, Action::Recover)?;
+            if self.policy_fence.is_none() {
+                let execution = self.with_policy_fence(claim.request.source_uuid, Some(app))?;
+                drop(_lock);
+                return execution.recover_claim_view(app, id, expected, relative, options);
+            }
+            self.check_policy_fence()?;
             let original = self.output(claim.entry_uuid)?;
             match self.metadata_lease_locked(&original) {
                 Ok(mut lease) => {
@@ -101,7 +107,9 @@ impl Store {
             ReclaimStrategy::ReportUnavailable => unreachable!(),
             ReclaimStrategy::Refresh => self.acquire_candidate(&claim.request, options)?,
             ReclaimStrategy::RestoreExact => {
-                let prepared = self.prepare_exact(&original, options).map_err(|error| {
+                let mut replay = original.clone();
+                replay.request.adopted = claim.request.adopted.clone();
+                let prepared = self.prepare_exact(&replay, options).map_err(|error| {
                     if matches!(
                         Error::from_anyhow(&error).code,
                         ErrorCode::IntegrityError | ErrorCode::KeyUnavailable

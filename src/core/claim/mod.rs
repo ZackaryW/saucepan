@@ -6,6 +6,7 @@ pub(crate) mod operations;
 pub mod persistence;
 pub mod policy;
 mod recovery;
+mod referenced;
 pub mod registry;
 pub mod security;
 pub mod session;

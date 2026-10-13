@@ -16,6 +16,7 @@ fn latest_ten_overrides_claims_and_reacquisition() {
         .unwrap();
     let app = store.register_app("owner".into()).unwrap();
     let mut request = Request {
+        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),
@@ -88,6 +89,7 @@ fn deletion_failure_is_pending_and_retryable() {
         .register_source(Source::Local { path: input })
         .unwrap();
     let mut request = Request {
+        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),

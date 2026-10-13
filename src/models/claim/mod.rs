@@ -6,7 +6,9 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use uuid::Uuid;
+pub mod adopted;
 pub mod policy;
+pub mod request;
 pub mod security;
 
 /// Caller-owned labels; never part of output identity or acquisition policy.
@@ -51,6 +53,8 @@ pub struct Claimed {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EnsureRequest {
+    #[serde(default)]
+    pub adopted: Option<Box<adopted::AdoptedPolicies>>,
     pub scope: Scope,
     pub source_uuid: Uuid,
     pub selector: super::store::Selector,

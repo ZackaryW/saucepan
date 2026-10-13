@@ -53,6 +53,7 @@ impl Store {
         self.ensure_claim(
             app,
             &crate::models::claim::EnsureRequest {
+                adopted: None,
                 scope: scope.clone(),
                 source_uuid: request.source_uuid,
                 selector: request.selector.clone(),
@@ -72,6 +73,11 @@ impl Store {
             .get(&id)
             .with_context(|| Error::new(ErrorCode::UnknownClaim, "claim missing"))?;
         self.authorize_claim(&registry, claim, Action::Update)?;
+        if self.policy_fence.is_none() {
+            return self
+                .with_policy_fence(claim.request.source_uuid, Some(app))?
+                .update_claim(app, id, options);
+        }
         let acquired = self.acquire_inner(
             &claim.request,
             options,
@@ -276,7 +282,8 @@ impl Store {
             .claims
             .get(&target.id)
             .map(|claim| claim.policy_refs.clone())
-            .unwrap_or_default();
+            .map(Ok)
+            .unwrap_or_else(|| self.adopted_refs(request.adopted.as_deref()))?;
         registry.claims.insert(
             target.id,
             Claim {

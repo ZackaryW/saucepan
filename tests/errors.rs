@@ -46,6 +46,7 @@ fn native_store_failures_have_codes_without_message_matching() {
         .register_source(Source::Local { path: path.clone() })
         .unwrap();
     let mut request = Request {
+        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),

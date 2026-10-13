@@ -120,6 +120,7 @@ pub fn acquisition(
     )?;
     let b = &policies.behavior;
     let request = AcquisitionRequest {
+        adopted: None,
         provenance: policies.evidence.values().cloned().collect(),
         destination: input.destination.clone(),
         format: input.format,

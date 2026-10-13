@@ -34,6 +34,7 @@ impl Store {
             let registry = self.registry(app)?;
             let effective = registry.registry.policies.evaluate(&input.overrides)?;
             let mut request = Request {
+                adopted: input.adopted.clone(),
                 source_uuid: input.source_uuid,
                 selector: input.selector.clone(),
                 selection: input.selection.clone(),
@@ -152,7 +153,8 @@ impl Store {
             policy_refs: existing
                 .as_ref()
                 .map(|existing| existing.claim.policy_refs.clone())
-                .unwrap_or_default(),
+                .map(Ok)
+                .unwrap_or_else(|| self.adopted_refs(input.adopted.as_deref()))?,
             uuid: claim_id,
             scope: input.scope.clone(),
             request,

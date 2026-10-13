@@ -36,7 +36,27 @@ impl Store {
         crate::models::claim::validate_context(&input.context)?;
         {
             let _lock = self.lock()?;
+            self.check_policy_fence()?;
             let registry = self.registry(app)?;
+            if let Some(adopted) = &input.adopted {
+                let snapshot = self.metadata.snapshot()?;
+                let catalog = crate::core::policy::persistence::load(&self.metadata, &snapshot)?;
+                let source = self.source(input.source_uuid)?;
+                let plan = crate::core::policy::claims::surviving(
+                    &catalog,
+                    adopted,
+                    &source.policy_refs,
+                    &registry.registry.policy_refs,
+                )?;
+                ensure!(
+                    crate::core::policy::adopt::effective(&plan)?
+                        == registry.registry.policies.evaluate(&input.overrides)?,
+                    Error::new(
+                        ErrorCode::PolicyConflict,
+                        "claim execution differs from adopted policy"
+                    )
+                );
+            }
             self.authorize_resource(
                 &registry,
                 Action::Acquire,
@@ -64,6 +84,7 @@ impl Store {
             )?;
             let effective = registry.registry.policies.evaluate(&input.overrides)?;
             let request = Request {
+                adopted: input.adopted.clone(),
                 source_uuid: input.source_uuid,
                 selector: input.selector.clone(),
                 selection: input.selection.clone(),
@@ -150,6 +171,7 @@ impl Store {
         );
         // Recheck the original requested projection, not its owning broader request.
         let projected_request = Request {
+            adopted: input.adopted.clone(),
             source_uuid: input.source_uuid,
             selector: input.selector.clone(),
             selection: input.selection.clone(),
@@ -191,7 +213,8 @@ impl Store {
         let policy_refs = existing
             .as_ref()
             .map(|existing| existing.claim.policy_refs.clone())
-            .unwrap_or_default();
+            .map(Ok)
+            .unwrap_or_else(|| self.adopted_refs(input.adopted.as_deref()))?;
         let (id, relative, mut overrides) = if let Some(existing) = existing {
             (
                 existing.claim.uuid,

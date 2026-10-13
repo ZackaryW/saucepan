@@ -98,7 +98,14 @@ impl Store {
                     )
                     .is_ok();
             let claim_readable = registry.claims.values().any(|claim| {
-                claim.policy_refs.ids().contains(&uuid)
+                (claim.policy_refs.ids().contains(&uuid)
+                    || claim.request.adopted.as_deref().is_some_and(|adopted| {
+                        adopted.filter_refs.ids().contains(&uuid)
+                            || adopted
+                                .evidence
+                                .values()
+                                .any(|evidence| evidence.uuid == uuid)
+                    }))
                     && self
                         .authorize_resource(
                             &registry,

@@ -38,6 +38,7 @@ fn setup() -> (tempfile::TempDir, Store, uuid::Uuid, EnsureRequest) {
         )
         .unwrap();
     let request = EnsureRequest {
+        adopted: None,
         scope: scope("project-a"),
         source_uuid: source.uuid,
         selector: Selector::Local,
@@ -193,6 +194,7 @@ fn actual_concurrent_cli_ensures_return_one_claim_and_one_selected_output() {
     fs::write(
         &request,
         serde_json::to_vec(&Request {
+            adopted: None,
             source_uuid: source.uuid,
             selector: Selector::Local,
             selection: Default::default(),

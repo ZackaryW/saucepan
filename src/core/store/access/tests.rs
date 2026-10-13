@@ -20,6 +20,7 @@ fn observed_io_and_paused_scan_do_not_serialize_unrelated_operations() {
         .register_source(Source::Local { path: input })
         .unwrap();
     let mut request = Request {
+        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),
@@ -102,6 +103,7 @@ fn managed_launch_boundary_checks_target_without_payload_io() {
         .register_source(Source::Local { path: input })
         .unwrap();
     let mut request = Request {
+        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),
@@ -170,6 +172,7 @@ fn activation_scans_once_per_phase_outside_mutation_lock() {
         .register_source(Source::Local { path: exe.clone() })
         .unwrap();
     let mut request = Request {
+        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),
@@ -236,6 +239,7 @@ fn sweep_preserves_live_markers_and_creation_windows_on_retained_outputs() {
         .unwrap();
     let acquired = store
         .acquire(&Request {
+            adopted: None,
             source_uuid: source.uuid,
             selector: Selector::Local,
             selection: Default::default(),

@@ -52,6 +52,7 @@ fn context_publication_replacement_reclaim_and_release() {
         .register_source(Source::Local { path: file.clone() })
         .unwrap();
     let mut request = Request {
+        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),
@@ -185,6 +186,7 @@ fn invalid_context_fails_before_acquiring_or_mutating() {
     let store = native_root::create(&tmp.path().join("root")).unwrap();
     let app = store.register_app("test".into()).unwrap();
     let request = Request {
+        adopted: None,
         source_uuid: uuid::Uuid::new_v4(),
         selector: Selector::Local,
         selection: Default::default(),

@@ -243,6 +243,7 @@ fn source_queries_enforce_app_allowances_without_weakening_claim_scopes() {
     assert_eq!(found.sources.len(), 1);
     assert_eq!(found.sources[0].uuid, local.uuid);
     let request = EnsureRequest {
+        adopted: None,
         scope: "default".to_string().try_into().unwrap(),
         source_uuid: local.uuid,
         selector: Selector::Local,

@@ -263,6 +263,13 @@ impl Store {
             // credentials are disabled. Maintenance does not use this grant path.
             registry.authorize(self.metadata.authenticator(), None, action, source, scope)?;
         }
+        self.authorize_policy_refs(
+            &registry.registry.policy_refs,
+            source,
+            scope,
+            action,
+            crate::core::policy::authority::Projection::Resource,
+        )?;
         Ok(())
     }
     pub(crate) fn authorize_claim(
@@ -348,6 +355,14 @@ impl Store {
             let mut empty = registry;
             empty.registry.access.sources = None;
             empty.registry.access.scopes = None;
+            self.authorize_policy_refs(
+                &empty.registry.policy_refs,
+                None,
+                None,
+                action,
+                crate::core::policy::authority::Projection::ActionOnly,
+            )?;
+            empty.registry.policy_refs = Default::default();
             self.authorize_resource(&empty, action, None, None)?;
         }
         Ok(())

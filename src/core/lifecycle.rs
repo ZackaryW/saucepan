@@ -146,7 +146,28 @@ impl Store {
             Action::Update { claim, .. } => *claim,
             _ => Uuid::new_v4(),
         };
+        let source = match &action {
+            Action::Install { request, .. } => Some(request.source_uuid),
+            Action::Update { claim, .. } => Some(
+                self.registry(app.context("update app missing")?)?
+                    .claims
+                    .get(claim)
+                    .context("update claim missing")?
+                    .request
+                    .source_uuid,
+            ),
+            _ => None,
+        };
+        let source_policy = source
+            .map(|source_uuid| -> Result<_> {
+                Ok(crate::models::index::lifecycle::SourcePolicyObservation {
+                    source_uuid,
+                    revision: self.source(source_uuid)?.policy_revision,
+                })
+            })
+            .transpose()?;
         let op = Operation {
+            source_policy,
             operation: id,
             app: app.unwrap_or_else(Uuid::new_v4),
             action,

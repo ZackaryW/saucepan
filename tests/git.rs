@@ -65,6 +65,7 @@ fn shared_source_tracked_and_pinned_outputs_with_cli_parity() {
             .uuid
     );
     let mut request = Request {
+        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Ref {
             reference: "main".into(),

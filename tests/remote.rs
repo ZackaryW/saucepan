@@ -42,6 +42,7 @@ fn release_cache_expiry_fallback_and_cli_use_real_transport() {
         })
         .unwrap();
     let mut request = Request {
+        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::LatestStable,
         selection: Default::default(),
@@ -184,6 +185,7 @@ fn url_downloads_refresh_unvalidated_bytes_and_preserve_previous_content() {
         })
         .unwrap();
     let mut request = Request {
+        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Url,
         selection: Default::default(),
@@ -255,6 +257,7 @@ fn zip_integrity_tag_and_shared_platform_discovery() {
         })
         .unwrap();
     let mut request = Request {
+        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Tag { tag: "v1".into() },
         selection: Default::default(),

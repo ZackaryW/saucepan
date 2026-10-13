@@ -68,7 +68,7 @@ pub(crate) fn evidence(record: &PolicyRecord) -> Result<PolicyEvidence> {
     })
 }
 
-fn apply(plan: &mut EvaluatedPolicies, record: &PolicyRecord) -> Result<()> {
+pub(crate) fn apply(plan: &mut EvaluatedPolicies, record: &PolicyRecord) -> Result<()> {
     let b = &mut plan.behavior;
     match &record.definition {
         Def::CachePolicy { mode } => b.cache = *mode,

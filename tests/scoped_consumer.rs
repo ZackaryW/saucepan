@@ -107,6 +107,7 @@ fn two_scopes_read_nested_packages_while_external_reclaim_waits_for_native_lifet
         let app = registered.application.uuid;
         let session = store.session(app, None).unwrap();
         let mut request = EnsureRequest {
+            adopted: None,
             scope: "project-a".to_string().try_into().unwrap(),
             source_uuid: source.uuid,
             selector: Selector::Local,
@@ -196,6 +197,7 @@ fn failed_view_verification_drops_ownership_and_unavailable_claim_has_a_stable_c
         .unwrap();
     let app = store.register_app("consumer".into()).unwrap().uuid;
     let mut request = EnsureRequest {
+        adopted: None,
         scope: "project".to_string().try_into().unwrap(),
         source_uuid: source.uuid,
         selector: Selector::Local,

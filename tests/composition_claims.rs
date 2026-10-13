@@ -169,6 +169,7 @@ fn automatic_ensure_preserves_claim_identity_context_and_scope_and_does_not_bind
     let app = store.register_app("consumer".into()).unwrap().uuid;
     let session = store.session(app, None).unwrap();
     let mut request = EnsureRequest {
+        adopted: None,
         scope: scope("a"),
         source_uuid: source.uuid,
         selector: Selector::Local,
@@ -257,6 +258,7 @@ fn automatic_updates_require_registered_allowances_and_update_permission() {
         },
     );
     let request = EnsureRequest {
+        adopted: None,
         scope: scope("a"),
         source_uuid: source.uuid,
         selector: Selector::Local,
@@ -304,6 +306,7 @@ fn disappearing_covered_folder_does_not_advance_automatic_owner() {
     let app = store.register_app("app".into()).unwrap().uuid;
     let session = store.session(app, None).unwrap();
     let mut request = EnsureRequest {
+        adopted: None,
         scope: scope("a"),
         source_uuid: source.uuid,
         selector: Selector::Local,
@@ -413,6 +416,7 @@ fn concurrent_automatic_ensures_share_claim_and_check_state() {
     let source = store.register_source(Source::Local { path: file }).unwrap();
     let app = store.register_app("app".into()).unwrap().uuid;
     let request = EnsureRequest {
+        adopted: None,
         scope: scope("a"),
         source_uuid: source.uuid,
         selector: Selector::Local,

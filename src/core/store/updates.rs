@@ -344,6 +344,7 @@ pub(super) fn intent_key(
     let mut acquisition = acquisition.clone();
     // Identity compares effective choices, not equivalent definition UUIDs.
     acquisition.provenance.clear();
+    acquisition.adopted = None;
     acquisition.revision_policy =
         crate::core::policy::composition::effective_revision(&acquisition)?;
     json_digest(&(

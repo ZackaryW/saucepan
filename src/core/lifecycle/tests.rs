@@ -15,6 +15,7 @@ fn uninstall_fences_pending_maintenance_and_claim_publication() {
         .register_source(Source::Local { path: data.clone() })
         .unwrap();
     let request = Request {
+        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),
@@ -101,6 +102,7 @@ fn durable_candidate_survives_reclaim_and_invalid_candidate_releases_protection(
             .register_source(Source::Local { path: exe.clone() })
             .unwrap();
         let mut request = Request {
+            adopted: None,
             source_uuid: source.uuid,
             selector: Selector::Local,
             selection: Default::default(),

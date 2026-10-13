@@ -17,7 +17,7 @@ pub struct PolicyEvidence {
     pub digest: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
 pub struct Behavior {
     pub cache: CacheMode,
     pub freshness: Freshness,

@@ -26,6 +26,7 @@ fn code(error: anyhow::Error) -> ErrorCode {
 }
 fn request(source_uuid: uuid::Uuid, strategy: ReclaimStrategy) -> EnsureRequest {
     EnsureRequest {
+        adopted: None,
         scope: "a".to_string().try_into().unwrap(),
         source_uuid,
         selector: Selector::Local,

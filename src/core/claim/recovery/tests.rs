@@ -22,6 +22,7 @@ fn recovery_keeps_newer_state_and_rejects_dependency_mismatch_before_publication
             .unwrap();
         let app = store.register_app("test".into()).unwrap().uuid;
         let mut request = EnsureRequest {
+            adopted: None,
             scope: "scope".to_string().try_into().unwrap(),
             source_uuid: source.uuid,
             selector: Selector::Local,

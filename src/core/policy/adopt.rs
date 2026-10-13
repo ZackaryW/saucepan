@@ -29,7 +29,7 @@ fn intersection<T: Clone + Ord>(left: &mut Option<BTreeSet<T>>, right: &Option<B
         });
     }
 }
-fn access(plan: &EvaluatedPolicies) -> AccessPolicy {
+pub(crate) fn access(plan: &EvaluatedPolicies) -> AccessPolicy {
     let mut access = AccessPolicy {
         public_scopes: plan.public_scopes.clone(),
         ..Default::default()
@@ -41,7 +41,7 @@ fn access(plan: &EvaluatedPolicies) -> AccessPolicy {
     }
     access
 }
-fn effective(plan: &EvaluatedPolicies) -> Result<Effective> {
+pub(crate) fn effective(plan: &EvaluatedPolicies) -> Result<Effective> {
     let b = &plan.behavior;
     Ok(Effective {
         output: Policies {
@@ -55,7 +55,7 @@ fn effective(plan: &EvaluatedPolicies) -> Result<Effective> {
         update_policy: b.update,
     })
 }
-fn pinned(effective: &Effective) -> Overrides {
+pub(crate) fn pinned(effective: &Effective) -> Overrides {
     let crate::models::policy::Eviction::Latest { keep } = effective.output.eviction;
     Overrides {
         identical: Some(effective.output.identical),
@@ -74,7 +74,7 @@ fn survivor(effective: &Effective) -> Result<EvaluatedPolicies> {
     plan.behavior.useable_app = effective.output.protection.is_some();
     Ok(plan)
 }
-fn registration(plan: &EvaluatedPolicies) -> Result<Registration> {
+pub(crate) fn registration(plan: &EvaluatedPolicies) -> Result<Registration> {
     let mut registration = Registration {
         defaults: effective(plan)?,
         ..Default::default()
@@ -142,13 +142,34 @@ impl Store {
             },
         )?;
         let selected = effective(&plan)?;
+        ensure!(
+            plan.behavior.cache == crate::models::policy::record::CacheMode::Cached,
+            Error::new(
+                ErrorCode::PolicyConflict,
+                "persistent claims require cached retrieval"
+            )
+        );
+        let adopted = crate::models::claim::adopted::AdoptedPolicies::from_plan(
+            &plan,
+            claim
+                .request
+                .adopted
+                .as_ref()
+                .map(|p| p.filter_refs.clone())
+                .unwrap_or_default(),
+        );
+        let selected_refs = super::claims::behavior_refs(&catalog, &adopted)?;
         let overrides = pinned(&selected);
         registry.registry.policies.evaluate(&overrides)?;
-        if claim.policy_refs == refs && claim.effective == selected {
+        if claim.policy_refs == selected_refs
+            && claim.request.adopted.as_deref() == Some(&adopted)
+            && claim.effective == selected
+        {
             return Ok(());
         }
         let claim = registry.claims.get_mut(&claim_id).expect("checked claim");
-        claim.policy_refs = refs;
+        claim.policy_refs = selected_refs;
+        claim.request.adopted = Some(Box::new(adopted));
         claim.effective = selected;
         claim.overrides = overrides;
         claim.request.policies = claim.effective.output.clone();
@@ -221,6 +242,15 @@ impl Store {
                 .values()
                 .filter(|claim| claim.request.source_uuid == id)
             {
+                if let Some(adopted) = &claim.request.adopted {
+                    super::claims::surviving(
+                        &catalog,
+                        adopted,
+                        &refs,
+                        &registry.registry.policy_refs,
+                    )?;
+                    continue;
+                }
                 let pinned = survivor(&claim.effective)?;
                 let next = resolve::evaluate(
                     &catalog,
@@ -305,6 +335,14 @@ impl Store {
         // Pin surviving choices before changing defaults. Registry validation
         // rejects tightened constraints that would invalidate any survivor.
         for claim in registry.claims.values_mut() {
+            if let Some(adopted) = &claim.request.adopted {
+                super::claims::surviving(
+                    &catalog,
+                    adopted,
+                    &self.source(claim.request.source_uuid)?.policy_refs,
+                    &refs,
+                )?;
+            }
             claim.overrides = pinned(&claim.effective);
             settings.evaluate(&claim.overrides)?;
         }

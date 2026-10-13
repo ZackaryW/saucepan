@@ -63,6 +63,13 @@ impl Store {
                 let registry = self.registry(session.app)?;
                 self.check_session(&registry)?;
                 authorize_source_discovery(&registry.registry.access, app.uuid, None)?;
+                self.authorize_policy_refs(
+                    &registry.registry.policy_refs,
+                    None,
+                    None,
+                    crate::models::claim::policy::Action::Discover,
+                    crate::core::policy::authority::Projection::ActionOnly,
+                )?;
                 Ok((app, registry))
             })
             .transpose()?;
@@ -93,7 +100,23 @@ impl Store {
                 }
                 None => record.public_discovery,
             };
-            if visible && query.matches(&record) {
+            let refs = application
+                .as_ref()
+                .map(|(_, registry)| &registry.registry.policy_refs)
+                .cloned()
+                .unwrap_or_default();
+            if visible
+                && self
+                    .authorize_policy_refs(
+                        &refs,
+                        Some(record.uuid),
+                        None,
+                        crate::models::claim::policy::Action::Discover,
+                        crate::core::policy::authority::Projection::SourceDiscovery,
+                    )
+                    .is_ok()
+                && query.matches(&record)
+            {
                 sources.push(SourceView {
                     uuid: record.uuid,
                     source: record.source,

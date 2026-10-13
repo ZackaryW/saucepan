@@ -3,8 +3,10 @@ use crate::{
     utils::path::relative_path,
 };
 use anyhow::{Result, ensure};
-mod adopt;
+pub(crate) mod adopt;
+pub(crate) mod authority;
 pub mod catalog;
+pub(crate) mod claims;
 pub mod composition;
 mod execution;
 pub mod fence;

@@ -1,0 +1,101 @@
+//! Reconstruct adopted behavior from immutable definitions, then check it against
+//! current authority. Serialized effective values alone can never grant access.
+use super::{
+    catalog::PolicyCatalog,
+    resolve::{self, Inputs, Operation},
+};
+use crate::{
+    error::{Error, ErrorCode},
+    models::{
+        claim::adopted::AdoptedPolicies,
+        policy::{PolicyDefinition, PolicyRefs, effective::EvaluatedPolicies, record::Axis},
+    },
+};
+use anyhow::{Result, ensure};
+
+pub(crate) fn validate_adopted(catalog: &PolicyCatalog, adopted: &AdoptedPolicies) -> Result<()> {
+    let mut reconstructed = EvaluatedPolicies::default();
+    for (axis, expected) in &adopted.evidence {
+        let record = catalog.get(expected.uuid)?;
+        ensure!(
+            resolve::evidence(record)? == *expected,
+            Error::new(
+                ErrorCode::IntegrityError,
+                "adopted definition digest mismatch"
+            )
+        );
+        if *axis == Axis::Protection
+            && matches!(&record.definition,
+            PolicyDefinition::PolicyConstraints(bounds) if bounds.require_useable_app)
+        {
+            reconstructed.behavior.useable_app = true;
+            reconstructed.evidence.insert(*axis, expected.clone());
+        } else {
+            ensure!(
+                record.definition.axis() == Some(*axis),
+                Error::new(
+                    ErrorCode::IntegrityError,
+                    "adopted definition target mismatch"
+                )
+            );
+            resolve::apply(&mut reconstructed, record)?;
+        }
+    }
+    ensure!(
+        reconstructed.behavior == adopted.behavior,
+        Error::new(
+            ErrorCode::IntegrityError,
+            "adopted behavior does not match definitions and built-ins"
+        )
+    );
+    resolve::filters(catalog, &adopted.filter_refs)?;
+    Ok(())
+}
+
+pub(crate) fn surviving(
+    catalog: &PolicyCatalog,
+    adopted: &AdoptedPolicies,
+    source: &PolicyRefs,
+    application: &PolicyRefs,
+) -> Result<EvaluatedPolicies> {
+    validate_adopted(catalog, adopted)?;
+    let pinned = adopted.pinned();
+    let empty = PolicyRefs::default();
+    let current = resolve::evaluate(
+        catalog,
+        Inputs {
+            source,
+            application,
+            request: &empty,
+            pinned: Some(&pinned),
+            operation: Operation::Compose,
+            managed_output: true,
+            update_due: false,
+        },
+    )?;
+    ensure!(
+        current.behavior == adopted.behavior,
+        Error::new(
+            ErrorCode::PolicyConflict,
+            "current constraints would reinterpret an adopted claim"
+        )
+    );
+    Ok(current)
+}
+
+pub(crate) fn behavior_refs(
+    catalog: &PolicyCatalog,
+    adopted: &AdoptedPolicies,
+) -> Result<PolicyRefs> {
+    adopted
+        .evidence
+        .values()
+        .filter_map(|evidence| match catalog.get(evidence.uuid) {
+            Ok(record) if record.definition.axis().is_some() => Some(Ok(evidence.uuid)),
+            Ok(_) => None,
+            Err(error) => Some(Err(error)),
+        })
+        .collect::<crate::error::Result<Vec<_>>>()?
+        .try_into()
+        .map_err(Into::into)
+}

@@ -450,6 +450,13 @@ impl Store {
             content.or(retrieval),
             observer,
         )?;
+        if let Some(fence) = &self.policy_fence {
+            for record in &journal.records {
+                if let Record::Application(app) = record {
+                    fence.published(app.uuid, app.revision);
+                }
+            }
+        }
         Ok(())
     }
     pub(crate) fn recover_locked(&self) -> Result<()> {

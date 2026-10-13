@@ -112,6 +112,7 @@ fn setup() -> (tempfile::TempDir, native_root::NativeStore, Installation) {
     let name = exe.file_name().unwrap().to_str().unwrap().to_owned();
     let source = store.register_source(Source::Local { path: exe }).unwrap();
     let mut request = Request {
+        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),
@@ -373,6 +374,130 @@ fn managed_update_detects_deactivation_during_probe() {
     assert!(app.active.is_none());
     assert_eq!(
         store.registry(installed.app).unwrap().claims[&installed.claim].entry_uuid,
+        installed.candidate.unwrap()
+    );
+}
+
+#[test]
+fn policy_adoption_during_probe_conflicts_but_unrelated_registration_does_not() {
+    for adopt in [false, true] {
+        let (_tmp, store, input) = setup();
+        let installed = store
+            .install_application(&input, &shim(), &Default::default(), None)
+            .unwrap();
+        let before = store.application(installed.app).unwrap();
+        let policy: saucepan::models::policy::PolicyRecord =
+            serde_json::from_value(serde_json::json!({
+                "uuid":uuid::Uuid::new_v4(), "type":"revision_policy", "history":"latest", "keep":3
+            }))
+            .unwrap();
+        let probe = blocked_probe(&input);
+        std::thread::scope(|scope| {
+            let barrier = ProbeBarrier::arm(store.root());
+            let update = scope.spawn(|| {
+                store
+                    .update_application(
+                        installed.app,
+                        installed.claim,
+                        &probe,
+                        None,
+                        &Default::default(),
+                        None,
+                    )
+                    .unwrap()
+            });
+            let update = barrier.wait(update);
+            store
+                .register_policies(std::slice::from_ref(&policy))
+                .unwrap();
+            if adopt {
+                store
+                    .adopt_source_policies(
+                        input.request.source_uuid,
+                        0,
+                        vec![policy.uuid].try_into().unwrap(),
+                    )
+                    .unwrap();
+            }
+            barrier.release();
+            let updated = update.join().unwrap();
+            assert_eq!(
+                updated.status,
+                if adopt {
+                    Phase::Conflict
+                } else {
+                    Phase::Complete
+                }
+            );
+            if adopt {
+                assert_eq!(
+                    store
+                        .application(installed.app)
+                        .unwrap()
+                        .active
+                        .unwrap()
+                        .entry_uuid,
+                    before.active.unwrap().entry_uuid
+                );
+            }
+        });
+    }
+}
+
+#[test]
+fn resumed_preparation_retains_its_original_source_policy_observation() {
+    use saucepan::models::index::lifecycle::Action;
+    let (_tmp, store, input) = setup();
+    let installed = store
+        .install_application(&input, &shim(), &Default::default(), None)
+        .unwrap();
+    let operation = uuid::Uuid::new_v4();
+    let (_, guard) = store
+        .begin_operation(
+            operation,
+            Some(installed.app),
+            Action::Update {
+                claim: installed.claim,
+                probe: input.probe.clone(),
+                rollback: None,
+            },
+        )
+        .unwrap();
+    drop(guard);
+    let policy: saucepan::models::policy::PolicyRecord =
+        serde_json::from_value(serde_json::json!({
+            "uuid":uuid::Uuid::new_v4(), "type":"refresh_policy", "mode":"always"
+        }))
+        .unwrap();
+    store
+        .register_policies(std::slice::from_ref(&policy))
+        .unwrap();
+    store
+        .adopt_source_policies(
+            input.request.source_uuid,
+            0,
+            vec![policy.uuid].try_into().unwrap(),
+        )
+        .unwrap();
+    let reopened = Store::open(store.root()).unwrap();
+    let result = reopened
+        .update_application(
+            installed.app,
+            installed.claim,
+            &input.probe,
+            None,
+            &Default::default(),
+            Some(operation),
+        )
+        .unwrap();
+    assert_eq!(result.status, Phase::Conflict);
+    assert_eq!(
+        reopened
+            .application(installed.app)
+            .unwrap()
+            .active
+            .unwrap()
+            .entry_uuid,
         installed.candidate.unwrap()
     );
 }

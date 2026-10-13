@@ -57,6 +57,9 @@ impl RegistryState {
         }
         let state = Self { registry, claims };
         state.validate().map_err(|_| integrity_error())?;
+        state
+            .validate_policy_evidence(metadata, snapshot)
+            .map_err(|_| integrity_error())?;
         Ok(state)
     }
 
@@ -65,7 +68,8 @@ impl RegistryState {
         for (id, claim) in &self.claims {
             claim.validate()?;
             if claim.uuid != *id
-                || self.registry.policies.evaluate(&claim.overrides)? != claim.effective
+                || (claim.request.adopted.is_none()
+                    && self.registry.policies.evaluate(&claim.overrides)? != claim.effective)
                 || claim.request.policies != claim.effective.output
             {
                 return Err(Error::new(
@@ -81,6 +85,7 @@ impl RegistryState {
     /// adds application/revision/binding changes to the same metadata publication.
     pub fn encode(&self, metadata: &Metadata, snapshot: &Snapshot) -> Result<RegistryWrites> {
         self.validate()?;
+        self.validate_policy_evidence(metadata, snapshot)?;
         let generation = snapshot
             .catalog
             .generation
@@ -121,6 +126,74 @@ impl RegistryState {
             .map(|reference| reference.identity)
             .collect();
         Ok(RegistryWrites { writes, deletes })
+    }
+
+    fn validate_policy_evidence(&self, metadata: &Metadata, snapshot: &Snapshot) -> Result<()> {
+        let catalog = crate::core::policy::persistence::load(metadata, snapshot)?;
+        for id in self.registry.policy_refs.ids() {
+            catalog.get(*id)?;
+        }
+        if !self.registry.policy_refs.ids().is_empty() {
+            let empty = crate::models::policy::PolicyRefs::default();
+            let plan = crate::core::policy::resolve::evaluate(
+                &catalog,
+                crate::core::policy::resolve::Inputs {
+                    source: &empty,
+                    application: &self.registry.policy_refs,
+                    request: &empty,
+                    pinned: None,
+                    operation: crate::core::policy::resolve::Operation::Configure,
+                    managed_output: true,
+                    update_due: false,
+                },
+            )?;
+            if crate::core::policy::adopt::access(&plan) != self.registry.access
+                || crate::core::policy::adopt::registration(&plan)
+                    .map_err(|error| Error::from_anyhow(&error))?
+                    != self.registry.policies
+            {
+                return Err(integrity_error());
+            }
+        }
+        for claim in self.claims.values() {
+            for id in claim.policy_refs.ids() {
+                catalog.get(*id)?;
+            }
+            if let Some(adopted) = &claim.request.adopted {
+                let source: crate::models::source::SourceRecord = snapshot.read(
+                    metadata.authenticator(),
+                    Identity {
+                        kind: Kind::Source,
+                        owner: None,
+                        member: Some(claim.request.source_uuid),
+                    },
+                )?;
+                let plan = crate::core::policy::claims::surviving(
+                    &catalog,
+                    adopted,
+                    &source.policy_refs,
+                    &self.registry.policy_refs,
+                )
+                .map_err(|error| Error::from_anyhow(&error))?;
+                if crate::core::policy::adopt::effective(&plan)
+                    .map_err(|error| Error::from_anyhow(&error))?
+                    != claim.effective
+                    || crate::core::policy::claims::behavior_refs(&catalog, adopted)
+                        .map_err(|error| Error::from_anyhow(&error))?
+                        != claim.policy_refs
+                {
+                    return Err(integrity_error());
+                }
+                if crate::core::policy::resolve::filters(&catalog, &adopted.filter_refs)?
+                    != claim.request.selection.filters
+                    || adopted.behavior.selection != claim.request.selection.selection_policy
+                    || adopted.behavior.cache != crate::models::policy::record::CacheMode::Cached
+                {
+                    return Err(integrity_error());
+                }
+            }
+        }
+        Ok(())
     }
 
     pub fn authorize(

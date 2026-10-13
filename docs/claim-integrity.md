@@ -1,5 +1,18 @@
 # Claim integrity implementation notes
 
+Immutable policy records participate in the same verified catalog and journal as
+claim metadata. Adopted claim evidence is reconstructed from definition UUIDs and
+digests, then checked against the current source/application constraints. Editing
+an effective value alone is invalid. Removed attachments do not delete definitions,
+so historical output evidence remains resolvable. Current restrictions and
+credentials are checked separately from that historical evidence.
+
+In-flight operations observe source attachment revisions and application revisions.
+Lifecycle preparation also persists its source observation, so restarting an
+operation cannot bypass an intervening adoption. Unrelated policy registration
+does not invalidate these observations. Optional native custody is not required by
+the policy fixtures; they use basic integrity or injected deterministic keys.
+
 `saucepan init` and `Store::create` default to `IntegrityMode::Basic`. Select
 protected custody with `saucepan init --integrity keyring` or
 `Store::create_with_integrity(root, IntegrityMode::Keyring)`.

@@ -48,6 +48,24 @@ impl Store {
             let mut claims = Vec::new();
             for claim in registry.claims.values() {
                 if registry.publicly_visible(claim)
+                    && self
+                        .authorize_policy_refs(
+                            &registry.registry.policy_refs,
+                            Some(claim.request.source_uuid),
+                            Some(&claim.scope),
+                            crate::models::claim::policy::Action::Discover,
+                            crate::core::policy::authority::Projection::Resource,
+                        )
+                        .is_ok()
+                    && self
+                        .authorize_policy_refs(
+                            &registry.registry.policy_refs,
+                            Some(claim.request.source_uuid),
+                            Some(&claim.scope),
+                            crate::models::claim::policy::Action::Read,
+                            crate::core::policy::authority::Projection::Resource,
+                        )
+                        .is_ok()
                     && query
                         .scope
                         .as_ref()

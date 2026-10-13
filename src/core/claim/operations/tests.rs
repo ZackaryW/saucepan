@@ -14,6 +14,7 @@ fn primitive_commit_keeps_intervening_context_and_returns_that_snapshot() {
             .register_source(Source::Local { path: file.clone() })
             .unwrap();
         let request = Request {
+            adopted: None,
             source_uuid: source.uuid,
             selector: Selector::Local,
             selection: Default::default(),
@@ -62,6 +63,7 @@ fn context_journal_recovers_before_and_after_record_publication() {
         let source = store.register_source(Source::Local { path: file }).unwrap();
         let mut app = store.register_app("test".into()).unwrap();
         let request = Request {
+            adopted: None,
             source_uuid: source.uuid,
             selector: Selector::Local,
             selection: Default::default(),

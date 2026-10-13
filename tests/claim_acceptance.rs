@@ -95,6 +95,7 @@ fn fresh_root_cross_feature_acceptance_with_real_binaries() {
         .uuid;
     let session = store.session(app, None).unwrap();
     let mut request = EnsureRequest {
+        adopted: None,
         scope: "public".to_string().try_into().unwrap(),
         source_uuid: source.uuid,
         selector: Selector::Local,
@@ -299,6 +300,7 @@ fn fresh_root_cross_feature_acceptance_with_real_binaries() {
         })
         .unwrap();
     let mut binary_request = Request {
+        adopted: None,
         source_uuid: binary_source.uuid,
         selector: Selector::Local,
         selection: Default::default(),

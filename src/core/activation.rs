@@ -151,6 +151,7 @@ mod tests {
             .unwrap();
         let mut app = store.register_app("fixture".into()).unwrap();
         let request = Request {
+            adopted: None,
             source_uuid: source.uuid,
             selector: Selector::Local,
             selection: Default::default(),
