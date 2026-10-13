@@ -228,8 +228,13 @@ fn failed_view_verification_drops_ownership_and_unavailable_claim_has_a_stable_c
         .unwrap();
     assert_eq!(Error::from_anyhow(&error).code, ErrorCode::IntegrityError);
     fs::write(first.acquired.directory.join("resource"), "original").unwrap();
-    let mut pull = first.claim.request;
-    pull.policies.identical = Identical::NewEntry;
+    let mut pull = policy_fixture::intent(&first.claim.request);
+    policy_fixture::replace(
+        &store,
+        &mut pull.policy_refs,
+        serde_json::json!({"type":"identical_pull_policy","strategy":Identical::NewEntry}),
+    )
+    .unwrap();
     store.acquire(&pull).unwrap();
     external_reclaim(store.root());
     assert_eq!(

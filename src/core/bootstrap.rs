@@ -4,7 +4,7 @@ use crate::{
         index::lifecycle::{Installation, Operation},
         policy::Protection,
         source::Source,
-        store::Request,
+        store::OutputPlan,
     },
 };
 use anyhow::{Result, ensure};
@@ -20,7 +20,7 @@ pub fn saucepan_probe() -> Probe {
     }
 }
 impl Store {
-    fn self_request(&self, request: &Request) -> Result<()> {
+    fn self_request(&self, request: &OutputPlan) -> Result<()> {
         ensure!(
             matches!(
                 self.source(request.source_uuid)?.source,
@@ -40,7 +40,7 @@ impl Store {
     }
     pub fn bootstrap(
         &self,
-        request: &Request,
+        request: &crate::models::store::Request,
         built_shim: &Path,
         options: &AcquireOptions,
     ) -> Result<Bootstrap> {
@@ -48,12 +48,13 @@ impl Store {
     }
     pub fn bootstrap_with_operation(
         &self,
-        request: &Request,
+        request: &crate::models::store::Request,
         built_shim: &Path,
         options: &AcquireOptions,
         operation: Option<Uuid>,
     ) -> Result<Operation> {
-        self.self_request(request)?;
+        let (_, plan) = self.plan_output(request)?;
+        self.self_request(&plan)?;
         self.install_application(
             &Installation {
                 scope: "saucepan/self".to_string().try_into()?,

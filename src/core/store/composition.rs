@@ -11,7 +11,7 @@ use crate::{
     models::{
         policy::{Policies, UpdatePolicy},
         retrieval::{Ownership, SourceInput},
-        store::{AcquisitionRequest, Destination, Request, Selection},
+        store::{AcquisitionRequest, Destination, OutputPlan, Selection},
     },
     utils::{fs::publish_prepared_directory, path::disjoint_destination},
 };
@@ -247,14 +247,14 @@ pub(crate) fn prepare(
 pub(crate) fn managed_request(
     retrieved: &RetrievedResource,
     request: &AcquisitionRequest,
-) -> Result<Request> {
+) -> Result<OutputPlan> {
     let SourceInput::Registered { source_uuid } = retrieved.descriptor.source else {
         return Err(
             Error::new(ErrorCode::InvalidRequest, "managed source identity missing").into(),
         );
     };
     let revision = effective_revision(request)?.expect("managed revision policy");
-    Ok(Request {
+    Ok(OutputPlan {
         adopted: request.adopted.clone(),
         source_uuid,
         selector: retrieved.request.selector.clone(),

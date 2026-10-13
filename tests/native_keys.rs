@@ -1,3 +1,4 @@
+mod policy_fixture;
 use saucepan::core::claim::security::{KeyProvider, NativeKeyring, Secret};
 mod native_support;
 
@@ -10,7 +11,6 @@ fn protected_manager_and_real_shim_share_native_custody() {
     use saucepan::{
         core::{Store, activation::Probe},
         models::{
-            policy::Protection,
             source::Source,
             store::{Request, Selector},
         },
@@ -55,14 +55,18 @@ fn protected_manager_and_real_shim_share_native_custody() {
         .unwrap();
     let name = manager.file_name().unwrap().to_str().unwrap();
     let mut request = Request {
-        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),
-        policies: Default::default(),
+        policy_refs: Default::default(),
     };
     request.selection.bin.push(name.into());
-    request.policies.protection = Some(Protection::UseableApp);
+    policy_fixture::replace(
+        &store,
+        &mut request.policy_refs,
+        serde_json::json!({"type":"useable_app_policy"}),
+    )
+    .unwrap();
     let app = store.register_app("native managed app".into()).unwrap();
     let output = store.acquire(&request).unwrap();
     store

@@ -127,8 +127,9 @@ fn revision_policy_preserves_history_choice_and_defaults() {
         json!({"source_uuid":uuid::Uuid::nil(),"selector":{"type":"local"}}),
     )
     .unwrap();
+    assert!(request.policy_refs.ids().is_empty());
     assert_eq!(
-        request.policies.revision,
+        saucepan::models::policy::effective::Behavior::default().revision,
         RevisionPolicy::Latest { keep: 10 }
     );
     assert_eq!(RevisionPolicy::None {}.keep().unwrap(), 1);

@@ -1,13 +1,5 @@
 use super::*;
-use crate::models::{
-    claim::{
-        CompiledEnsure as EnsureRequest,
-        policy::{ReclaimPolicy, ReclaimStrategy},
-    },
-    policy::Identical,
-    source::Source,
-    store::Selector,
-};
+use crate::models::{claim::EnsureRequest, source::Source, store::Selector};
 use std::{fs, sync::Arc};
 
 #[test]
@@ -22,24 +14,31 @@ fn recovery_keeps_newer_state_and_rejects_dependency_mismatch_before_publication
             .unwrap();
         let app = store.register_app("test".into()).unwrap().uuid;
         let mut request = EnsureRequest {
-            adopted: None,
             scope: "scope".to_string().try_into().unwrap(),
             source_uuid: source.uuid,
             selector: Selector::Local,
             selection: Default::default(),
             context: Default::default(),
-            overrides: Default::default(),
+            policy_refs: Default::default(),
         };
-        request.overrides.revision =
-            Some(saucepan::models::policy::RevisionPolicy::Latest { keep: 1 });
-        request.overrides.reclaim = Some(ReclaimPolicy::ReclaimPolicy {
-            strategy: ReclaimStrategy::RestoreExact,
-        });
+        request.policy_refs = crate::policy_fixture::definitions(
+            &store,
+            vec![
+                serde_json::json!({"type":"revision_policy","history":"latest","keep":1}),
+                serde_json::json!({"type":"reclaim_policy","strategy":"restore_exact"}),
+            ],
+        )
+        .unwrap();
         let first = store
-            .ensure_compiled(app, &request, &Default::default())
+            .ensure_claim(app, &request, &Default::default())
             .unwrap();
-        let mut pull = first.claim.request.clone();
-        pull.policies.identical = Identical::NewEntry;
+        let mut pull = crate::policy_fixture::intent(&first.claim.request);
+        crate::policy_fixture::replace(
+            &store,
+            &mut pull.policy_refs,
+            serde_json::json!({"type":"identical_pull_policy","strategy":"new_entry"}),
+        )
+        .unwrap();
         store.acquire(&pull).unwrap();
         let id = first.claim.uuid;
         if action == "dependencies" {

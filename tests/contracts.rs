@@ -41,7 +41,7 @@ fn strict_request_and_index_identity() {
     let value =
         serde_json::json!({"source_uuid":uuid::Uuid::new_v4(), "selector":{"type":"local"}});
     let request: Request = serde_json::from_value(value.clone()).unwrap();
-    saucepan::core::policy::validate(&request).unwrap();
+    assert!(request.policy_refs.ids().is_empty());
     let mut bad = value;
     bad["policies"] = serde_json::json!({"identical":"surprise"});
     assert!(serde_json::from_value::<Request>(bad).is_err());
@@ -54,4 +54,41 @@ fn strict_request_and_index_identity() {
     value["uuid"] = serde_json::json!(uuid::Uuid::new_v4());
     std::fs::write(path, value.to_string()).unwrap();
     assert!(store.record(app.uuid).is_err());
+}
+
+#[test]
+fn managed_inputs_reject_nested_policy_and_execution_evidence() {
+    use saucepan::models::index::lifecycle::Installation;
+    let input = serde_json::json!({
+        "source_uuid": uuid::Uuid::new_v4(), "selector": {"type":"local"},
+        "policy_refs": [], "selection": {"filter_refs": []}
+    });
+    for (field, value) in [
+        ("policies", serde_json::json!({"identical":"reuse"})),
+        ("adopted", serde_json::Value::Null),
+        ("overrides", serde_json::json!({})),
+        (
+            "eviction",
+            serde_json::json!({"strategy":"latest","keep":10}),
+        ),
+    ] {
+        let mut mixed = input.clone();
+        mixed[field] = value;
+        assert!(
+            serde_json::from_value::<Request>(mixed.clone()).is_err(),
+            "{field}"
+        );
+        let install = serde_json::json!({"scope":"app", "name":"example", "request":mixed,
+            "probe":{"args":[],"stdout_contains":"ok","timeout_seconds":1},
+            "shim":"example", "saucepan":false});
+        assert!(
+            serde_json::from_value::<Installation>(install).is_err(),
+            "{field}"
+        );
+    }
+    for field in ["filters", "selection_policy"] {
+        let mut mixed = input.clone();
+        mixed["selection"][field] = serde_json::json!([]);
+        assert!(serde_json::from_value::<Request>(mixed).is_err(), "{field}");
+    }
 }

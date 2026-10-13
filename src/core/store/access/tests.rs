@@ -20,14 +20,23 @@ fn observed_io_and_paused_scan_do_not_serialize_unrelated_operations() {
         .register_source(Source::Local { path: input })
         .unwrap();
     let mut request = Request {
-        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),
-        policies: Default::default(),
+        policy_refs: Default::default(),
     };
-    request.policies.identical = Identical::NewEntry;
-    request.policies.revision = RevisionPolicy::Latest { keep: 1 };
+    crate::policy_fixture::replace(
+        &store,
+        &mut request.policy_refs,
+        serde_json::json!({"type":"identical_pull_policy","strategy":Identical::NewEntry}),
+    )
+    .unwrap();
+    crate::policy_fixture::replace(&store, &mut request.policy_refs, {
+        let mut value = serde_json::to_value(RevisionPolicy::Latest { keep: 1 }).unwrap();
+        value["type"] = serde_json::json!("revision_policy");
+        value
+    })
+    .unwrap();
     let first = store.acquire(&request).unwrap();
     let counts = Arc::new(Mutex::new((0, 0, 0)));
     let seen = counts.clone();
@@ -103,11 +112,10 @@ fn managed_launch_boundary_checks_target_without_payload_io() {
         .register_source(Source::Local { path: input })
         .unwrap();
     let mut request = Request {
-        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),
-        policies: Default::default(),
+        policy_refs: Default::default(),
     };
     request.selection.bin.push("tool".into());
     let output = store.acquire(&request).unwrap();
@@ -163,7 +171,7 @@ fn managed_launch_boundary_checks_target_without_payload_io() {
 
 #[test]
 fn activation_scans_once_per_phase_outside_mutation_lock() {
-    use crate::{core::activation::Probe, models::policy::Protection};
+    use crate::core::activation::Probe;
     let tmp = tempfile::tempdir().unwrap();
     let exe = std::env::current_exe().unwrap();
     let name = exe.file_name().unwrap().to_str().unwrap().to_owned();
@@ -172,14 +180,18 @@ fn activation_scans_once_per_phase_outside_mutation_lock() {
         .register_source(Source::Local { path: exe.clone() })
         .unwrap();
     let mut request = Request {
-        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),
-        policies: Default::default(),
+        policy_refs: Default::default(),
     };
     request.selection.bin.push(name.clone());
-    request.policies.protection = Some(Protection::UseableApp);
+    crate::policy_fixture::replace(
+        &store,
+        &mut request.policy_refs,
+        serde_json::json!({"type":"useable_app_policy"}),
+    )
+    .unwrap();
     let acquired = store.acquire(&request).unwrap();
     let app = store.register_app("observed activation".into()).unwrap();
     let counts = Arc::new(Mutex::new((0, 0, 0)));
@@ -239,11 +251,10 @@ fn sweep_preserves_live_markers_and_creation_windows_on_retained_outputs() {
         .unwrap();
     let acquired = store
         .acquire(&Request {
-            adopted: None,
             source_uuid: source.uuid,
             selector: Selector::Local,
             selection: Default::default(),
-            policies: Default::default(),
+            policy_refs: Default::default(),
         })
         .unwrap();
     let id = acquired.entry.uuid;

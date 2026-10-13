@@ -19,7 +19,7 @@ use saucepan::{
             policy::{Action, ReclaimStrategy},
         },
         index::lifecycle::{Installation, Phase},
-        policy::{Identical, Protection, RevisionPolicy},
+        policy::{Identical, RevisionPolicy},
         source::Source,
         store::{Availability, Platform, Request, Selector, VerificationMode},
     },
@@ -188,8 +188,13 @@ fn fresh_root_cross_feature_acceptance_with_real_binaries() {
     let held = session
         .lease_view(&covered.view, VerificationMode::Full)
         .unwrap();
-    let mut extra = first.claim.request.clone();
-    extra.policies.identical = Identical::NewEntry;
+    let mut extra = policy_fixture::intent(&first.claim.request);
+    policy_fixture::replace(
+        &store,
+        &mut extra.policy_refs,
+        serde_json::json!({"type":"identical_pull_policy","strategy":Identical::NewEntry}),
+    )
+    .unwrap();
     store.acquire(&extra).unwrap();
     store.reclaim().unwrap();
     assert_eq!(
@@ -311,17 +316,31 @@ fn fresh_root_cross_feature_acceptance_with_real_binaries() {
         })
         .unwrap();
     let mut binary_request = Request {
-        adopted: None,
         source_uuid: binary_source.uuid,
         selector: Selector::Local,
         selection: Default::default(),
-        policies: Default::default(),
+        policy_refs: Default::default(),
     };
     binary_request.selection.bin = vec![executable.clone()];
     binary_request.selection.platform = Some(Platform::host());
-    binary_request.policies.identical = Identical::NewEntry;
-    binary_request.policies.revision = RevisionPolicy::Latest { keep: 2 };
-    binary_request.policies.protection = Some(Protection::UseableApp);
+    policy_fixture::replace(
+        &store,
+        &mut binary_request.policy_refs,
+        serde_json::json!({"type":"identical_pull_policy","strategy":Identical::NewEntry}),
+    )
+    .unwrap();
+    policy_fixture::replace(&store, &mut binary_request.policy_refs, {
+        let mut value = serde_json::to_value(RevisionPolicy::Latest { keep: 2 }).unwrap();
+        value["type"] = serde_json::json!("revision_policy");
+        value
+    })
+    .unwrap();
+    policy_fixture::replace(
+        &store,
+        &mut binary_request.policy_refs,
+        serde_json::json!({"type":"useable_app_policy"}),
+    )
+    .unwrap();
     let probe = Probe {
         args: vec!["--version".into()],
         stdout_contains: "saucepan ".into(),

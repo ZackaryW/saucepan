@@ -1,7 +1,7 @@
 //! Contracts for the separate claim registry. Persistence is owned by core::claim.
 use crate::{
     error::{Error, ErrorCode, Result},
-    models::store::Request,
+    models::store::OutputPlan,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -62,8 +62,6 @@ pub(crate) struct CompiledEnsure {
     pub selection: super::store::Selection,
     #[serde(default)]
     pub context: ClaimContext,
-    #[serde(default)]
-    pub overrides: policy::Overrides,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClaimView {
@@ -105,7 +103,7 @@ pub struct Claim {
     pub policy_refs: crate::models::policy::PolicyRefs,
     pub uuid: Uuid,
     pub scope: Scope,
-    pub request: Request,
+    pub request: OutputPlan,
     pub entry_uuid: Uuid,
     pub context: ClaimContext,
     pub effective: policy::Effective,

@@ -15,11 +15,10 @@ fn uninstall_fences_pending_maintenance_and_claim_publication() {
         .register_source(Source::Local { path: data.clone() })
         .unwrap();
     let request = Request {
-        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),
-        policies: Default::default(),
+        policy_refs: Default::default(),
     };
     let entry = store.acquire(&request).unwrap();
     let mut app = store.register_app("remove".into()).unwrap();
@@ -63,14 +62,13 @@ fn uninstall_fences_pending_maintenance_and_claim_publication() {
                 &crate::core::claim::operations::ClaimTarget {
                     projection: None,
                     expected_revision: None,
-                    overrides: None,
                     scope: "fixture".to_string().try_into().unwrap(),
                     context: Default::default(),
                     app: app.uuid,
                     id: Uuid::new_v4(),
                     expected: None
                 },
-                &request,
+                &entry.entry.request,
                 entry.entry.uuid
             )
             .is_err()
@@ -87,7 +85,7 @@ fn uninstall_fences_pending_maintenance_and_claim_publication() {
 fn durable_candidate_survives_reclaim_and_invalid_candidate_releases_protection() {
     use crate::models::{
         index::lifecycle::{Installation, Probe},
-        policy::{Identical, Protection, RevisionPolicy},
+        policy::{Identical, RevisionPolicy},
         source::Source,
         store::{Availability, Request, Selector},
     };
@@ -102,16 +100,30 @@ fn durable_candidate_survives_reclaim_and_invalid_candidate_releases_protection(
             .register_source(Source::Local { path: exe.clone() })
             .unwrap();
         let mut request = Request {
-            adopted: None,
             source_uuid: source.uuid,
             selector: Selector::Local,
             selection: Default::default(),
-            policies: Default::default(),
+            policy_refs: Default::default(),
         };
         request.selection.bin = vec![name.clone()];
-        request.policies.protection = Some(Protection::UseableApp);
-        request.policies.identical = Identical::NewEntry;
-        request.policies.revision = RevisionPolicy::Latest { keep: 1 };
+        crate::policy_fixture::replace(
+            &store,
+            &mut request.policy_refs,
+            serde_json::json!({"type":"useable_app_policy"}),
+        )
+        .unwrap();
+        crate::policy_fixture::replace(
+            &store,
+            &mut request.policy_refs,
+            serde_json::json!({"type":"identical_pull_policy","strategy":Identical::NewEntry}),
+        )
+        .unwrap();
+        crate::policy_fixture::replace(&store, &mut request.policy_refs, {
+            let mut value = serde_json::to_value(RevisionPolicy::Latest { keep: 1 }).unwrap();
+            value["type"] = serde_json::json!("revision_policy");
+            value
+        })
+        .unwrap();
         let input = Installation {
             scope: "fixture".to_string().try_into().unwrap(),
             name: "recovery".into(),

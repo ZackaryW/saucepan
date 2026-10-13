@@ -1,4 +1,5 @@
 mod native_root;
+mod policy_fixture;
 use saucepan::models::{
     policy::{Identical, RevisionPolicy},
     source::Source,
@@ -16,13 +17,17 @@ fn latest_ten_overrides_claims_and_reacquisition() {
         .unwrap();
     let app = store.register_app("owner".into()).unwrap();
     let mut request = Request {
-        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),
-        policies: Default::default(),
+        policy_refs: Default::default(),
     };
-    request.policies.identical = Identical::NewEntry;
+    policy_fixture::replace(
+        &store,
+        &mut request.policy_refs,
+        serde_json::json!({"type":"identical_pull_policy","strategy":Identical::NewEntry}),
+    )
+    .unwrap();
     let first = store
         .acquire_for(
             app.uuid,
@@ -68,10 +73,20 @@ fn latest_ten_overrides_claims_and_reacquisition() {
         store.output(first.claim.entry_uuid).unwrap().state,
         Availability::Reclaimed
     );
-    request.policies.revision = RevisionPolicy::Latest { keep: 3 };
+    policy_fixture::replace(&store, &mut request.policy_refs, {
+        let mut value = serde_json::to_value(RevisionPolicy::Latest { keep: 3 }).unwrap();
+        value["type"] = serde_json::json!("revision_policy");
+        value
+    })
+    .unwrap();
     let custom = store.acquire(&request).unwrap();
     assert_eq!(custom.reclaim.effective_keep[&custom.entry.item_key], 10);
-    request.policies.identical = Identical::Reuse;
+    policy_fixture::replace(
+        &store,
+        &mut request.policy_refs,
+        serde_json::json!({"type":"identical_pull_policy","strategy":Identical::Reuse}),
+    )
+    .unwrap();
     let reuse = store.acquire(&request).unwrap();
     assert_eq!(reuse.entry.uuid, custom.entry.uuid);
     assert_eq!(reuse.entry.sequence, custom.entry.sequence);
@@ -89,14 +104,23 @@ fn deletion_failure_is_pending_and_retryable() {
         .register_source(Source::Local { path: input })
         .unwrap();
     let mut request = Request {
-        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),
-        policies: Default::default(),
+        policy_refs: Default::default(),
     };
-    request.policies.identical = Identical::NewEntry;
-    request.policies.revision = RevisionPolicy::Latest { keep: 1 };
+    policy_fixture::replace(
+        &store,
+        &mut request.policy_refs,
+        serde_json::json!({"type":"identical_pull_policy","strategy":Identical::NewEntry}),
+    )
+    .unwrap();
+    policy_fixture::replace(&store, &mut request.policy_refs, {
+        let mut value = serde_json::to_value(RevisionPolicy::Latest { keep: 1 }).unwrap();
+        value["type"] = serde_json::json!("revision_policy");
+        value
+    })
+    .unwrap();
     let first = store.acquire(&request).unwrap();
     let held = fs::OpenOptions::new()
         .read(true)

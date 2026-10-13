@@ -4,7 +4,7 @@ use crate::{
         Store,
         claim::session::AppSession,
         policy::{
-            adopt, claims, persistence,
+            claims, persistence,
             resolve::{self, Inputs, Operation},
         },
         source::AcquireOptions,
@@ -15,7 +15,7 @@ use crate::{
             Claimed, CompiledEnsure, adopted::AdoptedPolicies, policy::Action, request::Ensure,
         },
         policy::{PolicyRefs, record::CacheMode},
-        store::{Request, Selection},
+        store::{OutputPlan, Selection},
     },
 };
 use anyhow::{Result, ensure};
@@ -36,7 +36,17 @@ impl Store {
         input: &Ensure,
         options: &AcquireOptions,
     ) -> Result<Claimed> {
-        let (compiled, fence) = {
+        crate::models::claim::validate_context(&input.context)?;
+        self.ensure_referenced_attempt(app, input, options, true)
+    }
+    fn ensure_referenced_attempt(
+        &self,
+        app: Uuid,
+        input: &Ensure,
+        options: &AcquireOptions,
+        retry: bool,
+    ) -> Result<Claimed> {
+        let (compiled, fence, had_owner, source_revision, application_refs) = {
             let _lock = self.lock()?;
             let registry = self.registry(app)?;
             self.authorize_resource(
@@ -58,7 +68,7 @@ impl Store {
                 sha256: input.selection.sha256.clone(),
                 ..Default::default()
             };
-            let request = Request {
+            let request = OutputPlan {
                 adopted: None,
                 source_uuid: input.source_uuid,
                 selector: input.selector.clone(),
@@ -117,7 +127,6 @@ impl Store {
                     .unwrap();
             }
             claims::validate_adopted(&catalog, &adopted)?;
-            let effective = adopt::effective(&plan)?;
             let mut selection = request.selection;
             selection.selection_policy = plan.behavior.selection.clone();
             // Capture the same attachments used during planning, before releasing
@@ -135,14 +144,52 @@ impl Store {
                     selector: input.selector.clone(),
                     selection,
                     context: input.context.clone(),
-                    overrides: adopt::pinned(&effective),
                 },
                 fence,
+                existing.is_some(),
+                source.policy_revision,
+                registry.registry.policy_refs.clone(),
             )
         };
         let mut execution = self.clone();
         execution.policy_fence = Some(fence);
-        execution.ensure_compiled(app, &compiled, options)
+        let result = execution.ensure_compiled(app, &compiled, options);
+        // A concurrent first ensure may have published the same owner after our
+        // planning snapshot. Replan once only for that convergent reuse case.
+        // Existing owners, changed attachments, and new-entry work never retry.
+        if retry
+            && !had_owner
+            && result
+                .as_ref()
+                .is_err_and(|error| Error::from_anyhow(error).code == ErrorCode::RevisionConflict)
+            && compiled
+                .adopted
+                .as_ref()
+                .is_some_and(|p| p.behavior.identical == crate::models::policy::Identical::Reuse)
+        {
+            let reusable = {
+                let _lock = self.lock()?;
+                let registry = self.registry(app)?;
+                let effective = crate::core::policy::adopt::effective(
+                    &compiled.adopted.as_ref().expect("planned claim").pinned(),
+                )?;
+                let request = OutputPlan {
+                    adopted: compiled.adopted.clone(),
+                    source_uuid: compiled.source_uuid,
+                    selector: compiled.selector.clone(),
+                    selection: compiled.selection.clone(),
+                    policies: effective.output.clone(),
+                };
+                self.source(input.source_uuid)?.policy_revision == source_revision
+                    && registry.registry.policy_refs == application_refs
+                    && super::matching::select(self, &registry, &input.scope, &request, &effective)?
+                        .is_some_and(|m| m.claim.context == input.context)
+            };
+            if reusable {
+                return self.ensure_referenced_attempt(app, input, options, false);
+            }
+        }
+        result
     }
     pub(crate) fn adopted_refs(&self, adopted: Option<&AdoptedPolicies>) -> Result<PolicyRefs> {
         let Some(adopted) = adopted else {

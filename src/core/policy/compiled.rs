@@ -2,13 +2,13 @@
 //! This module is private and does not define another policy evaluation model.
 use super::{
     catalog::PolicyCatalog,
-    resolve::{self, Inputs, Operation},
+    resolve::{self, Inputs},
 };
 use crate::{
     error::{Error, ErrorCode},
     models::{
         claim::policy::{Effective, Overrides},
-        policy::{PolicyDefinition as Def, PolicyRecord, PolicyRefs, effective::EvaluatedPolicies},
+        policy::{PolicyDefinition as Def, PolicyRecord},
     },
 };
 use anyhow::{Result, ensure};
@@ -45,39 +45,4 @@ pub(crate) fn evaluate(
         )
     );
     super::adopt::effective(&plan)
-}
-
-pub(crate) fn surviving(
-    catalog: &PolicyCatalog,
-    effective: &Effective,
-    source: &PolicyRefs,
-    application: &PolicyRefs,
-) -> Result<EvaluatedPolicies> {
-    let mut pinned = EvaluatedPolicies::default();
-    pinned.behavior.identical = effective.output.identical;
-    pinned.behavior.revision = effective.output.revision;
-    pinned.behavior.update = effective.update_policy;
-    pinned.behavior.reclaim = effective.reclaim.strategy();
-    pinned.behavior.useable_app = effective.output.protection.is_some();
-    let empty = PolicyRefs::default();
-    let plan = resolve::evaluate(
-        catalog,
-        Inputs {
-            source,
-            application,
-            request: &empty,
-            pinned: Some(&pinned),
-            operation: Operation::Compose,
-            managed_output: true,
-            update_due: false,
-        },
-    )?;
-    ensure!(
-        super::adopt::effective(&plan)? == *effective,
-        Error::new(
-            ErrorCode::PolicyConflict,
-            "current constraints would reinterpret a surviving claim"
-        )
-    );
-    Ok(plan)
 }

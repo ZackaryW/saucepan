@@ -7,13 +7,13 @@ use crate::{
             lifecycle::{Installation, Probe, ShimChange},
         },
         policy::Protection,
-        store::{Request, VerificationMode},
+        store::{OutputPlan, VerificationMode},
     },
     utils::{fs::atomic_write, tree},
 };
 use std::path::Path;
 
-fn executable(request: &Request) -> Result<&str> {
+fn executable(request: &OutputPlan) -> Result<&str> {
     ensure!(
         request.policies.protection == Some(Protection::UseableApp),
         "managed application requires useable_app"
@@ -32,13 +32,19 @@ impl Store {
         options: &AcquireOptions,
         operation: Option<Uuid>,
     ) -> Result<Operation> {
-        if self.policy_fence.is_none() {
-            return self
-                .with_policy_fence(input.request.source_uuid, None)?
-                .install_application(input, built_shim, options, operation);
-        }
+        let (execution, request) = self.plan_output(&input.request)?;
+        execution.install_planned(input, &request, built_shim, options, operation)
+    }
+    fn install_planned(
+        &self,
+        input: &Installation,
+        request: &OutputPlan,
+        built_shim: &Path,
+        options: &AcquireOptions,
+        operation: Option<Uuid>,
+    ) -> Result<Operation> {
         ensure!(!input.name.trim().is_empty(), "empty app name");
-        let binary = executable(&input.request)?.to_owned();
+        let binary = executable(request)?.to_owned();
         let sidecar = shims::sidecar(&input.shim)?;
         let digest = shims::digest(built_shim)?;
         let (mut op, _guard) = self.begin_operation(
@@ -47,7 +53,7 @@ impl Store {
             Action::Install {
                 scope: input.scope.clone(),
                 name: input.name.clone(),
-                request: Box::new(input.request.clone()),
+                request: Box::new(request.clone()),
                 probe: input.probe.clone(),
                 shim: input.shim.clone(),
                 digest: digest.clone(),
@@ -89,19 +95,17 @@ impl Store {
                 shims::digest(&staged)? == desired_shim.digest,
                 "built shim changed during staging"
             );
-            let (candidate, _guard) = self.acquire_candidate(&input.request, options)?;
+            let (candidate, _guard) = self.acquire_candidate(request, options)?;
             let lease = self.validate_candidate(candidate.entry.uuid, &binary, &input.probe)?;
             let claim = Claim {
-                policy_refs: self.adopted_refs(input.request.adopted.as_deref())?,
+                policy_refs: self.adopted_refs(request.adopted.as_deref())?,
                 scope: input.scope.clone(),
-                effective: crate::models::claim::policy::Effective {
-                    output: input.request.policies.clone(),
-                    reclaim: Default::default(),
-                    update_policy: Default::default(),
-                },
+                effective: crate::core::policy::adopt::effective(
+                    &request.adopted.as_ref().expect("planned output").pinned(),
+                )?,
                 context: Default::default(),
                 uuid: op.claim,
-                request: input.request.clone(),
+                request: request.clone(),
                 entry_uuid: candidate.entry.uuid,
             };
             let mut registry = Self::new_registry(op.app, 1)?;

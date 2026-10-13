@@ -144,6 +144,8 @@ impl Store {
         entry: Uuid,
         options: &super::super::source::AcquireOptions,
     ) -> Result<crate::models::store::Acquired> {
-        self.acquire_with(&self.output(entry)?.request, options)
+        Ok(self
+            .acquire_inner(&self.output(entry)?.request, options, None)?
+            .acquired)
     }
 }

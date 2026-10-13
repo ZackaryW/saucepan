@@ -1,4 +1,4 @@
-use crate::{models::store::Request, utils::path::relative_path};
+use crate::{models::store::OutputPlan, utils::path::relative_path};
 use anyhow::{Result, ensure};
 pub(crate) mod access;
 pub(crate) mod adopt;
@@ -13,7 +13,7 @@ pub(crate) mod persistence;
 pub mod prepare;
 pub mod resolve;
 pub(crate) mod source;
-pub fn validate(request: &Request) -> Result<()> {
+pub fn validate(request: &OutputPlan) -> Result<()> {
     let keep = request.policies.revision.keep()?;
     ensure!(keep > 0, "retention must be positive");
     for p in request
@@ -75,3 +75,4 @@ pub fn select_asset<'a>(
     }
     anyhow::bail!("no release asset matches platform and filters")
 }
+mod output;

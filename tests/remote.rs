@@ -1,4 +1,5 @@
 mod native_root;
+mod policy_fixture;
 mod support;
 use saucepan::{
     core::source::AcquireOptions,
@@ -42,17 +43,19 @@ fn release_cache_expiry_fallback_and_cli_use_real_transport() {
         })
         .unwrap();
     let mut request = Request {
-        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::LatestStable,
         selection: Default::default(),
-        policies: Default::default(),
+        policy_refs: Default::default(),
     };
     request.selection.format = Format::Raw;
-    request.selection.filters = vec![AssetFilter {
-        platform: None,
-        asset_patterns: vec!["*.exe".into()],
-    }];
+    request.selection.filter_refs = policy_fixture::filters(
+        &store,
+        vec![AssetFilter {
+            platform: None,
+            asset_patterns: vec!["*.exe".into()],
+        }],
+    );
     let mut opts = AcquireOptions {
         test_now: Some(100),
         test_github_api: Some(server.base.clone()),
@@ -185,11 +188,10 @@ fn url_downloads_refresh_unvalidated_bytes_and_preserve_previous_content() {
         })
         .unwrap();
     let mut request = Request {
-        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Url,
         selection: Default::default(),
-        policies: Default::default(),
+        policy_refs: Default::default(),
     };
     request.selection.format = Format::Raw;
     request.selection.filename = Some("payload".into());
@@ -257,24 +259,26 @@ fn zip_integrity_tag_and_shared_platform_discovery() {
         })
         .unwrap();
     let mut request = Request {
-        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Tag { tag: "v1".into() },
         selection: Default::default(),
-        policies: Default::default(),
+        policy_refs: Default::default(),
     };
     request.selection.format = Format::Zip;
     request.selection.folder = Some("package".into());
-    request.selection.filters = ["windows", "linux"]
-        .into_iter()
-        .map(|os| AssetFilter {
-            platform: Some(Platform {
-                os: os.into(),
-                arch: "x86_64".into(),
-            }),
-            asset_patterns: vec![format!("{os}.zip")],
-        })
-        .collect();
+    request.selection.filter_refs = policy_fixture::filters(
+        &store,
+        ["windows", "linux"]
+            .into_iter()
+            .map(|os| AssetFilter {
+                platform: Some(Platform {
+                    os: os.into(),
+                    arch: "x86_64".into(),
+                }),
+                asset_patterns: vec![format!("{os}.zip")],
+            })
+            .collect::<Vec<_>>(),
+    );
     request.selection.platform = Some(Platform {
         os: "windows".into(),
         arch: "x86_64".into(),

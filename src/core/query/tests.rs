@@ -84,11 +84,10 @@ fn coherent_revision_context_and_selection_during_mutation() {
     let source = store.register_source(Source::Local { path: file }).unwrap();
     let app = store.register_app("test".into()).unwrap();
     let request = Request {
-        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),
-        policies: Default::default(),
+        policy_refs: Default::default(),
     };
     let claim = store
         .acquire_for(

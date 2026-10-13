@@ -1,10 +1,7 @@
 use super::registry::RegistryState;
 use crate::core::index::Journal;
 use crate::error::{Error, ErrorCode};
-use crate::models::claim::{
-    Scope,
-    policy::{Action, Overrides},
-};
+use crate::models::claim::{Scope, policy::Action};
 use crate::{
     core::{Store, source::AcquireOptions},
     models::{
@@ -12,7 +9,7 @@ use crate::{
             Application, Claim, ClaimContext, ClaimView, Claimed, Record, Settings,
             validate_context,
         },
-        store::Request,
+        store::OutputPlan,
     },
 };
 use anyhow::{Context, Result, ensure};
@@ -28,7 +25,6 @@ pub(crate) struct ClaimTarget {
     pub expected: Option<Uuid>,
     pub context: ClaimContext,
     pub expected_revision: Option<u64>,
-    pub overrides: Option<Overrides>,
     pub projection: Option<String>,
 }
 impl Store {
@@ -36,7 +32,7 @@ impl Store {
         &self,
         app: Uuid,
         scope: &Scope,
-        request: &Request,
+        request: &crate::models::store::Request,
         options: &AcquireOptions,
     ) -> Result<Claimed> {
         self.acquire_for_with_context(app, scope, request, &ClaimContext::new(), options)
@@ -46,20 +42,19 @@ impl Store {
         &self,
         app: Uuid,
         scope: &Scope,
-        request: &Request,
+        request: &crate::models::store::Request,
         context: &ClaimContext,
         options: &AcquireOptions,
     ) -> Result<Claimed> {
-        self.ensure_compiled(
+        self.ensure_claim(
             app,
-            &crate::models::claim::CompiledEnsure {
-                adopted: None,
+            &crate::models::claim::EnsureRequest {
                 scope: scope.clone(),
                 source_uuid: request.source_uuid,
                 selector: request.selector.clone(),
                 selection: request.selection.clone(),
                 context: context.clone(),
-                overrides: request_overrides(request),
+                policy_refs: request.policy_refs.clone(),
             },
             options,
         )
@@ -88,7 +83,6 @@ impl Store {
                 expected: Some(claim.entry_uuid),
                 context: Default::default(),
                 expected_revision: None,
-                overrides: None,
                 projection: None,
             }),
         )?;
@@ -231,7 +225,7 @@ impl Store {
     pub(crate) fn claim_record(
         &self,
         target: &ClaimTarget,
-        request: &Request,
+        request: &OutputPlan,
         entry: Uuid,
     ) -> Result<(Record, RegistryState)> {
         let mut app = self.application(target.app)?;
@@ -267,21 +261,10 @@ impl Store {
             .get(&target.id)
             .map(|claim| claim.context.clone())
             .unwrap_or_else(|| target.context.clone());
-        let overrides = target
-            .overrides
-            .clone()
-            .or_else(|| {
-                registry
-                    .claims
-                    .get(&target.id)
-                    .map(|claim| crate::core::policy::adopt::pinned(&claim.effective))
-            })
-            .unwrap_or_else(|| request_overrides(request));
         let effective = self.claim_execution_policy(
             request.source_uuid,
             &registry.registry,
             request.adopted.as_deref(),
-            &overrides,
         )?;
         let policy_refs = registry
             .claims
@@ -305,15 +288,5 @@ impl Store {
         registry.registry.revision = app.revision;
         registry.validate()?;
         Ok((Record::Application(app), registry))
-    }
-}
-
-fn request_overrides(request: &Request) -> Overrides {
-    Overrides {
-        identical: Some(request.policies.identical),
-        revision: Some(request.policies.revision),
-        reclaim: None,
-        useable_app: Some(request.policies.protection.is_some()),
-        update_policy: None,
     }
 }

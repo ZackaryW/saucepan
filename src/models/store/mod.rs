@@ -81,9 +81,22 @@ pub struct Selection {
     pub bin: Vec<String>,
     pub sha256: Option<String>,
 }
+/// Reference-only intent for a managed output. Policies must be registered first.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Request {
+    pub source_uuid: Uuid,
+    pub selector: Selector,
+    #[serde(default)]
+    pub selection: crate::models::claim::request::Selection,
+    #[serde(default)]
+    pub policy_refs: crate::models::policy::PolicyRefs,
+}
+
+/// Frozen execution evidence written by the policy planner, never accepted as input.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OutputPlan {
     #[serde(default)]
     pub adopted: Option<Box<crate::models::claim::adopted::AdoptedPolicies>>,
     pub source_uuid: Uuid,
@@ -110,7 +123,7 @@ pub struct FileEntry {
 #[serde(deny_unknown_fields)]
 pub struct OutputEntry {
     pub uuid: Uuid,
-    pub request: Request,
+    pub request: OutputPlan,
     pub item_key: String,
     pub fingerprint: String,
     pub resolved: Resolved,

@@ -8,7 +8,6 @@ use saucepan::{
     error::{Error, ErrorCode},
     models::{
         claim::{Claimed, EnsureRequest, Scope},
-        policy::Policies,
         source::Source,
         store::{Request, Selector, VerificationMode},
     },
@@ -219,11 +218,10 @@ fn actual_concurrent_cli_ensures_return_one_claim_and_one_selected_output() {
     fs::write(
         &request,
         serde_json::to_vec(&Request {
-            adopted: None,
             source_uuid: source.uuid,
             selector: Selector::Local,
             selection: Default::default(),
-            policies: Policies::default(),
+            policy_refs: Default::default(),
         })
         .unwrap(),
     )

@@ -44,8 +44,13 @@ fn request(store: &Store, source_uuid: uuid::Uuid, strategy: ReclaimStrategy) ->
     }
 }
 fn evict(store: &Store, claimed: &saucepan::models::claim::Claimed, options: &AcquireOptions) {
-    let mut pull = claimed.claim.request.clone();
-    pull.policies.identical = Identical::NewEntry;
+    let mut pull = policy_fixture::intent(&claimed.claim.request);
+    policy_fixture::replace(
+        store,
+        &mut pull.policy_refs,
+        serde_json::json!({"type":"identical_pull_policy","strategy":Identical::NewEntry}),
+    )
+    .unwrap();
     store.acquire_with(&pull, options).unwrap();
     assert_eq!(
         store.output(claimed.claim.entry_uuid).unwrap().state,

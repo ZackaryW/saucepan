@@ -13,11 +13,10 @@ fn fixture() -> (tempfile::TempDir, Store, Application, Request) {
         .unwrap();
     let app = store.register_app("recovery".into()).unwrap();
     let request = Request {
-        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),
-        policies: Default::default(),
+        policy_refs: Default::default(),
     };
     (tmp, store, app, request)
 }
@@ -79,14 +78,13 @@ fn interrupted_content_publication_recovers_before_and_after_rename_and_rejects_
                     &crate::core::claim::operations::ClaimTarget {
                         projection: None,
                         expected_revision: None,
-                        overrides: None,
                         app: app.uuid,
                         scope: scope.clone(),
                         id: old.uuid,
                         expected: Some(old.entry_uuid),
                         context: Default::default(),
                     },
-                    &request,
+                    &entry.request,
                     entry.uuid,
                 )
                 .unwrap();

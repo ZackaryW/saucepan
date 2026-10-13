@@ -1,4 +1,5 @@
 mod native_root;
+mod policy_fixture;
 use saucepan::{
     error::{Error, ErrorCode},
     models::{
@@ -46,19 +47,34 @@ fn native_store_failures_have_codes_without_message_matching() {
         .register_source(Source::Local { path: path.clone() })
         .unwrap();
     let mut request = Request {
-        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),
-        policies: Default::default(),
+        policy_refs: Default::default(),
     };
-    request.policies.revision = RevisionPolicy::Latest { keep: 0 };
     assert_eq!(
-        code(store.acquire(&request).unwrap_err()),
+        code(
+            policy_fixture::replace(
+                &store,
+                &mut request.policy_refs,
+                serde_json::json!({"type":"revision_policy","history":"latest","keep":0})
+            )
+            .unwrap_err()
+        ),
         ErrorCode::InvalidRequest
     );
-    request.policies.revision = RevisionPolicy::Latest { keep: 1 };
-    request.policies.identical = Identical::NewEntry;
+    policy_fixture::replace(&store, &mut request.policy_refs, {
+        let mut value = serde_json::to_value(RevisionPolicy::Latest { keep: 1 }).unwrap();
+        value["type"] = serde_json::json!("revision_policy");
+        value
+    })
+    .unwrap();
+    policy_fixture::replace(
+        &store,
+        &mut request.policy_refs,
+        serde_json::json!({"type":"identical_pull_policy","strategy":Identical::NewEntry}),
+    )
+    .unwrap();
     let old = store.acquire(&request).unwrap();
     fs::write(&path, b"second").unwrap();
     store.acquire(&request).unwrap();

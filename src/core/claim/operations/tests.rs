@@ -1,4 +1,5 @@
 use super::*;
+use crate::models::store::Request;
 use crate::models::{source::Source, store::Selector};
 use std::{fs, sync::Arc};
 
@@ -14,11 +15,10 @@ fn primitive_commit_fences_intervening_context_and_preserves_selection() {
             .register_source(Source::Local { path: file.clone() })
             .unwrap();
         let request = Request {
-            adopted: None,
             source_uuid: source.uuid,
             selector: Selector::Local,
             selection: Default::default(),
-            policies: Default::default(),
+            policy_refs: Default::default(),
         };
         let claim = store
             .acquire_for(
@@ -61,11 +61,10 @@ fn context_journal_recovers_before_and_after_record_publication() {
         let source = store.register_source(Source::Local { path: file }).unwrap();
         let mut app = store.register_app("test".into()).unwrap();
         let request = Request {
-            adopted: None,
             source_uuid: source.uuid,
             selector: Selector::Local,
             selection: Default::default(),
-            policies: Default::default(),
+            policy_refs: Default::default(),
         };
         let claimed = store
             .acquire_for(

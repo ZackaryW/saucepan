@@ -4,7 +4,7 @@ use saucepan::{
     core::{Store, activation::Probe},
     models::{
         index::lifecycle::{Installation, Phase},
-        policy::{Identical, Protection},
+        policy::Identical,
         source::Source,
         store::{Request, Selector},
     },
@@ -113,15 +113,24 @@ fn setup() -> (tempfile::TempDir, native_root::NativeStore, Installation) {
     let name = exe.file_name().unwrap().to_str().unwrap().to_owned();
     let source = store.register_source(Source::Local { path: exe }).unwrap();
     let mut request = Request {
-        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),
-        policies: Default::default(),
+        policy_refs: Default::default(),
     };
     request.selection.bin = vec![name];
-    request.policies.protection = Some(Protection::UseableApp);
-    request.policies.identical = Identical::NewEntry;
+    policy_fixture::replace(
+        &store,
+        &mut request.policy_refs,
+        serde_json::json!({"type":"useable_app_policy"}),
+    )
+    .unwrap();
+    policy_fixture::replace(
+        &store,
+        &mut request.policy_refs,
+        serde_json::json!({"type":"identical_pull_policy","strategy":Identical::NewEntry}),
+    )
+    .unwrap();
     let input = Installation {
         scope: "fixture".to_string().try_into().unwrap(),
         name: "fixture".into(),
@@ -232,7 +241,7 @@ fn managed_claim_and_binding_commit_together_and_rollback_preserves_request() {
             &store.registry(installed.app).unwrap().claims[&installed.claim].request
         )
         .unwrap(),
-        serde_json::to_value(&input.request).unwrap()
+        serde_json::to_value(&store.output(first).unwrap().request).unwrap()
     );
     let output = Command::new(store.root().join("bin").join(&input.shim))
         .args(&input.probe.args)
@@ -628,14 +637,24 @@ fn managed_update_rejects_aba_and_foreign_rollback() {
 fn uninstall_preserves_shared_outputs_and_live_target_then_reconciles() {
     use saucepan::models::{policy::RevisionPolicy, store::Availability};
     let (_tmp, store, mut input) = setup();
-    input.request.policies.revision = RevisionPolicy::Latest { keep: 1 };
+    policy_fixture::replace(&store, &mut input.request.policy_refs, {
+        let mut value = serde_json::to_value(RevisionPolicy::Latest { keep: 1 }).unwrap();
+        value["type"] = serde_json::json!("revision_policy");
+        value
+    })
+    .unwrap();
     let installed = store
         .install_application(&input, &shim(), &Default::default(), None)
         .unwrap();
     let first = installed.candidate.unwrap();
     let other = store.register_app("shared".into()).unwrap();
     let mut shared = input.request.clone();
-    shared.policies.identical = Identical::Reuse;
+    policy_fixture::replace(
+        &store,
+        &mut shared.policy_refs,
+        serde_json::json!({"type":"identical_pull_policy","strategy":Identical::Reuse}),
+    )
+    .unwrap();
     let claim = store
         .acquire_for(
             other.uuid,

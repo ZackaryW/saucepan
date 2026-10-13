@@ -1,8 +1,9 @@
 mod native_root;
+mod policy_fixture;
 use saucepan::{
     core::activation::Probe,
     models::{
-        policy::{Identical, Protection, RevisionPolicy},
+        policy::{Identical, RevisionPolicy},
         source::Source,
         store::{Availability, Request, Selector},
     },
@@ -44,14 +45,18 @@ fn probe_mutation_preserves_binding_and_corrupted_reuse_is_rejected() {
         .register_source(Source::Local { path: input })
         .unwrap();
     let mut request = Request {
-        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),
-        policies: Default::default(),
+        policy_refs: Default::default(),
     };
     request.selection.bin.push(name.into());
-    request.policies.protection = Some(Protection::UseableApp);
+    policy_fixture::replace(
+        &store,
+        &mut request.policy_refs,
+        serde_json::json!({"type":"useable_app_policy"}),
+    )
+    .unwrap();
     let app = store.register_app("probe mutation".into()).unwrap();
     let first = store.acquire(&request).unwrap();
     let probe = Probe {
@@ -66,7 +71,12 @@ fn probe_mutation_preserves_binding_and_corrupted_reuse_is_rejected() {
     let active = store
         .activate(app.uuid, first.entry.uuid, name, &probe)
         .unwrap();
-    request.policies.identical = Identical::NewEntry;
+    policy_fixture::replace(
+        &store,
+        &mut request.policy_refs,
+        serde_json::json!({"type":"identical_pull_policy","strategy":Identical::NewEntry}),
+    )
+    .unwrap();
     let next = store.acquire(&request).unwrap();
     let mutating = Probe {
         args: vec![
@@ -100,7 +110,12 @@ fn probe_mutation_preserves_binding_and_corrupted_reuse_is_rejected() {
     // Force the only compatible reuse candidate to be corrupt as well.
     fs::write(first.directory.join("probe-data"), b"changed").unwrap();
     assert!(store.path(first.entry.uuid).is_ok());
-    request.policies.identical = Identical::Reuse;
+    policy_fixture::replace(
+        &store,
+        &mut request.policy_refs,
+        serde_json::json!({"type":"identical_pull_policy","strategy":Identical::Reuse}),
+    )
+    .unwrap();
     assert!(store.acquire(&request).is_err());
 }
 #[test]
@@ -152,16 +167,30 @@ fn deactivation_preserves_live_targets_claims_and_other_bindings() {
     let app = store.register_app("deactivate".into()).unwrap();
     let other = store.register_app("other".into()).unwrap();
     let mut request = Request {
-        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),
-        policies: Default::default(),
+        policy_refs: Default::default(),
     };
     request.selection.bin = vec![name.into()];
-    request.policies.protection = Some(Protection::UseableApp);
-    request.policies.revision = RevisionPolicy::Latest { keep: 1 };
-    request.policies.identical = Identical::NewEntry;
+    policy_fixture::replace(
+        &store,
+        &mut request.policy_refs,
+        serde_json::json!({"type":"useable_app_policy"}),
+    )
+    .unwrap();
+    policy_fixture::replace(&store, &mut request.policy_refs, {
+        let mut value = serde_json::to_value(RevisionPolicy::Latest { keep: 1 }).unwrap();
+        value["type"] = serde_json::json!("revision_policy");
+        value
+    })
+    .unwrap();
+    policy_fixture::replace(
+        &store,
+        &mut request.policy_refs,
+        serde_json::json!({"type":"identical_pull_policy","strategy":Identical::NewEntry}),
+    )
+    .unwrap();
     let first = store
         .acquire_for(
             app.uuid,
@@ -330,16 +359,30 @@ fn active_switch_failed_probe_rollback_streams_and_launcher_death() {
         .unwrap();
     let app = store.register_app("fixture".into()).unwrap();
     let mut request = Request {
-        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),
-        policies: Default::default(),
+        policy_refs: Default::default(),
     };
     request.selection.bin = vec![name.into()];
-    request.policies.protection = Some(Protection::UseableApp);
-    request.policies.revision = RevisionPolicy::Latest { keep: 1 };
-    request.policies.identical = Identical::NewEntry;
+    policy_fixture::replace(
+        &store,
+        &mut request.policy_refs,
+        serde_json::json!({"type":"useable_app_policy"}),
+    )
+    .unwrap();
+    policy_fixture::replace(&store, &mut request.policy_refs, {
+        let mut value = serde_json::to_value(RevisionPolicy::Latest { keep: 1 }).unwrap();
+        value["type"] = serde_json::json!("revision_policy");
+        value
+    })
+    .unwrap();
+    policy_fixture::replace(
+        &store,
+        &mut request.policy_refs,
+        serde_json::json!({"type":"identical_pull_policy","strategy":Identical::NewEntry}),
+    )
+    .unwrap();
     let first = store
         .acquire_for(
             app.uuid,

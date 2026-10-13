@@ -159,3 +159,37 @@ pub fn replace(store: &Store, refs: &mut PolicyRefs, value: Value) -> Result<()>
     *refs = retained.try_into()?;
     Ok(())
 }
+
+/// Build a new intent from already verified output evidence.
+pub fn intent(plan: &saucepan::models::store::OutputPlan) -> saucepan::models::store::Request {
+    let adopted = plan
+        .adopted
+        .as_ref()
+        .expect("output must have policy evidence");
+    saucepan::models::store::Request {
+        source_uuid: plan.source_uuid,
+        selector: plan.selector.clone(),
+        selection: saucepan::models::claim::request::Selection {
+            platform: plan.selection.platform.clone(),
+            filter_refs: adopted.filter_refs.clone(),
+            format: plan.selection.format,
+            filename: plan.selection.filename.clone(),
+            folder: plan.selection.folder.clone(),
+            bin: plan.selection.bin.clone(),
+            sha256: plan.selection.sha256.clone(),
+        },
+        policy_refs: adopted
+            .evidence
+            .values()
+            .map(|e| e.uuid)
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap(),
+    }
+}
+
+pub fn filters(store: &Store, filters: Vec<saucepan::models::store::AssetFilter>) -> PolicyRefs {
+    definitions(store, filters.into_iter().map(|filter| {
+        json!({"type":"github_release_asset_filter", "platform":filter.platform, "asset_patterns":filter.asset_patterns})
+    }).collect()).unwrap()
+}

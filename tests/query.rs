@@ -1,4 +1,5 @@
 mod native_root;
+mod policy_fixture;
 use saucepan::{
     core::query::{ClaimQuery, Condition, Operator},
     models::{
@@ -19,11 +20,10 @@ fn setup() -> (tempfile::TempDir, native_root::NativeStore, Uuid, Request) {
     let app = store.register_app("consumer".into()).unwrap();
     let source = store.register_source(Source::Local { path: file }).unwrap();
     let request = Request {
-        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),
-        policies: Default::default(),
+        policy_refs: Default::default(),
     };
     (tmp, store, app.uuid, request)
 }
@@ -205,7 +205,12 @@ fn query_uses_metadata_without_refreshing_sources_or_touching_payloads() {
 #[test]
 fn results_do_not_protect_content_and_unavailable_claims_remain_searchable() {
     let (tmp, store, app, mut request) = setup();
-    request.policies.revision = RevisionPolicy::Latest { keep: 1 };
+    policy_fixture::replace(&store, &mut request.policy_refs, {
+        let mut value = serde_json::to_value(RevisionPolicy::Latest { keep: 1 }).unwrap();
+        value["type"] = serde_json::json!("revision_policy");
+        value
+    })
+    .unwrap();
     let old = store
         .acquire_for_with_context(
             app,

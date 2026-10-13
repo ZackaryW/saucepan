@@ -44,10 +44,10 @@ The returned source UUID identifies `source/<uuid>.json`. App/output records liv
 
 Find registered sources before claiming with `query-sources`, optionally adding `--type github_release --repo owner/project`. A saved `query-sources query.json` remains supported instead of flags. Use `--as-app APP_UUID` for that application's permitted sources; without it, only explicitly published sources appear. See [source discovery and the simple app flow](docs/source-query.md).
 
-Save a request using the returned source UUID (replace the illustrative UUID):
+Save a request using the returned source UUID (replace the illustrative UUID). Empty references use built-in behavior; custom behavior is registered as immutable records with `register-policies`, then attached by UUID. See the [policy guide](docs/policy-resources.md). Old `policies`, `eviction`, inline filters and caller-supplied execution evidence are rejected:
 
 ```json
-{"source_uuid":"00000000-0000-4000-8000-000000000001","selector":{"type":"local"},"policies":{"identical":"reuse","eviction":{"strategy":"latest","keep":10}}}
+{"source_uuid":"00000000-0000-4000-8000-000000000001","selector":{"type":"local"},"policy_refs":[]}
 ```
 
 ```powershell
@@ -74,7 +74,7 @@ Run `cargo test --all-targets` for the currently implemented contracts and porta
 For release assets, register `{"type":"github_release","repo":"owner/project"}` and use a request with `selector: {"type":"latest_stable"}` (or `{"type":"tag","tag":"v1.0"}`). A raw executable selection is:
 
 ```json
-{"format":"raw","platform":{"os":"windows","arch":"x86_64"},"filters":[{"platform":{"os":"windows","arch":"x86_64"},"asset_patterns":["*-windows-x64.exe"]}],"bin":["tool.exe"],"filename":"tool.exe"}
+{"format":"raw","platform":{"os":"windows","arch":"x86_64"},"filter_refs":["00000000-0000-4000-8000-000000000002"],"bin":["tool.exe"],"filename":"tool.exe"}
 ```
 
 Put that object in the request's `selection`. For ZIP assets use `format: "zip"` with optional `folder` and binary-relative paths. Multiple matches in the winning filter are errors. URL sources (`{"type":"url","url":"https://example.com/tool.zip"}`) use selector `{"type":"url"}`, explicit format, and `filename`.
@@ -85,9 +85,11 @@ To associate a request with an application, use `acquire request.json --app APP_
 
 Attach project or alias labels with `acquire request.json --app APP_UUID --scope PROJECT_KEY --context context.json`, where the context file is a plain string map. Search with `query-claims query.json` using `{ "app": "APP_UUID", "where": [{ "key": "project", "op": "eq", "value": "my-project" }] }`. Operators are `eq` and explicit string `glob`; all conditions must match. Results include the application revision and every matching claim in UUID order. `set-claim-context APP_UUID CLAIM_UUID context.json --expected-revision N` replaces labels without moving the claim. See [claim context and queries](docs/claim-query.md) for complete examples, wildcard syntax, and lease boundaries. Run `cargo test --test query_cli` for the isolated two-project CLI flow.
 
-Every managed convenience acquisition evaluates latest-ten retention for its source/selector/selection item. `policies.eviction` can override the positive count. Coexisting attached counts use the maximum; claims preserve their policy demand but ordinary claims do not prevent reclaim. Reuse preserves creation order. `reclaim` reports effective counts, deferred protected/in-use entries, and failed deletions as pending. Provenance remains after content deletion. `path` refuses unavailable entries; `reacquire ENTRY_UUID` gets a live output, while `update-claim` also moves the application's claim.
+Every managed convenience acquisition evaluates latest-ten retention for its source/selector/selection item. Attach a registered `revision_policy` UUID through `policy_refs` to select history retention. Coexisting attached counts use the maximum; claims preserve their policy demand but ordinary claims do not prevent reclaim. Reuse preserves creation order. `reclaim` reports effective counts, deferred protected/in-use entries, and failed deletions as pending. Provenance remains after content deletion. `path` refuses unavailable entries; `reacquire ENTRY_UUID` gets a live output, while `update-claim` also moves the application's claim.
 
-Managed executables declare `selection.bin`, a matching `selection.platform`, and `policies.protection: {"type":"useable_app"}`. First ensure or acquire the executable as a claim owned by the app in an allowed scope. Save a probe such as `{"args":["--version"],"stdout_contains":"saucepan ","timeout_seconds":10}`. Run `activate APP_UUID ENTRY_UUID saucepan.exe probe.json`, then `install-shim APP_UUID saucepan.exe PATH_TO_BUILT_SHIM --saucepan`. Activation validates and probes before atomically switching the binding. Downloading alone never switches it. Activating a retained older entry accessible through an authorized claim performs binding-only rollback; use managed `rollback` for the coordinated claim/binding transition below. Routine updates leave the stable shim untouched; launcher replacement is a separate maintenance operation.
+Register the release filter above as a `github_release_asset_filter` record before using its UUID.
+
+Managed executables declare `selection.bin`, a matching `selection.platform`, and a registered `useable_app_policy` UUID in `policy_refs`. First ensure or acquire the executable as a claim owned by the app in an allowed scope. Save a probe such as `{"args":["--version"],"stdout_contains":"saucepan ","timeout_seconds":10}`. Run `activate APP_UUID ENTRY_UUID saucepan.exe probe.json`, then `install-shim APP_UUID saucepan.exe PATH_TO_BUILT_SHIM --saucepan`. Activation validates and probes before atomically switching the binding. Downloading alone never switches it. Activating a retained older entry accessible through an authorized claim performs binding-only rollback; use managed `rollback` for the coordinated claim/binding transition below. Routine updates leave the stable shim untouched; launcher replacement is a separate maintenance operation.
 
 Active useable_app bindings and native execution leases can exceed the retention count. The dedicated shim inherits a lifetime handle into its target: Windows checks sharing conflicts, Unix checks the inherited file lock. Launcher death does not make a still-running target reclaimable. Targets must preserve the inherited lifetime handle; intentionally closing inherited handles or daemonizing outside this lifetime contract is unsupported. Windows console interruption reaches the target's console group; Unix replaces the shim with the target, preserving normal signals. Supported execution evidence is recorded separately for each OS.
 

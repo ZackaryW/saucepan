@@ -46,11 +46,10 @@ fn setup(mode: IntegrityMode) -> (tempfile::TempDir, MemoryKeys, Store, Request)
     fs::write(&file, "content").unwrap();
     let source = store.register_source(Source::Local { path: file }).unwrap();
     let request = Request {
-        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),
-        policies: Default::default(),
+        policy_refs: Default::default(),
     };
     (tmp, keys, store, request)
 }

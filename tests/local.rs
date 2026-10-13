@@ -1,4 +1,5 @@
 mod native_root;
+mod policy_fixture;
 use saucepan::models::{
     policy::{Identical, RevisionPolicy},
     source::Source,
@@ -15,11 +16,10 @@ fn setup() -> (tempfile::TempDir, native_root::NativeStore, Request) {
         .register_source(Source::Local { path: input })
         .unwrap();
     let request = Request {
-        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),
-        policies: Default::default(),
+        policy_refs: Default::default(),
     };
     (dir, store, request)
 }
@@ -32,11 +32,26 @@ fn immutable_versions_and_policy_reuse() {
         b"payload"
     );
     assert_eq!(store.acquire(&req).unwrap().entry.uuid, first.entry.uuid);
-    req.policies.identical = Identical::NewEntry;
+    policy_fixture::replace(
+        &store,
+        &mut req.policy_refs,
+        serde_json::json!({"type":"identical_pull_policy","strategy":Identical::NewEntry}),
+    )
+    .unwrap();
     let second = store.acquire(&req).unwrap();
     assert_ne!(first.entry.uuid, second.entry.uuid);
-    req.policies.identical = Identical::Reuse;
-    req.policies.revision = RevisionPolicy::Latest { keep: 3 };
+    policy_fixture::replace(
+        &store,
+        &mut req.policy_refs,
+        serde_json::json!({"type":"identical_pull_policy","strategy":Identical::Reuse}),
+    )
+    .unwrap();
+    policy_fixture::replace(&store, &mut req.policy_refs, {
+        let mut value = serde_json::to_value(RevisionPolicy::Latest { keep: 3 }).unwrap();
+        value["type"] = serde_json::json!("revision_policy");
+        value
+    })
+    .unwrap();
     assert_ne!(store.acquire(&req).unwrap().entry.uuid, first.entry.uuid);
     fs::write(dir.path().join("input/index.json"), "new").unwrap();
     let third = store.acquire(&req).unwrap();

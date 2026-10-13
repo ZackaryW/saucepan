@@ -23,11 +23,10 @@ fn claims_remain_independent_and_failure_preserves_associations() {
     let app_a = store.register_app("A".into()).unwrap();
     let app_b = store.register_app("B".into()).unwrap();
     let mut request = Request {
-        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),
-        policies: Default::default(),
+        policy_refs: Default::default(),
     };
     request.selection.folder = Some("a".into());
     let a = store

@@ -4,7 +4,7 @@ use crate::{
     models::{
         claim::{Claim, RegistryState, Scope, policy::Effective},
         source::Source,
-        store::{Format, Request},
+        store::{Format, OutputPlan},
     },
 };
 use anyhow::{Result, ensure};
@@ -19,7 +19,7 @@ pub(super) fn select(
     store: &Store,
     registry: &RegistryState,
     scope: &Scope,
-    request: &Request,
+    request: &OutputPlan,
     effective: &Effective,
 ) -> Result<Option<Match>> {
     select_inner(store, registry, scope, request, Some(effective))
@@ -28,7 +28,7 @@ pub(super) fn select_identity(
     store: &Store,
     registry: &RegistryState,
     scope: &Scope,
-    request: &Request,
+    request: &OutputPlan,
 ) -> Result<Option<Match>> {
     select_inner(store, registry, scope, request, None)
 }
@@ -36,7 +36,7 @@ fn select_inner(
     store: &Store,
     registry: &RegistryState,
     scope: &Scope,
-    request: &Request,
+    request: &OutputPlan,
     effective: Option<&Effective>,
 ) -> Result<Option<Match>> {
     let mut matches = Vec::new();

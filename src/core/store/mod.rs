@@ -4,7 +4,7 @@ use crate::{
     models::{
         index::{Claim, Record},
         policy::Identical,
-        store::{Acquired, Availability, FileEntry, OutputEntry, Request, VerificationMode},
+        store::{Acquired, Availability, FileEntry, OutputEntry, OutputPlan, VerificationMode},
     },
     utils::{
         path::{beneath, plain_metadata},
@@ -113,19 +113,20 @@ impl Store {
         }
         manifest(path)
     }
-    pub fn acquire(&self, request: &Request) -> Result<Acquired> {
+    pub fn acquire(&self, request: &crate::models::store::Request) -> Result<Acquired> {
         self.acquire_with(request, &Default::default())
     }
     pub fn acquire_with(
         &self,
-        request: &Request,
+        request: &crate::models::store::Request,
         options: &super::source::AcquireOptions,
     ) -> Result<Acquired> {
-        Ok(self.acquire_inner(request, options, None)?.acquired)
+        let (execution, plan) = self.plan_output(request)?;
+        Ok(execution.acquire_inner(&plan, options, None)?.acquired)
     }
     pub(crate) fn acquire_inner(
         &self,
-        request: &Request,
+        request: &OutputPlan,
         options: &super::source::AcquireOptions,
         claim: Option<super::claim::operations::ClaimTarget>,
     ) -> Result<Acquisition> {
@@ -133,7 +134,7 @@ impl Store {
     }
     pub(crate) fn acquire_candidate(
         &self,
-        request: &Request,
+        request: &OutputPlan,
         options: &super::source::AcquireOptions,
     ) -> Result<(Acquired, ResourceLease)> {
         let result = self.acquire_protected(request, options, None, true)?;
@@ -144,7 +145,7 @@ impl Store {
     }
     fn acquire_protected(
         &self,
-        request: &Request,
+        request: &OutputPlan,
         options: &super::source::AcquireOptions,
         claim: Option<super::claim::operations::ClaimTarget>,
         retain: bool,
@@ -170,7 +171,7 @@ impl Store {
 
     pub(crate) fn publish_prepared(
         &self,
-        request: &Request,
+        request: &OutputPlan,
         prepared: super::source::Prepared,
         claim: Option<super::claim::operations::ClaimTarget>,
         retain: bool,
@@ -181,7 +182,7 @@ impl Store {
 
     pub(crate) fn publish_prepared_state(
         &self,
-        request: &Request,
+        request: &OutputPlan,
         prepared: super::source::Prepared,
         claim: Option<super::claim::operations::ClaimTarget>,
         retain: bool,

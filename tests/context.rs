@@ -1,7 +1,8 @@
 mod native_root;
+mod policy_fixture;
 use saucepan::models::{
     index::{Claim, ClaimContext, validate_context},
-    policy::{Identical, RevisionPolicy},
+    policy::RevisionPolicy,
     source::Source,
     store::{Availability, Request, Selector},
 };
@@ -52,13 +53,17 @@ fn context_publication_replacement_reclaim_and_release() {
         .register_source(Source::Local { path: file.clone() })
         .unwrap();
     let mut request = Request {
-        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),
-        policies: Default::default(),
+        policy_refs: Default::default(),
     };
-    request.policies.revision = RevisionPolicy::Latest { keep: 1 };
+    policy_fixture::replace(&store, &mut request.policy_refs, {
+        let mut value = serde_json::to_value(RevisionPolicy::Latest { keep: 1 }).unwrap();
+        value["type"] = serde_json::json!("revision_policy");
+        value
+    })
+    .unwrap();
     let a = store
         .acquire_for_with_context(
             app.uuid,
@@ -186,11 +191,10 @@ fn invalid_context_fails_before_acquiring_or_mutating() {
     let store = native_root::create(&tmp.path().join("root")).unwrap();
     let app = store.register_app("test".into()).unwrap();
     let request = Request {
-        adopted: None,
         source_uuid: uuid::Uuid::new_v4(),
         selector: Selector::Local,
         selection: Default::default(),
-        policies: Default::default(),
+        policy_refs: Default::default(),
     };
     let bad = [("".into(), "x".into())].into();
     let err = store
@@ -216,5 +220,5 @@ fn invalid_context_fails_before_acquiring_or_mutating() {
         fs::read_dir(store.root().join(".staging")).unwrap().count(),
         0
     );
-    assert_eq!(request.policies.identical, Identical::Reuse);
+    assert!(request.policy_refs.ids().is_empty());
 }

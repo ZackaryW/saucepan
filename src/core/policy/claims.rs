@@ -21,26 +21,16 @@ impl crate::core::Store {
         source: uuid::Uuid,
         registry: &crate::models::claim::Registry,
         adopted: Option<&AdoptedPolicies>,
-        legacy: &crate::models::claim::policy::Overrides,
     ) -> Result<crate::models::claim::policy::Effective> {
         let snapshot = self.metadata.snapshot()?;
         let catalog = super::persistence::load(&self.metadata, &snapshot)?;
         let source = self.source(source)?;
-        let Some(adopted) = adopted else {
-            return super::compiled::evaluate(
-                &catalog,
-                Inputs {
-                    source: &source.policy_refs,
-                    application: &registry.policy_refs,
-                    request: &PolicyRefs::default(),
-                    pinned: None,
-                    operation: Operation::Compose,
-                    managed_output: true,
-                    update_due: false,
-                },
-                legacy,
-            );
-        };
+        let adopted = adopted.ok_or_else(|| {
+            Error::new(
+                ErrorCode::IntegrityError,
+                "claim is missing adopted policy evidence",
+            )
+        })?;
         let plan = surviving(
             &catalog,
             adopted,
@@ -57,12 +47,7 @@ impl crate::core::Store {
         acquisition: &crate::models::store::AcquisitionRequest,
     ) -> Result<crate::models::claim::policy::Effective> {
         if let Some(adopted) = acquisition.adopted.as_deref() {
-            return self.claim_execution_policy(
-                source,
-                registry,
-                Some(adopted),
-                &Default::default(),
-            );
+            return self.claim_execution_policy(source, registry, Some(adopted));
         }
         let snapshot = self.metadata.snapshot()?;
         let catalog = super::persistence::load(&self.metadata, &snapshot)?;
@@ -100,7 +85,13 @@ pub(crate) fn validate_existing(
 ) -> Result<EvaluatedPolicies> {
     let plan = match claim.request.adopted.as_deref() {
         Some(adopted) => surviving(catalog, adopted, source, application)?,
-        None => super::compiled::surviving(catalog, &claim.effective, source, application)?,
+        None => {
+            return Err(Error::new(
+                ErrorCode::IntegrityError,
+                "claim is missing adopted policy evidence",
+            )
+            .into());
+        }
     };
     ensure!(
         super::adopt::effective(&plan)? == claim.effective,

@@ -1,5 +1,5 @@
 use super::Application;
-use crate::models::store::Request;
+use crate::models::store::OutputPlan;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -34,7 +34,7 @@ pub struct Probe {
 pub struct Installation {
     pub scope: crate::models::claim::Scope,
     pub name: String,
-    pub request: Request,
+    pub request: crate::models::store::Request,
     pub probe: Probe,
     pub shim: String,
     pub saucepan: bool,
@@ -54,7 +54,7 @@ pub enum Action {
     Install {
         scope: crate::models::claim::Scope,
         name: String,
-        request: Box<Request>,
+        request: Box<OutputPlan>,
         probe: Probe,
         shim: String,
         digest: String,

@@ -1,4 +1,5 @@
 mod native_root;
+mod policy_fixture;
 use saucepan::models::{
     policy::{Identical, RevisionPolicy},
     source::Source,
@@ -16,14 +17,23 @@ fn fixture() -> (tempfile::TempDir, native_root::NativeStore, Request) {
         .register_source(Source::Local { path: input })
         .unwrap();
     let mut request = Request {
-        adopted: None,
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),
-        policies: Default::default(),
+        policy_refs: Default::default(),
     };
-    request.policies.identical = Identical::NewEntry;
-    request.policies.revision = RevisionPolicy::Latest { keep: 1 };
+    policy_fixture::replace(
+        &store,
+        &mut request.policy_refs,
+        serde_json::json!({"type":"identical_pull_policy","strategy":Identical::NewEntry}),
+    )
+    .unwrap();
+    policy_fixture::replace(&store, &mut request.policy_refs, {
+        let mut value = serde_json::to_value(RevisionPolicy::Latest { keep: 1 }).unwrap();
+        value["type"] = serde_json::json!("revision_policy");
+        value
+    })
+    .unwrap();
     (tmp, store, request)
 }
 
@@ -188,7 +198,12 @@ fn simultaneous_claim_update_returns_one_consistent_selection() {
 #[test]
 fn metadata_and_full_access_native_and_cli_preserve_identity() {
     let (_tmp, store, mut request) = fixture();
-    request.policies.revision = RevisionPolicy::Latest { keep: 10 };
+    policy_fixture::replace(&store, &mut request.policy_refs, {
+        let mut value = serde_json::to_value(RevisionPolicy::Latest { keep: 10 }).unwrap();
+        value["type"] = serde_json::json!("revision_policy");
+        value
+    })
+    .unwrap();
     let old = store.acquire(&request).unwrap();
     store.acquire(&request).unwrap();
     let index = store

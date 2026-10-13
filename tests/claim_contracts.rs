@@ -299,7 +299,7 @@ fn secrets_and_error_causes_have_safe_debug_and_machine_codes() {
 fn registry_and_claim_round_trip_validate_the_new_contract() {
     use saucepan::models::{
         claim::{Claim, Registry},
-        store::{Request, Selector},
+        store::Selector,
     };
     let mut registry = Registry {
         policy_refs: Default::default(),
@@ -333,7 +333,7 @@ fn registry_and_claim_round_trip_validate_the_new_contract() {
         uuid: Uuid::new_v4(),
         scope: scope("project-a"),
         entry_uuid: Uuid::new_v4(),
-        request: Request {
+        request: saucepan::models::store::OutputPlan {
             adopted: None,
             source_uuid: Uuid::new_v4(),
             selector: Selector::Local,

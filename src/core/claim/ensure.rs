@@ -6,7 +6,7 @@ use crate::{
         claim::{Claim, Claimed, CompiledEnsure as EnsureRequest, CoveredView, policy::Action},
         index::Record,
         policy::Identical,
-        store::{Acquired, Request},
+        store::{Acquired, OutputPlan},
     },
 };
 use anyhow::{Result, ensure};
@@ -48,7 +48,6 @@ impl Store {
                 input.source_uuid,
                 &registry.registry,
                 input.adopted.as_deref(),
-                &input.overrides,
             )?;
             if !matches!(
                 effective.update_policy,
@@ -72,9 +71,8 @@ impl Store {
                 input.source_uuid,
                 &registry.registry,
                 input.adopted.as_deref(),
-                &input.overrides,
             )?;
-            let request = Request {
+            let request = OutputPlan {
                 adopted: input.adopted.clone(),
                 source_uuid: input.source_uuid,
                 selector: input.selector.clone(),
@@ -158,7 +156,6 @@ impl Store {
                 input.source_uuid,
                 &registry.registry,
                 input.adopted.as_deref(),
-                &input.overrides
             )? == effective,
             Error::new(
                 ErrorCode::RevisionConflict,
@@ -166,7 +163,7 @@ impl Store {
             )
         );
         // Recheck the original requested projection, not its owning broader request.
-        let projected_request = Request {
+        let projected_request = OutputPlan {
             adopted: input.adopted.clone(),
             source_uuid: input.source_uuid,
             selector: input.selector.clone(),

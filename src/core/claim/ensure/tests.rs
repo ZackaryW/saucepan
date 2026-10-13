@@ -1,4 +1,5 @@
 use super::*;
+use crate::models::claim::EnsureRequest;
 use crate::{
     core::claim::session::ApplicationConfiguration,
     models::{claim::policy::Action, source::Source, store::Selector},
@@ -17,20 +18,24 @@ fn intervening_writers_cannot_be_overwritten_by_new_entry_ensure() {
             .unwrap();
         let app = store.register_app("consumer".into()).unwrap().uuid;
         let mut request = EnsureRequest {
-            adopted: None,
             scope: "project".to_string().try_into().unwrap(),
             source_uuid: source.uuid,
             selector: Selector::Local,
             selection: Default::default(),
             context: Default::default(),
-            overrides: Default::default(),
+            policy_refs: Default::default(),
         };
+        crate::policy_fixture::replace(
+            &store,
+            &mut request.policy_refs,
+            serde_json::json!({"type":"identical_pull_policy","strategy":"new_entry"}),
+        )
+        .unwrap();
         let first = store
-            .ensure_compiled(app, &request, &Default::default())
+            .ensure_claim(app, &request, &Default::default())
             .unwrap();
         let writer = store.clone();
         let id = first.claim.uuid;
-        request.overrides.identical = Some(Identical::NewEntry);
         store.before_claim_commit = Some(Arc::new(move || match action {
             "release" => writer.release_claim(app, id).unwrap(),
             "context" => {
@@ -72,7 +77,7 @@ fn intervening_writers_cannot_be_overwritten_by_new_entry_ensure() {
             }
             _ => unreachable!(),
         }));
-        let result = store.ensure_compiled(app, &request, &Default::default());
+        let result = store.ensure_claim(app, &request, &Default::default());
         let code = Error::from_anyhow(&result.unwrap_err()).code;
         assert!(
             matches!(
@@ -123,19 +128,22 @@ fn intervening_writers_fence_automatic_ensure_check_state_and_selection() {
             .unwrap();
         let app = store.register_app("app".into()).unwrap().uuid;
         let request = EnsureRequest {
-            adopted: None,
             scope: "project".to_string().try_into().unwrap(),
             source_uuid: source.uuid,
             selector: Selector::Local,
             selection: Default::default(),
             context: Default::default(),
-            overrides: crate::models::claim::policy::Overrides {
-                update_policy: Some(UpdatePolicy::Always {}),
-                ..Default::default()
-            },
+            policy_refs: crate::policy_fixture::requested(
+                &store,
+                crate::policy_fixture::Overrides {
+                    update_policy: Some(UpdatePolicy::Always {}),
+                    ..Default::default()
+                },
+            )
+            .unwrap(),
         };
         let first = store
-            .ensure_compiled(app, &request, &Default::default())
+            .ensure_claim(app, &request, &Default::default())
             .unwrap();
         let before = serde_json::to_value(
             store
@@ -166,7 +174,7 @@ fn intervening_writers_fence_automatic_ensure_check_state_and_selection() {
             }
             _ => unreachable!(),
         }));
-        let result = store.ensure_compiled(app, &request, &Default::default());
+        let result = store.ensure_claim(app, &request, &Default::default());
         assert!(result.is_err(), "{action}");
         let after = serde_json::to_value(
             store

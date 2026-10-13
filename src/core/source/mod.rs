@@ -2,7 +2,7 @@ use crate::{
     core::Store,
     models::{
         source::Resolved,
-        store::{Request, Selector},
+        store::{OutputPlan, Selector},
     },
 };
 use anyhow::Result;
@@ -58,7 +58,11 @@ impl Store {
             }
         }
     }
-    pub(crate) fn prepare(&self, request: &Request, options: &AcquireOptions) -> Result<Prepared> {
+    pub(crate) fn prepare(
+        &self,
+        request: &OutputPlan,
+        options: &AcquireOptions,
+    ) -> Result<Prepared> {
         self.prepare_composed(request, options)
     }
 }

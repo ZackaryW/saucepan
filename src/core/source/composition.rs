@@ -6,7 +6,7 @@ use crate::{
         policy::{Freshness, PayloadVerification},
         retrieval::{AssetSelection, CachePolicy, RetrieveRequest, SourceInput},
         source::Source,
-        store::{AcquisitionRequest, Format, Request},
+        store::{AcquisitionRequest, Format, OutputPlan},
     },
 };
 use anyhow::{Result, ensure};
@@ -16,7 +16,7 @@ impl Store {
     /// replace a moving selector's cache or advance its freshness proof.
     pub(crate) fn prepare_exact_download(
         &self,
-        request: &Request,
+        request: &OutputPlan,
         exact: &crate::models::source::Resolved,
         options: &AcquireOptions,
     ) -> Result<Prepared> {
@@ -63,7 +63,7 @@ impl Store {
 
     pub(crate) fn prepare_composed(
         &self,
-        request: &Request,
+        request: &OutputPlan,
         options: &AcquireOptions,
     ) -> Result<Prepared> {
         let (retrieval, acquired) = self.composition_requests(request, options)?;
@@ -79,7 +79,7 @@ impl Store {
 
     pub(crate) fn composition_requests(
         &self,
-        request: &Request,
+        request: &OutputPlan,
         options: &AcquireOptions,
     ) -> Result<(RetrieveRequest, AcquisitionRequest)> {
         let source = self.source(request.source_uuid)?;
@@ -151,7 +151,7 @@ impl Store {
                 } else {
                     behavior.freshness
                 }),
-                allow_stale: behavior.allow_stale,
+                allow_stale: behavior.allow_stale || options.allow_stale,
             };
             retrieval.verification = behavior.payload_verification;
             retrieval.provenance = adopted.evidence.values().cloned().collect();

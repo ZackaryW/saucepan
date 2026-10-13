@@ -220,11 +220,10 @@ mod tests {
             let source = store.register_source(Source::Local { path: file }).unwrap();
             let output = store
                 .acquire(&Request {
-                    adopted: None,
                     source_uuid: source.uuid,
                     selector: Selector::Local,
                     selection: Default::default(),
-                    policies: Default::default(),
+                    policy_refs: Default::default(),
                 })
                 .unwrap();
             let (input, portable) = path_input(vec![], Some(VerificationMode::Full)).unwrap();

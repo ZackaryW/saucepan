@@ -9,7 +9,7 @@ use crate::{
     error::{Error, ErrorCode},
     models::{
         claim::{
-            policy::{AccessPolicy, Effective, Overrides, ReclaimPolicy},
+            policy::{AccessPolicy, Effective, ReclaimPolicy},
             security::Credential,
         },
         index::Record,
@@ -58,15 +58,6 @@ pub(crate) fn effective(plan: &EvaluatedPolicies) -> Result<Effective> {
         },
         update_policy: b.update,
     })
-}
-pub(crate) fn pinned(effective: &Effective) -> Overrides {
-    Overrides {
-        identical: Some(effective.output.identical),
-        revision: Some(effective.output.revision),
-        reclaim: Some(effective.reclaim.clone()),
-        useable_app: Some(effective.output.protection.is_some()),
-        update_policy: Some(effective.update_policy),
-    }
 }
 pub(crate) fn application_settings(
     catalog: &super::catalog::PolicyCatalog,

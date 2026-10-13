@@ -36,9 +36,8 @@ impl Store {
                 input.source_uuid,
                 &registry.registry,
                 input.adopted.as_deref(),
-                &input.overrides,
             )?;
-            let mut request = Request {
+            let mut request = OutputPlan {
                 adopted: input.adopted.clone(),
                 source_uuid: input.source_uuid,
                 selector: input.selector.clone(),
@@ -138,7 +137,6 @@ impl Store {
             expected: existing.as_ref().map(|existing| existing.claim.entry_uuid),
             context: input.context.clone(),
             expected_revision: Some(authorization.revision),
-            overrides: Some(input.overrides.clone()),
             projection: relative.clone(),
         };
         let result = self.publish_acquisition(
