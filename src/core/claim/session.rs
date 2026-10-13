@@ -35,9 +35,7 @@ pub struct ApplicationRegistration {
     pub registration_key: Scope,
     pub name: String,
     #[serde(default)]
-    pub access: AccessPolicy,
-    #[serde(default)]
-    pub policies: Registration,
+    pub policy_refs: crate::models::policy::PolicyRefs,
     #[serde(default)]
     pub credentials_required: bool,
 }
@@ -45,8 +43,7 @@ pub struct ApplicationRegistration {
 #[serde(deny_unknown_fields)]
 pub struct ApplicationConfiguration {
     pub expected_revision: u64,
-    pub access: AccessPolicy,
-    pub policies: Registration,
+    pub policy_refs: crate::models::policy::PolicyRefs,
     pub credential: Option<CredentialChange>,
 }
 pub struct RegisteredApplication {
@@ -107,8 +104,8 @@ impl Store {
             !input.name.trim().is_empty(),
             Error::new(ErrorCode::InvalidRequest, "empty application name")
         );
-        input.policies.validate()?;
         let _lock = self.lock()?;
+        let (access, policies) = self.application_policy_settings(&input.policy_refs)?;
         for record in self.records()? {
             let Record::Application(app) = record else {
                 continue;
@@ -124,8 +121,7 @@ impl Store {
             )?;
             ensure!(
                 app.name == input.name
-                    && state.registry.access == input.access
-                    && state.registry.policies == input.policies
+                    && state.registry.policy_refs == input.policy_refs
                     && state.credentials_required() == input.credentials_required,
                 Error::new(
                     ErrorCode::RevisionConflict,
@@ -152,8 +148,9 @@ impl Store {
         };
         let mut registry = Self::new_registry(app.uuid, app.revision)?;
         registry.registry.registration_key = input.registration_key.clone();
-        registry.registry.access = input.access.clone();
-        registry.registry.policies = input.policies.clone();
+        registry.registry.policy_refs = input.policy_refs.clone();
+        registry.registry.access = access;
+        registry.registry.policies = policies;
         let credential = if input.credentials_required {
             registry.change_credentials(
                 self.metadata.authenticator(),
@@ -197,8 +194,7 @@ impl Store {
     ) -> Result<Option<Credential>> {
         let ApplicationConfiguration {
             expected_revision,
-            access,
-            policies,
+            policy_refs,
             credential,
         } = input;
         ensure!(
@@ -220,6 +216,22 @@ impl Store {
             application.revision == expected_revision,
             Error::new(ErrorCode::RevisionConflict, "application revision conflict")
         );
+        let (access, policies) = self.application_policy_settings(&policy_refs)?;
+        let snapshot = self.metadata.snapshot()?;
+        let catalog = crate::core::policy::persistence::load(&self.metadata, &snapshot)?;
+        for claim in registry.claims.values_mut() {
+            if let Some(adopted) = &claim.request.adopted {
+                crate::core::policy::claims::surviving(
+                    &catalog,
+                    adopted,
+                    &self.source(claim.request.source_uuid)?.policy_refs,
+                    &policy_refs,
+                )?;
+            }
+            claim.overrides = crate::core::policy::adopt::pinned(&claim.effective);
+            policies.evaluate(&claim.overrides)?;
+        }
+        registry.registry.policy_refs = policy_refs;
         registry.registry.access = access;
         registry.registry.policies = policies;
         registry.validate()?;
@@ -237,6 +249,15 @@ impl Store {
             ..Default::default()
         })?;
         Ok(token)
+    }
+
+    pub(crate) fn application_policy_settings(
+        &self,
+        refs: &crate::models::policy::PolicyRefs,
+    ) -> Result<(AccessPolicy, Registration)> {
+        let snapshot = self.metadata.snapshot()?;
+        let catalog = crate::core::policy::persistence::load(&self.metadata, &snapshot)?;
+        crate::core::policy::adopt::application_settings(&catalog, refs)
     }
 
     pub(crate) fn authorize_resource(

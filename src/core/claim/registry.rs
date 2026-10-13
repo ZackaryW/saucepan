@@ -21,7 +21,12 @@ pub use crate::models::claim::RegistryState;
 
 impl RegistryState {
     pub fn load(metadata: &Metadata, snapshot: &Snapshot, app: Uuid) -> Result<Self> {
-        let registry: Registry = snapshot.read(metadata.authenticator(), registry_identity(app))?;
+        let mut registry: Registry =
+            snapshot.read(metadata.authenticator(), registry_identity(app))?;
+        let policies = crate::core::policy::persistence::load(metadata, snapshot)?;
+        (registry.access, registry.policies) =
+            crate::core::policy::adopt::application_settings(&policies, &registry.policy_refs)
+                .map_err(|_| integrity_error())?;
         if metadata.authenticator().mode() == crate::models::claim::security::IntegrityMode::Basic
             && matches!(registry.credential, CredentialPolicy::Required { .. })
         {

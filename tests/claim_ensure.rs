@@ -1,4 +1,5 @@
 mod native_root;
+mod policy_fixture;
 use saucepan::{
     core::{
         Store,
@@ -30,9 +31,13 @@ fn setup() -> (tempfile::TempDir, Store, uuid::Uuid, EnsureRequest) {
             &ApplicationRegistration {
                 registration_key: scope("app"),
                 name: "consumer".into(),
-                access: Default::default(),
-                policies: Default::default(),
                 credentials_required: false,
+                policy_refs: policy_fixture::register(
+                    &store,
+                    Default::default(),
+                    Default::default(),
+                )
+                .unwrap(),
             },
             None,
         )
@@ -243,16 +248,17 @@ fn concurrent_registration_and_registered_defaults_are_applied_before_source_wor
         let handles: Vec<_> = (0..6)
             .map(|_| {
                 threads.spawn(|| {
-                    let mut registration = ApplicationRegistration {
+                    let mut settings = saucepan::models::claim::policy::Registration::default();
+                    settings.defaults.output.eviction =
+                        saucepan::models::policy::Eviction::Latest { keep: 3 };
+                    settings.maximum_keep = 4;
+                    let registration = ApplicationRegistration {
                         registration_key: scope("retry-key"),
                         name: "same name".into(),
-                        access: Default::default(),
-                        policies: Default::default(),
                         credentials_required: false,
+                        policy_refs: policy_fixture::register(&store, Default::default(), settings)
+                            .unwrap(),
                     };
-                    registration.policies.defaults.output.eviction =
-                        saucepan::models::policy::Eviction::Latest { keep: 3 };
-                    registration.policies.maximum_keep = 4;
                     let result = store.register_application(&registration, None).unwrap();
                     assert!(result.credential.is_none());
                     result.application.uuid

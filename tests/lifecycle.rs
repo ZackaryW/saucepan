@@ -1,4 +1,5 @@
 mod native_root;
+mod policy_fixture;
 use saucepan::{
     core::{Store, activation::Probe},
     models::{
@@ -858,9 +859,13 @@ fn protected_shim_authenticates_intent_without_client_token_and_lease_survives_u
             installed.app,
             ApplicationConfiguration {
                 expected_revision: store.application(installed.app).unwrap().revision,
-                access: Default::default(),
-                policies: Default::default(),
                 credential: Some(CredentialChange::Enable),
+                policy_refs: policy_fixture::register(
+                    &store,
+                    Default::default(),
+                    Default::default(),
+                )
+                .unwrap(),
             },
             None,
         )

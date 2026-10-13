@@ -5,6 +5,7 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 mod composition;
 mod credentials;
+mod policies;
 mod root;
 mod source_query;
 
@@ -53,6 +54,8 @@ struct Args {
 }
 #[derive(Subcommand)]
 enum Commands {
+    #[command(flatten)]
+    Policies(policies::PolicyCommand),
     #[command(flatten)]
     Composition(composition::CompositionCommand),
     /// Register by explicit key using a JSON application registration.
@@ -333,6 +336,9 @@ pub fn run() -> Result<()> {
                     .into_store();
             }
             match command {
+                Commands::Policies(command) => {
+                    policies::run(&store, command, args.credential_file.as_deref())?
+                }
                 Commands::RegisterApplication {
                     file,
                     credential_out,
@@ -731,11 +737,15 @@ impl Commands {
             | Self::InstallShim { app, .. }
             | Self::ReplaceShim { app, .. }
             | Self::AdoptShim { app, .. } => Some(*app),
+            Self::Policies(command) => command.application(),
             Self::Acquire { app, .. } | Self::Operations { app } => *app,
             _ => None,
         }
     }
     fn administration(&self) -> bool {
+        if let Self::Policies(command) = self {
+            return command.administration();
+        }
         matches!(
             self,
             Self::RegisterApplication { .. }

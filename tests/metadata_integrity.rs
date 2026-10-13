@@ -416,7 +416,10 @@ fn store_initialization_retry_reuses_reserved_identity_after_key_service_failure
     let published = fs::read(root.join("root.json")).unwrap();
     fs::write(
         root.join(".staging/initializing.json"),
-        serde_json::to_vec(&reserved).unwrap(),
+        serde_json::to_vec(
+            &json!({"contract":"saucepan.flat-policy-resources","store":reserved,"mode":"keyring"}),
+        )
+        .unwrap(),
     )
     .unwrap();
     saucepan::core::Store::create_with_keys(&root, &keys).unwrap();
@@ -499,6 +502,54 @@ impl KeyProvider for NoCustody {
 }
 
 #[test]
+fn earlier_policy_roots_and_initialization_are_rejected_before_custody_or_writes() {
+    for mode in [IntegrityMode::Basic, IntegrityMode::Keyring] {
+        let temp = tempfile::tempdir().unwrap();
+        let keys = MemoryKeys::default();
+        saucepan::core::Store::create_with_integrity_and_keys(temp.path(), mode, &keys).unwrap();
+        let metadata = Metadata::open(temp.path(), &keys).unwrap();
+        let mut catalog = metadata.snapshot().unwrap().catalog;
+        assert_eq!(catalog.contract, "saucepan.flat-policy-resources");
+        catalog.contract = "saucepan.claim-registry".into();
+        let bytes = metadata
+            .authenticator()
+            .sign(Identity::catalog(), catalog.generation, &catalog)
+            .unwrap();
+        fs::write(temp.path().join("root.json"), bytes).unwrap();
+        let before = saucepan::utils::tree::inspect(temp.path(), Default::default()).unwrap();
+        let error = saucepan::core::Store::open_with_keys(temp.path(), &NoCustody)
+            .err()
+            .unwrap();
+        assert_eq!(Error::from_anyhow(&error).code, ErrorCode::UnsupportedStore);
+        assert_eq!(
+            before,
+            saucepan::utils::tree::inspect(temp.path(), Default::default()).unwrap()
+        );
+    }
+    for old in [
+        json!(Uuid::new_v4()),
+        json!({"store":Uuid::new_v4(),"mode":"keyring"}),
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        fs::create_dir(temp.path().join(".staging")).unwrap();
+        fs::write(
+            temp.path().join(".staging/initializing.json"),
+            serde_json::to_vec(&old).unwrap(),
+        )
+        .unwrap();
+        let before = saucepan::utils::tree::inspect(temp.path(), Default::default()).unwrap();
+        let error = saucepan::core::Store::create_with_keys(temp.path(), &NoCustody)
+            .err()
+            .unwrap();
+        assert_eq!(Error::from_anyhow(&error).code, ErrorCode::UnsupportedStore);
+        assert_eq!(
+            before,
+            saucepan::utils::tree::inspect(temp.path(), Default::default()).unwrap()
+        );
+    }
+}
+
+#[test]
 fn basic_initialization_open_and_recovery_never_access_custody() {
     let tmp = tempfile::tempdir().unwrap();
     let store = saucepan::core::Store::create_with_integrity_and_keys(
@@ -517,7 +568,10 @@ fn basic_initialization_open_and_recovery_never_access_custody() {
     root(fresh.path());
     fs::write(
         fresh.path().join(".staging/initializing.json"),
-        serde_json::to_vec(&json!({"store":reserved,"mode":"basic"})).unwrap(),
+        serde_json::to_vec(
+            &json!({"contract":"saucepan.flat-policy-resources","store":reserved,"mode":"basic"}),
+        )
+        .unwrap(),
     )
     .unwrap();
     assert_eq!(

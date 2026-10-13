@@ -1,4 +1,5 @@
 mod native_root;
+mod policy_fixture;
 use saucepan::{
     core::{
         Store,
@@ -79,15 +80,19 @@ fn fresh_root_cross_feature_acceptance_with_real_binaries() {
     let mut registration = ApplicationRegistration {
         registration_key: "consumer".to_string().try_into().unwrap(),
         name: "consumer".into(),
-        access: Default::default(),
-        policies: Default::default(),
         credentials_required: false,
+        policy_refs: policy_fixture::register(&store, Default::default(), Default::default())
+            .unwrap(),
     };
-    registration.access.sources = Some([source.uuid].into());
-    registration
-        .access
+    let mut access = saucepan::models::claim::policy::AccessPolicy {
+        sources: Some([source.uuid].into()),
+        ..Default::default()
+    };
+    access
         .public_scopes
         .insert("public".to_string().try_into().unwrap());
+    registration.policy_refs =
+        policy_fixture::register(&store, access, Default::default()).unwrap();
     let app = store
         .register_application(&registration, None)
         .unwrap()
@@ -223,9 +228,8 @@ fn fresh_root_cross_feature_acceptance_with_real_binaries() {
             app,
             ApplicationConfiguration {
                 expected_revision: store.application(app).unwrap().revision,
-                access: registration.access.clone(),
-                policies: registration.policies.clone(),
                 credential: Some(CredentialChange::Enable),
+                policy_refs: registration.policy_refs.clone(),
             },
             None,
         )
@@ -338,9 +342,13 @@ fn fresh_root_cross_feature_acceptance_with_real_binaries() {
             installed.app,
             ApplicationConfiguration {
                 expected_revision: store.application(installed.app).unwrap().revision,
-                access: Default::default(),
-                policies: Default::default(),
                 credential: Some(CredentialChange::Enable),
+                policy_refs: policy_fixture::register(
+                    &store,
+                    Default::default(),
+                    Default::default(),
+                )
+                .unwrap(),
             },
             None,
         )

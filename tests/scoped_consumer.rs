@@ -1,4 +1,5 @@
 mod native_root;
+mod policy_fixture;
 use saucepan::{
     core::{Store, claim::session::ApplicationRegistration, query::ClaimQuery},
     error::{Error, ErrorCode},
@@ -97,9 +98,13 @@ fn two_scopes_read_nested_packages_while_external_reclaim_waits_for_native_lifet
                 &ApplicationRegistration {
                     registration_key: "consumer".to_string().try_into().unwrap(),
                     name: "consumer".into(),
-                    access: Default::default(),
-                    policies: Default::default(),
                     credentials_required: false,
+                    policy_refs: policy_fixture::register(
+                        &store,
+                        Default::default(),
+                        Default::default(),
+                    )
+                    .unwrap(),
                 },
                 None,
             )

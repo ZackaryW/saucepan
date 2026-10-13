@@ -1,4 +1,5 @@
 mod native_root;
+mod policy_fixture;
 mod support;
 use saucepan::{
     core::{
@@ -59,13 +60,17 @@ fn unclaimed_operations_obey_scope_source_and_action_and_keep_independent_check_
             &ApplicationRegistration {
                 registration_key: scope("app"),
                 name: "app".into(),
-                access: AccessPolicy {
-                    sources: Some([source.uuid].into()),
-                    scopes: Some([scope("a"), scope("b")].into()),
-                    ..Default::default()
-                },
-                policies: Default::default(),
                 credentials_required: false,
+                policy_refs: policy_fixture::register(
+                    &store,
+                    AccessPolicy {
+                        sources: Some([source.uuid].into()),
+                        scopes: Some([scope("a"), scope("b")].into()),
+                        ..Default::default()
+                    },
+                    Default::default(),
+                )
+                .unwrap(),
             },
             None,
         )
@@ -237,12 +242,16 @@ fn automatic_updates_require_registered_allowances_and_update_permission() {
                 &ApplicationRegistration {
                     registration_key: scope(name),
                     name: name.into(),
-                    access: AccessPolicy {
-                        actions: Some([Action::Acquire, Action::Read].into()),
-                        ..Default::default()
-                    },
-                    policies,
                     credentials_required: false,
+                    policy_refs: policy_fixture::register(
+                        &store,
+                        AccessPolicy {
+                            actions: Some([Action::Acquire, Action::Read].into()),
+                            ..Default::default()
+                        },
+                        policies,
+                    )
+                    .unwrap(),
                 },
                 None,
             )
@@ -359,12 +368,16 @@ fn revoked_access_during_fresh_fetch_cannot_publish_caller_destination() {
                 app,
                 ApplicationConfiguration {
                     expected_revision: store.application(app).unwrap().revision,
-                    access: AccessPolicy {
-                        actions: Some(Default::default()),
-                        ..Default::default()
-                    },
-                    policies: Default::default(),
                     credential: None,
+                    policy_refs: policy_fixture::register(
+                        &store,
+                        AccessPolicy {
+                            actions: Some(Default::default()),
+                            ..Default::default()
+                        },
+                        Default::default(),
+                    )
+                    .unwrap(),
                 },
                 None,
             )

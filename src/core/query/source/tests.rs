@@ -18,6 +18,7 @@ use serde_json::json;
 use std::{collections::BTreeSet, fs};
 
 fn registration(
+    store: &Store,
     key: &str,
     access: AccessPolicy,
     credentials_required: bool,
@@ -25,9 +26,8 @@ fn registration(
     ApplicationRegistration {
         registration_key: key.to_owned().try_into().unwrap(),
         name: key.into(),
-        access,
-        policies: Default::default(),
         credentials_required,
+        policy_refs: crate::policy_fixture::register(store, access, Default::default()).unwrap(),
     }
 }
 fn query(value: serde_json::Value) -> SourceQuery {
@@ -226,6 +226,7 @@ fn source_queries_enforce_app_allowances_without_weakening_claim_scopes() {
     let registered = store
         .register_application(
             &registration(
+                &store,
                 "restricted",
                 AccessPolicy {
                     sources: Some(BTreeSet::from([local.uuid])),
@@ -268,6 +269,7 @@ fn source_queries_enforce_app_allowances_without_weakening_claim_scopes() {
     let empty = store
         .register_application(
             &registration(
+                &store,
                 "empty",
                 AccessPolicy {
                     sources: Some(BTreeSet::new()),
@@ -290,6 +292,7 @@ fn source_queries_enforce_app_allowances_without_weakening_claim_scopes() {
     let denied = store
         .register_application(
             &registration(
+                &store,
                 "denied",
                 AccessPolicy {
                     actions: Some(BTreeSet::from([Action::Acquire])),
@@ -314,7 +317,10 @@ fn source_queries_check_proof_and_current_policy_even_without_sources() {
     let tmp = tempfile::tempdir().unwrap();
     let store = Store::create_fixture(&tmp.path().join("root")).unwrap();
     let reg = store
-        .register_application(&registration("proof", Default::default(), true), None)
+        .register_application(
+            &registration(&store, "proof", Default::default(), true),
+            None,
+        )
         .unwrap();
     let app = reg.application.uuid;
     code(store.session(app, None), ErrorCode::AuthenticationRequired);
@@ -338,12 +344,16 @@ fn source_queries_check_proof_and_current_policy_even_without_sources() {
             app,
             ApplicationConfiguration {
                 expected_revision: store.application(app).unwrap().revision,
-                access: AccessPolicy {
-                    actions: Some(BTreeSet::new()),
-                    ..Default::default()
-                },
-                policies: Default::default(),
                 credential: None,
+                policy_refs: crate::policy_fixture::register(
+                    &store,
+                    AccessPolicy {
+                        actions: Some(BTreeSet::new()),
+                        ..Default::default()
+                    },
+                    Default::default(),
+                )
+                .unwrap(),
             },
             Some(&proof),
         )
@@ -360,9 +370,13 @@ fn source_queries_check_proof_and_current_policy_even_without_sources() {
             plain.uuid,
             ApplicationConfiguration {
                 expected_revision: plain.revision,
-                access: Default::default(),
-                policies: Default::default(),
                 credential: Some(crate::core::claim::registry::CredentialChange::Enable),
+                policy_refs: crate::policy_fixture::register(
+                    &store,
+                    Default::default(),
+                    Default::default(),
+                )
+                .unwrap(),
             },
             None,
         )
@@ -446,6 +460,7 @@ fn public_source_and_public_claim_visibility_do_not_grant_ownership() {
     let registered = store
         .register_application(
             &registration(
+                &store,
                 "owner",
                 AccessPolicy {
                     public_scopes: BTreeSet::from([scope]),

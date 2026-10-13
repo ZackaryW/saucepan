@@ -126,7 +126,9 @@ pub struct Registry {
     pub app: Uuid,
     pub revision: u64,
     pub registration_key: Scope,
+    #[serde(skip)]
     pub access: policy::AccessPolicy,
+    #[serde(skip)]
     pub policies: policy::Registration,
     pub credential: security::CredentialPolicy,
     /// Expected member digests; payloads live in separate files.

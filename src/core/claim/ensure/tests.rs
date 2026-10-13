@@ -51,9 +51,13 @@ fn intervening_writers_cannot_be_overwritten_by_new_entry_ensure() {
                         app,
                         ApplicationConfiguration {
                             expected_revision: writer.application(app).unwrap().revision,
-                            access,
-                            policies: Default::default(),
                             credential: None,
+                            policy_refs: crate::policy_fixture::register(
+                                &writer,
+                                access,
+                                Default::default(),
+                            )
+                            .unwrap(),
                         },
                         None,
                     )

@@ -1,3 +1,4 @@
+mod policy_fixture;
 use saucepan::{
     core::{
         Store,
@@ -24,13 +25,13 @@ use uuid::Uuid;
 fn scope(value: &str) -> Scope {
     value.to_string().try_into().unwrap()
 }
-fn input(key: &str) -> ApplicationRegistration {
+fn input(store: &Store, key: &str) -> ApplicationRegistration {
     ApplicationRegistration {
         registration_key: scope(key),
         name: "same display name".into(),
-        access: Default::default(),
-        policies: Default::default(),
         credentials_required: false,
+        policy_refs: policy_fixture::register(store, Default::default(), Default::default())
+            .unwrap(),
     }
 }
 fn code(error: anyhow::Error) -> ErrorCode {
@@ -64,9 +65,14 @@ fn credentials_off_still_enforces_source_scope_action_and_owned_output_boundarie
     mode: IntegrityMode,
 ) {
     let (_tmp, _keys, store, request) = setup(mode);
-    let mut registration = input("consumer");
-    registration.access.sources = Some([request.source_uuid].into());
-    registration.access.scopes = Some([scope("project-a")].into());
+    let mut registration = input(&store, "consumer");
+    let access = saucepan::models::claim::policy::AccessPolicy {
+        sources: Some([request.source_uuid].into()),
+        scopes: Some([scope("project-a")].into()),
+        ..Default::default()
+    };
+    registration.policy_refs =
+        policy_fixture::register(&store, access.clone(), Default::default()).unwrap();
     let registered = store.register_application(&registration, None).unwrap();
     assert!(registered.credential.is_none());
     let session = store.session(registered.application.uuid, None).unwrap();
@@ -115,7 +121,7 @@ fn credentials_off_still_enforces_source_scope_action_and_owned_output_boundarie
         ErrorCode::AccessDenied
     );
     let other = store
-        .register_application(&input("other-project"), None)
+        .register_application(&input(&store, "other-project"), None)
         .unwrap();
     let outsider = store.session(other.application.uuid, None).unwrap();
     assert_eq!(
@@ -128,7 +134,7 @@ fn credentials_off_still_enforces_source_scope_action_and_owned_output_boundarie
         ErrorCode::AccessDenied
     );
     assert!(held.directory().join("file").exists());
-    let mut denied = registration.access.clone();
+    let mut denied = access.clone();
     denied.actions = Some([Action::Read, Action::Discover].into());
     store
         .configure_application(
@@ -138,9 +144,8 @@ fn credentials_off_still_enforces_source_scope_action_and_owned_output_boundarie
                     .application(registered.application.uuid)
                     .unwrap()
                     .revision,
-                access: denied,
-                policies: Default::default(),
                 credential: None,
+                policy_refs: policy_fixture::register(&store, denied, Default::default()).unwrap(),
             },
             None,
         )
@@ -180,7 +185,7 @@ fn optional_proof_rotation_and_disable_are_atomic_and_do_not_revoke_existing_lea
     mode: IntegrityMode,
 ) {
     let (_tmp, keys, store, request) = setup(mode);
-    let mut registration = input("protected");
+    let mut registration = input(&store, "protected");
     registration.credentials_required = true;
     let registered = store.register_application(&registration, None).unwrap();
     let app = registered.application.uuid;
@@ -236,9 +241,13 @@ fn optional_proof_rotation_and_disable_are_atomic_and_do_not_revoke_existing_lea
             app,
             ApplicationConfiguration {
                 expected_revision: store.application(app).unwrap().revision,
-                access: Default::default(),
-                policies: Default::default(),
                 credential: Some(CredentialChange::Rotate),
+                policy_refs: policy_fixture::register(
+                    &store,
+                    Default::default(),
+                    Default::default(),
+                )
+                .unwrap(),
             },
             Some(&proof),
         )
@@ -278,9 +287,13 @@ fn optional_proof_rotation_and_disable_are_atomic_and_do_not_revoke_existing_lea
             app,
             ApplicationConfiguration {
                 expected_revision: store.application(app).unwrap().revision,
-                access: Default::default(),
-                policies: Default::default(),
                 credential: Some(CredentialChange::Disable),
+                policy_refs: policy_fixture::register(
+                    &store,
+                    Default::default(),
+                    Default::default(),
+                )
+                .unwrap(),
             },
             Some(&new_proof),
         )
@@ -325,7 +338,7 @@ fn readable_registry_is_authoritative_and_missing_or_edited_members_stop_access_
 ) {
     let (_tmp, keys, store, request) = setup(mode);
     let registered = store
-        .register_application(&input("registry"), None)
+        .register_application(&input(&store, "registry"), None)
         .unwrap();
     let app = registered.application.uuid;
     let session = store.session(app, None).unwrap();
@@ -381,12 +394,12 @@ fn registration_keys_are_idempotent_and_policy_changes_cannot_invalidate_survivi
     mode: IntegrityMode,
 ) {
     let (_tmp, _keys, store, request) = setup(mode);
-    let registration = input("explicit-key");
+    let registration = input(&store, "explicit-key");
     let first = store.register_application(&registration, None).unwrap();
     let same = store.register_application(&registration, None).unwrap();
     assert_eq!(first.application.uuid, same.application.uuid);
     let different = store
-        .register_application(&input("different-key"), None)
+        .register_application(&input(&store, "different-key"), None)
         .unwrap();
     assert_ne!(first.application.uuid, different.application.uuid);
     let session = store.session(first.application.uuid, None).unwrap();
@@ -398,10 +411,13 @@ fn registration_keys_are_idempotent_and_policy_changes_cannot_invalidate_survivi
             &Default::default(),
         )
         .unwrap();
-    let before = fs::read(store.root().join("root.json")).unwrap();
-    let mut policies = registration.policies.clone();
-    policies.maximum_keep = 1;
+    let mut policies = saucepan::models::claim::policy::Registration {
+        maximum_keep: 1,
+        ..Default::default()
+    };
     policies.defaults.output.eviction = saucepan::models::policy::Eviction::Latest { keep: 1 };
+    let policy_refs = policy_fixture::register(&store, Default::default(), policies).unwrap();
+    let before = fs::read(store.root().join("root.json")).unwrap();
     assert_eq!(
         code(
             store
@@ -412,9 +428,8 @@ fn registration_keys_are_idempotent_and_policy_changes_cannot_invalidate_survivi
                             .application(first.application.uuid)
                             .unwrap()
                             .revision,
-                        access: Default::default(),
-                        policies,
-                        credential: None
+                        credential: None,
+                        policy_refs,
                     },
                     None
                 )
@@ -436,8 +451,11 @@ fn generic_discovery_only_exposes_public_permitted_scopes_and_grants_no_output_a
     mode: IntegrityMode,
 ) {
     let (_tmp, _keys, store, request) = setup(mode);
-    let mut registration = input("discoverable");
-    registration.access.public_scopes.insert(scope("public"));
+    let mut registration = input(&store, "discoverable");
+    let mut access = saucepan::models::claim::policy::AccessPolicy::default();
+    access.public_scopes.insert(scope("public"));
+    registration.policy_refs =
+        policy_fixture::register(&store, access, Default::default()).unwrap();
     let registered = store.register_application(&registration, None).unwrap();
     let session = store.session(registered.application.uuid, None).unwrap();
     let public = session
@@ -477,7 +495,7 @@ fn generic_discovery_only_exposes_public_permitted_scopes_and_grants_no_output_a
         1
     );
     let outsider = store
-        .register_application(&input("outsider"), None)
+        .register_application(&input(&store, "outsider"), None)
         .unwrap();
     assert_eq!(
         code(
@@ -495,9 +513,8 @@ fn generic_discovery_only_exposes_public_permitted_scopes_and_grants_no_output_a
             session.app(),
             ApplicationConfiguration {
                 expected_revision: store.application(session.app()).unwrap().revision,
-                access: registration.access,
-                policies: Default::default(),
                 credential: Some(CredentialChange::Enable),
+                policy_refs: registration.policy_refs.clone(),
             },
             None,
         )
@@ -533,7 +550,7 @@ fn current_protected_proof_survives_open_and_rotates_to_independent_proof() {
     };
     let (_tmp, keys, store, _) = setup(IntegrityMode::Keyring);
     let registered = store
-        .register_application(&input("existing-proof"), None)
+        .register_application(&input(&store, "existing-proof"), None)
         .unwrap();
     let app = registered.application.uuid;
     let token = Credential::generate().unwrap();
@@ -582,9 +599,13 @@ fn current_protected_proof_survives_open_and_rotates_to_independent_proof() {
             app,
             ApplicationConfiguration {
                 expected_revision: reopened.application(app).unwrap().revision,
-                access: Default::default(),
-                policies: Default::default(),
                 credential: Some(CredentialChange::Rotate),
+                policy_refs: policy_fixture::register(
+                    &store,
+                    Default::default(),
+                    Default::default(),
+                )
+                .unwrap(),
             },
             Some(&token),
         )

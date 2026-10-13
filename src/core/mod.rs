@@ -113,6 +113,7 @@ impl Store {
         mode: crate::models::claim::security::IntegrityMode,
         keys: &dyn claim::security::KeyProvider,
     ) -> Result<Self> {
+        claim::persistence::Metadata::check_initialization_contract(root)?;
         if root.exists() {
             ensure!(
                 plain_metadata(root)?.is_dir(),
@@ -133,6 +134,7 @@ impl Store {
                         "source",
                         "index",
                         "claims",
+                        "policies",
                         "store",
                         "bin",
                         ".locks",
@@ -152,7 +154,7 @@ impl Store {
         }
         let root = root.canonicalize()?;
         for part in [
-            "source", "index", "claims", "store", "bin", ".locks", ".staging",
+            "source", "index", "claims", "policies", "store", "bin", ".locks", ".staging",
         ] {
             let path = crate::utils::path::beneath(&root, part)?;
             std::fs::create_dir_all(path)?;
@@ -206,7 +208,7 @@ impl Store {
         // Reject unsupported roots before taking a lock or writing recovery data.
         let metadata = claim::persistence::Metadata::open(&root, keys)?;
         for part in [
-            "source", "index", "claims", "store", "bin", ".locks", ".staging",
+            "source", "index", "claims", "policies", "store", "bin", ".locks", ".staging",
         ] {
             ensure!(
                 plain_metadata(&root.join(part))?.is_dir(),

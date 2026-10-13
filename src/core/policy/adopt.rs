@@ -98,6 +98,26 @@ pub(crate) fn registration(plan: &EvaluatedPolicies) -> Result<Registration> {
     Ok(registration)
 }
 
+pub(crate) fn application_settings(
+    catalog: &super::catalog::PolicyCatalog,
+    refs: &PolicyRefs,
+) -> Result<(AccessPolicy, Registration)> {
+    let empty = PolicyRefs::default();
+    let plan = resolve::evaluate(
+        catalog,
+        Inputs {
+            source: &empty,
+            application: refs,
+            request: &empty,
+            pinned: None,
+            operation: Operation::Configure,
+            managed_output: true,
+            update_due: false,
+        },
+    )?;
+    Ok((access(&plan), registration(&plan)?))
+}
+
 impl Store {
     pub fn adopt_claim_policies(
         &self,

@@ -23,7 +23,7 @@ use std::{
 };
 use uuid::Uuid;
 
-const CONTRACT: &str = "saucepan.claim-registry";
+const CONTRACT: &str = "saucepan.flat-policy-resources";
 const ROOT: &str = "root.json";
 const PENDING: &str = ".staging/metadata-transaction.json";
 const INITIALIZING: &str = ".staging/initializing.json";
@@ -31,18 +31,19 @@ const INITIALIZING: &str = ".staging/initializing.json";
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Reservation {
+    contract: String,
     store: Uuid,
     mode: IntegrityMode,
 }
 fn reservation(bytes: &[u8]) -> Result<Reservation> {
-    // The exact previous reservation format always meant protected custody.
-    if let Ok(store) = serde_json::from_slice::<Uuid>(bytes) {
-        return Ok(Reservation {
-            store,
-            mode: IntegrityMode::Keyring,
-        });
+    let value: serde_json::Value = serde_json::from_slice(bytes).map_err(|_| integrity_error())?;
+    if value.get("contract").and_then(serde_json::Value::as_str) != Some(CONTRACT) {
+        return Err(Error::new(
+            ErrorCode::UnsupportedStore,
+            "initialization belongs to an earlier store contract; use a fresh root",
+        ));
     }
-    serde_json::from_slice(bytes).map_err(|_| integrity_error())
+    serde_json::from_value(value).map_err(|_| integrity_error())
 }
 fn require_mode(actual: IntegrityMode, requested: IntegrityMode) -> Result<()> {
     if actual != requested {
@@ -130,6 +131,13 @@ pub struct Metadata {
     auth: Arc<Authenticator>,
 }
 impl Metadata {
+    pub(crate) fn check_initialization_contract(root: &Path) -> Result<()> {
+        let marker = root.join(INITIALIZING);
+        if marker.exists() {
+            reservation(&bounded_read(&marker)?)?;
+        }
+        Ok(())
+    }
     pub(crate) fn require_reconciled(&self) -> Result<()> {
         if beneath(&self.root, PENDING)?.try_exists()?
             || beneath(&self.root, INITIALIZING)?.try_exists()?
@@ -173,7 +181,7 @@ impl Metadata {
             }
             return Ok(metadata);
         }
-        for part in ["source", "index", "claims", "store", "bin"] {
+        for part in ["source", "index", "claims", "policies", "store", "bin"] {
             let path = root.join(part);
             if path.exists() && fs::read_dir(path)?.next().is_some() {
                 return Err(Error::new(
@@ -190,8 +198,15 @@ impl Metadata {
         } else {
             let store = Uuid::new_v4();
             atomic_write(&marker, |file| {
-                serde_json::to_writer(file, &Reservation { store, mode })
-                    .map_err(std::io::Error::other)
+                serde_json::to_writer(
+                    file,
+                    &Reservation {
+                        contract: CONTRACT.into(),
+                        store,
+                        mode,
+                    },
+                )
+                .map_err(std::io::Error::other)
             })?;
             store
         };
@@ -223,6 +238,23 @@ impl Metadata {
             ));
         }
         let bytes = bounded_read(&beneath(root, ROOT)?)?;
+        // This untrusted hint is used only to reject unsupported contracts. All
+        // accepted bytes still undergo normal verification after custody opens.
+        #[derive(Deserialize)]
+        struct Hint {
+            payload: ContractHint,
+        }
+        #[derive(Deserialize)]
+        struct ContractHint {
+            contract: String,
+        }
+        let hint: Hint = serde_json::from_slice(&bytes).map_err(|_| integrity_error())?;
+        if hint.payload.contract != CONTRACT {
+            return Err(Error::new(
+                ErrorCode::UnsupportedStore,
+                "earlier nested-policy stores are unsupported; use a fresh root",
+            ));
+        }
         let (store, mode) = Authenticator::root_hint(&bytes)?;
         let auth = Arc::new(match mode {
             IntegrityMode::Basic => Authenticator::basic(store),
