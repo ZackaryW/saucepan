@@ -1,5 +1,61 @@
 # Retrieval and acquisition contracts
 
+## Flat policy integration
+
+The reference-based native entry points are `Retriever::retrieve_referenced`,
+`Store::retrieve_referenced`, `Store::compose_referenced`, and their scoped
+`AppSession` equivalents. `Acquirer::acquire_referenced` copies a retained source
+handle offline; `Acquirer::compose_referenced` performs root-free fresh retrieval
+and copying. Metadata-only `RegisteredRetriever` has the same reference-based
+operations. The CLI and removal of the earlier input types are a pending cutover;
+the examples later in this guide describe that earlier interface until then.
+
+Create a caller-owned `PolicyCatalog` from standalone definitions:
+
+```json
+[
+  {"uuid":"10000000-0000-4000-8000-000000000001","type":"cache_policy","mode":"temporary"},
+  {"uuid":"10000000-0000-4000-8000-000000000002","type":"update_policy","mode":"always"},
+  {"uuid":"10000000-0000-4000-8000-000000000003","type":"revision_policy","history":"latest","keep":3}
+]
+```
+
+Deserialize a `models::policy::requests::Retrieval`:
+
+```json
+{
+  "source":{"kind":"inline","source":{"type":"local","path":"fixtures/input"}},
+  "selector":{"type":"local"},
+  "policy_refs":["10000000-0000-4000-8000-000000000001"]
+}
+```
+
+Pass it and the catalog to `Retriever::retrieve_referenced`. To copy its contents,
+deserialize `models::policy::requests::Acquisition` and call
+`Acquirer::acquire_referenced` while retaining the retrieved handle:
+
+```json
+{"destination":{"mode":"temporary"},"policy_refs":[]}
+```
+
+These operations require no home directory, store, application, or keyring. The
+two returned handles own independent lifetimes. `no_store` instead requires a
+separate retrieval `destination` path and never overwrites an occupied destination.
+
+Managed operations use definitions registered with `Store::register_policies`;
+pass an empty portable catalog when all references are registered. An unregistered
+definition fails before provider work or publication. Selecting the update policy
+on acquisition controls copied-result checks; selecting the revision policy controls
+managed history. Neither belongs on the retrieval request. Release asset selection
+uses ordered `asset.filter_refs`, preserving platform filtering and ambiguity errors.
+
+Execution records retain definition UUID/digest evidence. Equivalent UUIDs do not
+change content identity. Relevant source/application attachment changes fence
+publication; unrelated catalog registration does not invalidate the operation.
+The executable fixtures are in `tests/policy_composition.rs`.
+
+## Earlier interface pending CLI cutover
+
 The new request models separate three policy decisions. Native inline fresh
 retrieval is available through `Retriever`, and managed retrieval through `Store`.
 Offline acquisition, scoped automatic updates and CLI consumers use the same native contracts.

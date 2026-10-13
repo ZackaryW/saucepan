@@ -153,11 +153,13 @@ impl Acquirer {
         )?;
         // Fence authorization changes while copying before caller-visible delivery.
         let _authorization_lock = retrieved
-            .authorization
+            .store
             .as_ref()
-            .and(retrieved.store.as_ref())
             .map(|store| store.lock())
             .transpose()?;
+        if let Some(store) = &retrieved.store {
+            store.check_policy_fence()?;
+        }
         if let (Some(store), Some(authorization)) = (&retrieved.store, &retrieved.authorization)
             && let SourceInput::Registered { source_uuid } = retrieved.request.source
         {

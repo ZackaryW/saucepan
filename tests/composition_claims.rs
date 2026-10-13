@@ -74,6 +74,7 @@ fn unclaimed_operations_obey_scope_source_and_action_and_keep_independent_check_
         .uuid;
     let session = store.session(app, None).unwrap();
     let mut retrieval = RetrieveRequest {
+        provenance: Vec::new(),
         source: SourceInput::Registered {
             source_uuid: source.uuid,
         },
@@ -378,6 +379,7 @@ fn revoked_access_during_fresh_fetch_cannot_publish_caller_destination() {
     *edit.lock().unwrap() = Some((store.clone(), app));
     let destination = temp.path().join("download");
     let request = RetrieveRequest {
+        provenance: Vec::new(),
         source: SourceInput::Registered {
             source_uuid: source.uuid,
         },
@@ -467,6 +469,7 @@ fn rejected_compositions_do_not_register_sources_or_write_inside_the_store() {
     fs::write(&file, b"payload").unwrap();
     let store = native_root::create(&temp.path().join("root")).unwrap();
     let mut request = RetrieveRequest {
+        provenance: Vec::new(),
         source: SourceInput::Inline {
             source: Source::Local { path: file.clone() },
         },

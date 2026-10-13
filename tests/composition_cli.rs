@@ -28,6 +28,7 @@ fn cli() -> Command {
 }
 fn request(input: &Path, cache: CachePolicy) -> RetrieveRequest {
     RetrieveRequest {
+        provenance: Vec::new(),
         source: SourceInput::Inline {
             source: Source::Local {
                 path: input.to_owned(),

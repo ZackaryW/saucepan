@@ -6,8 +6,10 @@ use anyhow::{Result, ensure};
 mod adopt;
 pub mod catalog;
 pub mod composition;
+mod execution;
 pub mod fence;
 pub(crate) mod persistence;
+pub mod prepare;
 pub mod resolve;
 pub fn validate(request: &Request) -> Result<()> {
     let Eviction::Latest { keep } = request.policies.eviction;

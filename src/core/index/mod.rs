@@ -299,6 +299,7 @@ impl Store {
         Ok(record)
     }
     pub(crate) fn save_source(&self, source: &SourceRecord) -> Result<()> {
+        self.check_policy_fence()?;
         ensure!(
             !self.metadata_only,
             Error::new(
@@ -346,6 +347,7 @@ impl Store {
         mut journal: Journal,
         observer: impl FnMut(crate::core::claim::persistence::Publication) -> crate::error::Result<()>,
     ) -> Result<()> {
+        self.check_policy_fence()?;
         ensure!(
             !self.metadata_only,
             Error::new(

@@ -68,6 +68,7 @@ fn setup() -> (
         })
         .unwrap();
     let retrieval = RetrieveRequest {
+        provenance: Vec::new(),
         source: SourceInput::Registered {
             source_uuid: source.uuid,
         },

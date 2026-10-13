@@ -226,6 +226,7 @@ mod tests {
         let input = root.path().join("input");
         fs::write(&input, b"payload").unwrap();
         let request = RetrieveRequest {
+            provenance: Vec::new(),
             source: SourceInput::Inline {
                 source: Source::Local { path: input },
             },

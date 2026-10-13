@@ -18,6 +18,7 @@ use std::{
 
 fn request(id: uuid::Uuid, selector: Selector) -> RetrieveRequest {
     RetrieveRequest {
+        provenance: Vec::new(),
         source: SourceInput::Registered { source_uuid: id },
         selector,
         asset: Default::default(),

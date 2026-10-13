@@ -13,9 +13,21 @@ pub struct PolicyFence {
     source: Option<(Uuid, u64, PolicyRefs)>,
     application: Option<(Uuid, u64, PolicyRefs)>,
     definitions: BTreeMap<Uuid, String>,
+    authority: Option<(
+        crate::models::policy::effective::EvaluatedPolicies,
+        Option<crate::models::claim::Scope>,
+    )>,
 }
 impl PolicyFence {
     pub fn capture(store: &Store, source: Option<Uuid>, app: Option<Uuid>) -> Result<Self> {
+        Self::capture_references(store, source, app, &[])
+    }
+    pub(crate) fn capture_references(
+        store: &Store,
+        source: Option<Uuid>,
+        app: Option<Uuid>,
+        request: &[Uuid],
+    ) -> Result<Self> {
         let _lock = store.lock()?;
         let mut fence = Self {
             source: source
@@ -35,6 +47,7 @@ impl PolicyFence {
                 })
                 .transpose()?,
             definitions: BTreeMap::new(),
+            authority: None,
         };
         let snapshot = store.metadata.snapshot()?;
         let catalog = super::persistence::load(&store.metadata, &snapshot)?;
@@ -50,7 +63,31 @@ impl PolicyFence {
                     .insert(*uuid, crate::core::store::json_digest(catalog.get(*uuid)?)?);
             }
         }
+        for uuid in request {
+            fence
+                .definitions
+                .insert(*uuid, crate::core::store::json_digest(catalog.get(*uuid)?)?);
+        }
         Ok(fence)
+    }
+    pub(crate) fn with_authority(
+        mut self,
+        plan: crate::models::policy::effective::EvaluatedPolicies,
+        scope: Option<&crate::models::claim::Scope>,
+    ) -> Self {
+        self.authority = Some((plan, scope.cloned()));
+        self
+    }
+    fn authorize(&self, action: crate::models::claim::policy::Action) -> Result<()> {
+        if let Some((plan, scope)) = &self.authority {
+            super::resolve::authorize(
+                plan,
+                action,
+                self.source.as_ref().map(|(id, _, _)| *id),
+                scope.as_ref(),
+            )?;
+        }
+        Ok(())
     }
     pub fn check(&self, store: &Store) -> Result<()> {
         let _lock = store.lock()?;
@@ -86,6 +123,25 @@ impl PolicyFence {
                     "application policy associations changed"
                 )
             );
+        }
+        Ok(())
+    }
+}
+
+impl Store {
+    pub(crate) fn check_policy_action(
+        &self,
+        action: crate::models::claim::policy::Action,
+    ) -> Result<()> {
+        self.check_policy_fence()?;
+        if let Some(fence) = &self.policy_fence {
+            fence.authorize(action)?;
+        }
+        Ok(())
+    }
+    pub(crate) fn check_policy_fence(&self) -> Result<()> {
+        if let Some(fence) = &self.policy_fence {
+            fence.check(self)?;
         }
         Ok(())
     }

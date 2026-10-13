@@ -28,6 +28,7 @@ fn retrieval_publication_recovers_at_every_boundary_in_both_integrity_modes() {
                 .register_source(Source::Local { path: input })
                 .unwrap();
             let request = RetrieveRequest {
+                provenance: Vec::new(),
                 source: SourceInput::Registered {
                     source_uuid: source.uuid,
                 },

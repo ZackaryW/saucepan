@@ -51,6 +51,7 @@ pub struct Store {
     pub(crate) metadata: claim::persistence::Metadata,
     pub(crate) session: Option<claim::session::SessionIdentity>,
     pub(crate) metadata_only: bool,
+    pub(crate) policy_fence: Option<policy::fence::PolicyFence>,
     #[cfg(test)]
     pub(crate) before_claim_commit: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
     #[cfg(test)]
@@ -162,6 +163,7 @@ impl Store {
             Duration::from_secs(30),
         )?;
         Ok(Self {
+            policy_fence: None,
             metadata_only: false,
             session: None,
             metadata: claim::persistence::Metadata::initialize_with_mode(&root, mode, keys)?,
@@ -212,6 +214,7 @@ impl Store {
             );
         }
         let store = Self {
+            policy_fence: None,
             metadata_only,
             session: None,
             root,

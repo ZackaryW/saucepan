@@ -52,6 +52,7 @@ impl Store {
         request: &RetrieveRequest,
         options: &RetrieveOptions,
     ) -> Result<RetrievedResource> {
+        self.check_policy_fence()?;
         ensure!(
             !self.metadata_only,
             Error::new(

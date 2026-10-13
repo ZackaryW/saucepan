@@ -23,6 +23,7 @@ fn acquisition_selection_and_output_recover_together_in_each_integrity_mode() {
                 .register_source(Source::Local { path: input })
                 .unwrap();
             let retrieval = RetrieveRequest {
+                provenance: Vec::new(),
                 source: SourceInput::Registered {
                     source_uuid: source.uuid,
                 },

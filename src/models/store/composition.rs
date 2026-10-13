@@ -19,6 +19,7 @@ pub enum Destination {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(default, deny_unknown_fields)]
 pub struct AcquisitionRequest {
+    pub provenance: Vec<crate::models::policy::effective::PolicyEvidence>,
     pub destination: Destination,
     pub format: Format,
     pub filename: Option<String>,

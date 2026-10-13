@@ -50,6 +50,8 @@ impl Default for CachePolicy {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RetrieveRequest {
+    #[serde(default)]
+    pub provenance: Vec<crate::models::policy::effective::PolicyEvidence>,
     pub source: SourceInput,
     pub selector: Selector,
     #[serde(default)]

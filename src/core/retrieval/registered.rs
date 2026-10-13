@@ -25,6 +25,38 @@ pub struct RegisteredAppRetriever {
     session: AppSession,
 }
 impl RegisteredRetriever {
+    pub fn retrieve_referenced(
+        &self,
+        input: &crate::models::policy::requests::Retrieval,
+        catalog: &crate::core::policy::catalog::PolicyCatalog,
+        options: &RetrieveOptions,
+    ) -> Result<RetrievedResource> {
+        ensure!(
+            matches!(input.source, SourceInput::Registered { .. }),
+            Error::new(
+                ErrorCode::InvalidRequest,
+                "registered reader requires a registered source"
+            )
+        );
+        self.store.retrieve_referenced(input, catalog, options)
+    }
+    pub fn compose_referenced(
+        &self,
+        input: &crate::models::policy::requests::Retrieval,
+        acquisition: &crate::models::policy::requests::Acquisition,
+        catalog: &crate::core::policy::catalog::PolicyCatalog,
+        options: &RetrieveOptions,
+    ) -> Result<crate::core::store::AcquiredResource> {
+        ensure!(
+            matches!(input.source, SourceInput::Registered { .. }),
+            Error::new(
+                ErrorCode::InvalidRequest,
+                "registered reader requires a registered source"
+            )
+        );
+        self.store
+            .compose_referenced(input, acquisition, catalog, options)
+    }
     pub fn open(root: &Path) -> Result<Self> {
         Self::open_with_keys(root, &NativeKeyring)
     }
@@ -52,6 +84,27 @@ impl RegisteredRetriever {
     }
 }
 impl RegisteredAppRetriever {
+    pub fn retrieve_referenced(
+        &self,
+        input: &crate::models::policy::requests::Retrieval,
+        catalog: &crate::core::policy::catalog::PolicyCatalog,
+        scope: Option<&Scope>,
+        options: &RetrieveOptions,
+    ) -> Result<RetrievedResource> {
+        self.session
+            .retrieve_referenced(input, catalog, scope, options)
+    }
+    pub fn compose_referenced(
+        &self,
+        input: &crate::models::policy::requests::Retrieval,
+        acquisition: &crate::models::policy::requests::Acquisition,
+        catalog: &crate::core::policy::catalog::PolicyCatalog,
+        scope: Option<&Scope>,
+        options: &RetrieveOptions,
+    ) -> Result<crate::core::store::AcquiredResource> {
+        self.session
+            .compose_referenced(input, acquisition, catalog, scope, options)
+    }
     pub fn retrieve(
         &self,
         request: &RetrieveRequest,

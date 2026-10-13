@@ -12,6 +12,7 @@ use std::{fs, io::Write, path::Path, process::Command};
 
 fn request(source: Source, selector: Selector) -> RetrieveRequest {
     RetrieveRequest {
+        provenance: Vec::new(),
         source: SourceInput::Inline { source },
         selector,
         asset: Default::default(),

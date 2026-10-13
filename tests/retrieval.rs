@@ -23,6 +23,7 @@ use std::{
 
 fn request(source: Source, selector: Selector) -> RetrieveRequest {
     RetrieveRequest {
+        provenance: Vec::new(),
         source: SourceInput::Inline { source },
         selector,
         asset: Default::default(),

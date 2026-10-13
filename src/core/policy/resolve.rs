@@ -59,7 +59,7 @@ fn conflict(message: &str) -> Error {
     Error::new(ErrorCode::PolicyConflict, message)
 }
 
-fn evidence(record: &PolicyRecord) -> Result<PolicyEvidence> {
+pub(crate) fn evidence(record: &PolicyRecord) -> Result<PolicyEvidence> {
     let bytes =
         serde_json::to_vec(record).map_err(|_| invalid("cannot encode policy definition"))?;
     Ok(PolicyEvidence {

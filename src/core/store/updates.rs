@@ -75,6 +75,9 @@ impl Store {
         if !matches!(acquisition.destination, Destination::Managed {}) {
             let mut retrieval = retrieval.clone();
             let due = acquisition.update_policy.due(None, 0);
+            if due {
+                self.check_policy_action(crate::models::claim::policy::Action::Update)?;
+            }
             if let SourceInput::Registered { source_uuid } = retrieval.source
                 && let CachePolicy::Cached { freshness, .. } = &mut retrieval.cache
                 && freshness.is_none()
@@ -138,6 +141,9 @@ impl Store {
         let due = acquisition
             .update_policy
             .due(previous.as_ref().and_then(|s| s.last_success), now);
+        if due && previous.is_some() {
+            self.check_policy_action(crate::models::claim::policy::Action::Update)?;
+        }
         if let Some(authorization) = &mut authorization {
             authorization.update = due && previous.is_some();
             authorization.check(self, source_uuid, Some(acquisition))?;
@@ -336,6 +342,8 @@ pub(super) fn intent_key(
     acquisition: &AcquisitionRequest,
 ) -> Result<String> {
     let mut acquisition = acquisition.clone();
+    // Identity compares effective choices, not equivalent definition UUIDs.
+    acquisition.provenance.clear();
     acquisition.revision_policy =
         crate::core::policy::composition::effective_revision(&acquisition)?;
     json_digest(&(

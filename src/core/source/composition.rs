@@ -22,6 +22,7 @@ impl Store {
     ) -> Result<Prepared> {
         let source = self.source(request.source_uuid)?;
         let retrieval = RetrieveRequest {
+            provenance: Vec::new(),
             source: SourceInput::Inline {
                 source: source.source,
             },
@@ -89,6 +90,7 @@ impl Store {
             ),
         }
         let retrieval = RetrieveRequest {
+            provenance: Vec::new(),
             source: SourceInput::Registered {
                 source_uuid: request.source_uuid,
             },

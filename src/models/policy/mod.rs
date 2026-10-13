@@ -3,6 +3,7 @@ mod composition;
 pub mod effective;
 pub mod record;
 pub mod references;
+pub mod requests;
 pub use composition::{Freshness, PayloadVerification, RevisionPolicy, UpdatePolicy};
 pub use record::{PolicyDefinition, PolicyRecord};
 pub use references::PolicyRefs;

@@ -154,6 +154,7 @@ impl Store {
             }
             let mut resource = Retriever::retrieve_finishing(&inline, options, None, || {
                 let guard = self.lock()?;
+                self.check_policy_fence()?;
                 if let Some(authorization) = &authorization {
                     authorization.check(self, source.unwrap(), None)?;
                 }
