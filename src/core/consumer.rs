@@ -215,9 +215,9 @@ mod tests {
     use crate::{
         core::{retrieval::Retriever, store::Acquirer},
         models::{
-            retrieval::{CachePolicy, RetrieveRequest, SourceInput},
+            retrieval::{CachePolicy, RetrievalPlan, SourceInput},
             source::Source,
-            store::{AcquisitionRequest, Destination, Selector},
+            store::{AcquisitionPlan, Destination, Selector},
         },
     };
     #[test]
@@ -225,7 +225,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let input = root.path().join("input");
         fs::write(&input, b"payload").unwrap();
-        let request = RetrieveRequest {
+        let request = RetrievalPlan {
             provenance: Vec::new(),
             source: SourceInput::Inline {
                 source: Source::Local { path: input },
@@ -236,11 +236,11 @@ mod tests {
             verification: Default::default(),
             expected_sha256: None,
         };
-        let source = Retriever::retrieve(&request).unwrap();
+        let source = Retriever::retrieve_planned_with(&request, &Default::default()).unwrap();
         let source_path = source.source_path().to_owned();
-        let acquired = Acquirer::acquire(
+        let acquired = Acquirer::acquire_planned(
             &source,
-            &AcquisitionRequest {
+            &AcquisitionPlan {
                 destination: Destination::Temporary {},
                 ..Default::default()
             },

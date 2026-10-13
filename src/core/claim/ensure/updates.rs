@@ -35,10 +35,10 @@ impl Store {
             let effective = self.claim_execution_policy(
                 input.source_uuid,
                 &registry.registry,
-                input.adopted.as_deref(),
+                Some(input.adopted.as_ref()),
             )?;
             let mut request = OutputPlan {
-                adopted: input.adopted.clone(),
+                adopted: Some(input.adopted.clone()),
                 source_uuid: input.source_uuid,
                 selector: input.selector.clone(),
                 selection: input.selection.clone(),
@@ -157,7 +157,7 @@ impl Store {
                 .as_ref()
                 .map(|existing| existing.claim.policy_refs.clone())
                 .map(Ok)
-                .unwrap_or_else(|| self.adopted_refs(input.adopted.as_deref()))?,
+                .unwrap_or_else(|| self.adopted_refs(Some(input.adopted.as_ref())))?,
             uuid: claim_id,
             scope: input.scope.clone(),
             request,

@@ -11,7 +11,7 @@ use crate::{
         index::Record,
         policy::Freshness,
         retrieval::{
-            MaterialKind, Ownership, RetrievalRecord, RetrievalState, RetrieveRequest,
+            MaterialKind, Ownership, RetrievalPlan, RetrievalRecord, RetrievalState,
             RetrievedDescriptor, SourceInput,
         },
         source::{Resolved, Source, SourceRecord},
@@ -95,7 +95,7 @@ impl Store {
     pub(super) fn verify_retrieval(
         &self,
         record: &RetrievalRecord,
-        request: &RetrieveRequest,
+        request: &RetrievalPlan,
     ) -> Result<()> {
         ensure!(
             record.state == RetrievalState::Ready,
@@ -150,7 +150,7 @@ impl Store {
     pub(super) fn cache_hit(
         &self,
         record: &RetrievalRecord,
-        request: &RetrieveRequest,
+        request: &RetrievalPlan,
     ) -> Result<bool> {
         match self.verify_retrieval(record, request) {
             Ok(()) => Ok(true),
@@ -168,7 +168,7 @@ impl Store {
     pub(super) fn retrieved_handle(
         &self,
         record: &RetrievalRecord,
-        request: &RetrieveRequest,
+        request: &RetrievalPlan,
         guard: LockGuard,
         reused: bool,
         stale: bool,
@@ -193,7 +193,7 @@ impl Store {
             .expected_sha256;
         }
         Ok(RetrievedResource {
-            request: RetrieveRequest {
+            request: RetrievalPlan {
                 source: SourceInput::Registered {
                     source_uuid: record.source_uuid,
                 },

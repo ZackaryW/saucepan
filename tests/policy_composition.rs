@@ -491,3 +491,62 @@ fn update_permission_is_checked_when_due_without_rejecting_the_initial_acquisiti
     assert_eq!(tree(store.root()), before);
     assert!(first.path().exists());
 }
+
+#[test]
+fn equivalent_policy_definitions_share_composed_acquisition_identity() {
+    let temp = tempfile::tempdir().unwrap();
+    let file = temp.path().join("input");
+    fs::write(&file, b"one").unwrap();
+    let store = Store::create(&temp.path().join("root")).unwrap();
+    let source = store.register_source(Source::Local { path: file }).unwrap();
+    let first_policy = record(json!({"type":"update_policy","mode":"max_age","seconds":60}));
+    let mut equivalent = first_policy.clone();
+    equivalent.uuid = Uuid::new_v4();
+    store
+        .register_policies(&[first_policy.clone(), equivalent.clone()])
+        .unwrap();
+    let retrieval = input(SourceInput::Registered {
+        source_uuid: source.uuid,
+    });
+    let mut acquisition = Acquisition {
+        policy_refs: refs(&[&first_policy]),
+        ..Default::default()
+    };
+    let first = store
+        .acquire_composed_with(
+            &retrieval,
+            &acquisition,
+            &RetrieveOptions {
+                test_now: Some(100),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let identity = first.descriptor().ownership.clone();
+    drop(first);
+    acquisition.policy_refs = refs(&[&equivalent]);
+    let second = store
+        .acquire_composed_with(
+            &retrieval,
+            &acquisition,
+            &RetrieveOptions {
+                test_now: Some(101),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(second.descriptor().ownership, identity);
+    assert!(second.descriptor().reused);
+    let states: Vec<_> = store
+        .records()
+        .unwrap()
+        .into_iter()
+        .filter_map(|record| match record {
+            saucepan::models::index::Record::Acquisition(state) => Some(state),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(states.len(), 1);
+    assert_eq!(states[0].last_success, Some(100));
+    assert_eq!(states[0].acquisition.provenance[0].uuid, first_policy.uuid);
+}

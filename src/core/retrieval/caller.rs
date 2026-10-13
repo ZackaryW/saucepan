@@ -6,8 +6,8 @@ use crate::{
     error::{Error, ErrorCode},
     models::{
         retrieval::{
-            CachePolicy, MaterialKind, Ownership, RetrieveRequest, RetrievedDescriptor,
-            SourceInput, VerificationEvidence,
+            CachePolicy, MaterialKind, Ownership, RetrievalPlan, RetrievedDescriptor, SourceInput,
+            VerificationEvidence,
         },
         source::{Resolved, Source},
     },
@@ -19,8 +19,8 @@ use crate::{
 };
 use anyhow::{Result, ensure};
 impl Retriever {
-    pub fn open_caller(
-        request: &RetrieveRequest,
+    pub(crate) fn open_caller_planned(
+        request: &RetrievalPlan,
         descriptor: &RetrievedDescriptor,
     ) -> Result<RetrievedResource> {
         crate::core::policy::composition::validate_retrieval(request)?;

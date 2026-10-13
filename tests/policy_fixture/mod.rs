@@ -193,3 +193,60 @@ pub fn filters(store: &Store, filters: Vec<saucepan::models::store::AssetFilter>
         json!({"type":"github_release_asset_filter", "platform":filter.platform, "asset_patterns":filter.asset_patterns})
     }).collect()).unwrap()
 }
+
+pub fn refresh(
+    store: &Store,
+    input: &mut saucepan::models::retrieval::RetrieveRequest,
+    freshness: saucepan::models::policy::Freshness,
+    allow_stale: bool,
+) {
+    let mut value = serde_json::to_value(freshness).unwrap();
+    value["type"] = json!("refresh_policy");
+    replace(store, &mut input.policy_refs, value).unwrap();
+    replace(
+        store,
+        &mut input.policy_refs,
+        json!({"type":"stale_policy","allow_stale":allow_stale}),
+    )
+    .unwrap();
+}
+
+pub fn fresh_records() -> Vec<PolicyRecord> {
+    records(vec![
+        json!({"type":"cache_policy","mode":"temporary"}),
+        json!({"type":"cache_policy","mode":"no_store"}),
+        json!({"type":"verification_policy","policy_target":"payload","mode":"none"}),
+        json!({"type":"verification_policy","policy_target":"payload","mode":"required"}),
+        json!({"type":"github_release_asset_filter","platform":null,"asset_patterns":["*.zip"]}),
+    ])
+    .unwrap()
+}
+pub fn fresh_catalog() -> saucepan::core::policy::catalog::PolicyCatalog {
+    saucepan::core::policy::catalog::PolicyCatalog::new(fresh_records()).unwrap()
+}
+pub fn fresh_refs(values: Vec<Value>) -> PolicyRefs {
+    let catalog = fresh_catalog();
+    records(values)
+        .unwrap()
+        .into_iter()
+        .map(|r| {
+            assert_eq!(catalog.get(r.uuid).unwrap(), &r);
+            r.uuid
+        })
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap()
+}
+pub fn fresh_replace(refs: &mut PolicyRefs, value: Value) {
+    let catalog = fresh_catalog();
+    let record = records(vec![value]).unwrap().remove(0);
+    assert_eq!(catalog.get(record.uuid).unwrap(), &record);
+    let mut ids = refs
+        .ids()
+        .iter()
+        .copied()
+        .filter(|id| catalog.get(*id).unwrap().definition.axis() != record.definition.axis())
+        .collect::<Vec<_>>();
+    ids.push(record.uuid);
+    *refs = ids.try_into().unwrap();
+}

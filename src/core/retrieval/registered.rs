@@ -11,7 +11,7 @@ use crate::{
     error::{Error, ErrorCode},
     models::{
         claim::{Scope, security::Credential},
-        retrieval::{CachePolicy, RetrieveRequest, SourceInput},
+        retrieval::SourceInput,
     },
 };
 use anyhow::{Result, ensure};
@@ -65,14 +65,6 @@ impl RegisteredRetriever {
             store: Store::open_metadata(root, keys)?,
         })
     }
-    pub fn retrieve(
-        &self,
-        request: &RetrieveRequest,
-        options: &RetrieveOptions,
-    ) -> Result<RetrievedResource> {
-        validate(&self.store, request)?;
-        self.store.retrieve_authorized(request, options, None)
-    }
     pub fn session(
         &self,
         app: Uuid,
@@ -105,86 +97,32 @@ impl RegisteredAppRetriever {
         self.session
             .compose_referenced(input, acquisition, catalog, scope, options)
     }
+}
+
+impl RegisteredRetriever {
     pub fn retrieve(
         &self,
-        request: &RetrieveRequest,
-        scope: Option<&Scope>,
+        input: &crate::models::policy::requests::Retrieval,
         options: &RetrieveOptions,
     ) -> Result<RetrievedResource> {
-        validate(&self.session.store, request)?;
-        self.session.retrieve(request, scope, options)
+        self.retrieve_referenced(input, &Default::default(), options)
     }
-}
-fn validate(store: &Store, request: &RetrieveRequest) -> Result<()> {
-    ensure!(
-        matches!(request.source, SourceInput::Registered { .. })
-            && !matches!(request.cache, CachePolicy::Cached { .. }),
-        Error::new(
-            ErrorCode::InvalidRequest,
-            "registered fresh reader requires registered temporary/no_store retrieval"
-        )
-    );
-    if let CachePolicy::NoStore { destination } = &request.cache {
-        crate::utils::path::disjoint_destination(store.root(), destination)?;
-    }
-    Ok(())
-}
-
-impl RegisteredRetriever {
     pub fn open_caller(
         &self,
-        request: &RetrieveRequest,
+        input: &crate::models::policy::requests::Retrieval,
         descriptor: &crate::models::retrieval::RetrievedDescriptor,
     ) -> Result<RetrievedResource> {
-        self.store.open_caller_authorized(request, descriptor, None)
-    }
-}
-impl RegisteredAppRetriever {
-    pub fn open_caller(
-        &self,
-        request: &RetrieveRequest,
-        descriptor: &crate::models::retrieval::RetrievedDescriptor,
-        scope: Option<&Scope>,
-    ) -> Result<RetrievedResource> {
-        let SourceInput::Registered { source_uuid } = request.source else {
-            return Err(Error::new(
-                ErrorCode::AccessDenied,
-                "application material requires a registered source",
-            )
-            .into());
-        };
-        let authorization =
-            self.session
-                .store
-                .begin_composition(self.session.app, scope, source_uuid, None)?;
-        self.session
-            .store
-            .open_caller_authorized(request, descriptor, Some(authorization))
-    }
-}
-
-impl RegisteredRetriever {
-    pub fn acquire_composed(
-        &self,
-        retrieval: &RetrieveRequest,
-        acquisition: &crate::models::store::AcquisitionRequest,
-        options: &RetrieveOptions,
-    ) -> Result<crate::core::store::AcquiredResource> {
-        validate(&self.store, retrieval)?;
         self.store
-            .acquire_composed_authorized(retrieval, acquisition, options, None)
+            .open_caller_referenced(input, descriptor, &Default::default(), None)
     }
 }
 impl RegisteredAppRetriever {
-    pub fn acquire_composed(
+    pub fn retrieve(
         &self,
-        retrieval: &RetrieveRequest,
-        acquisition: &crate::models::store::AcquisitionRequest,
+        input: &crate::models::policy::requests::Retrieval,
         scope: Option<&Scope>,
         options: &RetrieveOptions,
-    ) -> Result<crate::core::store::AcquiredResource> {
-        validate(&self.session.store, retrieval)?;
-        self.session
-            .acquire_composed(retrieval, acquisition, scope, options)
+    ) -> Result<RetrievedResource> {
+        self.retrieve_referenced(input, &Default::default(), scope, options)
     }
 }

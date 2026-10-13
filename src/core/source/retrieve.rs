@@ -5,7 +5,7 @@ use crate::{
     error::{Error, ErrorCode},
     models::{
         policy::PayloadVerification,
-        retrieval::{MaterialKind, RetrieveRequest, VerificationEvidence},
+        retrieval::{MaterialKind, RetrievalPlan, VerificationEvidence},
         source::{Resolved, Source},
         store::{Selection, Selector},
     },
@@ -31,7 +31,7 @@ pub(crate) struct Material {
     pub verification: VerificationEvidence,
 }
 
-pub(crate) fn validate(source: &Source, request: &RetrieveRequest) -> Result<()> {
+pub(crate) fn validate(source: &Source, request: &RetrievalPlan) -> Result<()> {
     let valid = matches!(
         (source, &request.selector),
         (Source::Local { .. }, Selector::Local)
@@ -76,7 +76,7 @@ pub(crate) fn validate(source: &Source, request: &RetrieveRequest) -> Result<()>
 
 pub(crate) fn obtain(
     source: &Source,
-    request: &RetrieveRequest,
+    request: &RetrievalPlan,
     work: &Path,
     scratch: &Path,
     options: &AcquireOptions,
@@ -225,7 +225,7 @@ pub(crate) fn obtain(
 }
 
 pub(crate) fn expected_digest(
-    request: &RetrieveRequest,
+    request: &RetrievalPlan,
     upstream: Option<&str>,
 ) -> Result<Option<String>> {
     if request.verification == PayloadVerification::None {

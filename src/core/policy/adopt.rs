@@ -1,5 +1,4 @@
-//! Revision-checked associations. Existing execution structs are populated from
-//! the evaluated definitions during the staged public-contract cutover.
+//! Revision-checked associations and explicit adoption of immutable definitions.
 use super::{
     persistence,
     resolve::{self, Inputs, Operation},

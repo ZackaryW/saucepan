@@ -1,11 +1,12 @@
+mod policy_fixture;
 mod support;
 use saucepan::{
     core::{Store, retrieval::RetrieveOptions},
     models::{
-        policy::{Freshness, PayloadVerification},
-        retrieval::{CachePolicy, Ownership, RetrieveRequest, SourceInput},
+        policy::Freshness,
+        retrieval::{Ownership, RetrieveRequest, SourceInput},
         source::Source,
-        store::{AssetFilter, Selector},
+        store::Selector,
     },
 };
 use std::{
@@ -18,12 +19,11 @@ use std::{
 
 fn request(id: uuid::Uuid, selector: Selector) -> RetrieveRequest {
     RetrieveRequest {
-        provenance: Vec::new(),
         source: SourceInput::Registered { source_uuid: id },
         selector,
         asset: Default::default(),
-        cache: CachePolicy::default(),
-        verification: PayloadVerification::None,
+        policy_refs: Default::default(),
+        destination: None,
         expected_sha256: None,
     }
 }
@@ -84,10 +84,7 @@ fn cached_retrieval_inherits_configured_freshness_and_defers_live_purge() {
     assert!(!path.exists());
     assert!(store.source(source.uuid).is_ok());
     let mut offline = req;
-    offline.cache = CachePolicy::Cached {
-        freshness: Some(Freshness::CacheOnly {}),
-        allow_stale: false,
-    };
+    policy_fixture::refresh(&store, &mut offline, Freshness::CacheOnly {}, false);
     assert!(store.retrieve_with(&offline, &options).is_err());
     assert_eq!(calls.load(Ordering::SeqCst), initial_calls + 2);
     assert_eq!(fs::read_dir(store.root().join("store")).unwrap().count(), 0);
@@ -107,11 +104,13 @@ fn cache_hits_recheck_stronger_verification_and_refuse_corruption() {
     let uuid = id(&first);
     let path = first.source_path().to_owned();
     drop(first);
-    req.cache = CachePolicy::Cached {
-        freshness: Some(Freshness::CacheOnly {}),
-        allow_stale: false,
-    };
-    req.verification = PayloadVerification::Required;
+    policy_fixture::refresh(&store, &mut req, Freshness::CacheOnly {}, false);
+    policy_fixture::replace(
+        &store,
+        &mut req.policy_refs,
+        serde_json::json!({"type":"verification_policy","policy_target":"payload","mode":"required"}),
+    )
+    .unwrap();
     req.expected_sha256 = Some(saucepan::utils::tree::digest(&b"abc"[..]).unwrap());
     let checked = store.retrieve(&req).unwrap();
     assert_eq!(id(&checked), uuid);
@@ -145,21 +144,15 @@ fn platform_asset_retrieval_does_not_extend_shared_discovery_freshness() {
         })
         .unwrap();
     let mut req = request(source.uuid, Selector::LatestStable);
-    req.cache = CachePolicy::Cached {
-        freshness: Some(Freshness::MaxAge { seconds: 60 }),
-        allow_stale: false,
-    };
-    req.asset.filters = vec![AssetFilter {
-        platform: None,
-        asset_patterns: vec!["windows.zip".into()],
-    }];
+    policy_fixture::refresh(&store, &mut req, Freshness::MaxAge { seconds: 60 }, false);
+    req.asset.filter_refs = policy_fixture::definitions(&store, vec![serde_json::json!({"type":"github_release_asset_filter","platform":null,"asset_patterns":["windows.zip"]})]).unwrap();
     let mut options = RetrieveOptions {
         test_now: Some(100),
         test_github_api: Some(server.base.clone()),
     };
     drop(store.retrieve_with(&req, &options).unwrap());
     options.test_now = Some(150);
-    req.asset.filters[0].asset_patterns = vec!["linux.zip".into()];
+    req.asset.filter_refs = policy_fixture::definitions(&store, vec![serde_json::json!({"type":"github_release_asset_filter","platform":null,"asset_patterns":["linux.zip"]})]).unwrap();
     let linux = store.retrieve_with(&req, &options).unwrap();
     assert_eq!(linux.descriptor().checked_at, Some(100));
     assert_eq!(discoveries.load(Ordering::SeqCst), 1);
@@ -197,10 +190,7 @@ fn failed_refresh_keeps_last_success_and_explicit_stale_evidence() {
         })
         .unwrap();
     let mut req = request(source.uuid, Selector::Url);
-    req.cache = CachePolicy::Cached {
-        freshness: Some(Freshness::Always {}),
-        allow_stale: false,
-    };
+    policy_fixture::refresh(&store, &mut req, Freshness::Always {}, false);
     let first = store
         .retrieve_with(
             &req,
@@ -219,10 +209,7 @@ fn failed_refresh_keeps_last_success_and_explicit_stale_evidence() {
     };
     assert!(store.retrieve_with(&req, &options).is_err());
     assert_eq!(store.retrieval_record(uuid).unwrap().checked_at, 100);
-    req.cache = CachePolicy::Cached {
-        freshness: Some(Freshness::Always {}),
-        allow_stale: true,
-    };
+    policy_fixture::refresh(&store, &mut req, Freshness::Always {}, true);
     let stale = store.retrieve_with(&req, &options).unwrap();
     assert!(stale.descriptor().stale);
     assert_eq!(stale.descriptor().checked_at, Some(100));

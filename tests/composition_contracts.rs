@@ -2,14 +2,14 @@ use saucepan::{
     core::policy::composition::{effective_revision, validate_composition, validate_retrieval},
     models::{
         policy::{Freshness, PayloadVerification, RevisionPolicy, UpdatePolicy},
-        retrieval::{CachePolicy, RetrieveRequest},
-        store::{AcquisitionRequest, Destination, Request},
+        retrieval::{CachePolicy, RetrievalPlan},
+        store::{AcquisitionPlan, Destination, Request},
     },
 };
 use serde_json::json;
 
-fn retrieval(cache: CachePolicy) -> RetrieveRequest {
-    let mut request: RetrieveRequest = serde_json::from_value(json!({
+fn retrieval(cache: CachePolicy) -> RetrievalPlan {
+    let mut request: RetrievalPlan = serde_json::from_value(json!({
         "source": {"kind":"inline", "source":{"type":"url", "url":"https://example.invalid/tool.zip"}},
         "selector":{"type":"url"}
     })).unwrap();
@@ -33,7 +33,7 @@ fn destination_matrix_rejects_implicit_managed_effects() {
                 path: "output".into(),
             },
         ] {
-            let request = AcquisitionRequest {
+            let request = AcquisitionPlan {
                 destination,
                 ..Default::default()
             };
@@ -47,7 +47,7 @@ fn destination_matrix_rejects_implicit_managed_effects() {
                 managed.then(RevisionPolicy::default)
             );
             if !managed {
-                let explicit = AcquisitionRequest {
+                let explicit = AcquisitionPlan {
                     revision_policy: Some(RevisionPolicy::None {}),
                     ..request
                 };
@@ -59,6 +59,7 @@ fn destination_matrix_rejects_implicit_managed_effects() {
 
 #[test]
 fn new_dtos_cannot_smuggle_legacy_or_cross_stage_options() {
+    use saucepan::models::{retrieval::RetrieveRequest, store::AcquisitionRequest};
     for extra in [
         json!({"eviction":{"strategy":"latest","keep":2}}),
         json!({"policies":{}}),
@@ -81,10 +82,33 @@ fn new_dtos_cannot_smuggle_legacy_or_cross_stage_options() {
     assert!(
         serde_json::from_value::<Destination>(json!({"mode":"managed", "path":"out"})).is_err()
     );
-    let request = retrieval(CachePolicy::default());
-    let mut value = serde_json::to_value(&request).unwrap();
-    value["asset"]["folder"] = json!("plugins");
-    assert!(serde_json::from_value::<RetrieveRequest>(value).is_err());
+    let value = json!({"source":{"kind":"inline","source":{"type":"local","path":"input"}}, "selector":{"type":"local"}, "policy_refs":[], "asset":{"filter_refs":[]}});
+    let request: RetrieveRequest = serde_json::from_value(value.clone()).unwrap();
+    for (field, extra) in [
+        ("cache", json!({"mode":"temporary"})),
+        ("verification", json!("none")),
+        ("provenance", json!([])),
+    ] {
+        let mut mixed = value.clone();
+        mixed[field] = extra;
+        assert!(serde_json::from_value::<RetrieveRequest>(mixed).is_err());
+    }
+    for field in [
+        "identical",
+        "update_policy",
+        "revision_policy",
+        "protection",
+        "adopted",
+        "evaluated",
+        "provenance",
+    ] {
+        let mut mixed = json!({"policy_refs":[]});
+        mixed[field] = json!(null);
+        assert!(
+            serde_json::from_value::<AcquisitionRequest>(mixed).is_err(),
+            "{field}"
+        );
+    }
     assert_eq!(
         serde_json::from_value::<RetrieveRequest>(serde_json::to_value(&request).unwrap()).unwrap(),
         request
@@ -110,10 +134,10 @@ fn contradictions_fail_without_io() {
         freshness: Some(Freshness::CacheOnly {}),
         allow_stale: false,
     };
-    assert!(validate_composition(&request, &AcquisitionRequest::default(), true).is_err());
-    assert!(validate_composition(&request, &AcquisitionRequest::default(), false).is_ok());
+    assert!(validate_composition(&request, &AcquisitionPlan::default(), true).is_err());
+    assert!(validate_composition(&request, &AcquisitionPlan::default(), false).is_ok());
     for path in ["../escape", "/absolute", "C:/absolute"] {
-        let acquisition = AcquisitionRequest {
+        let acquisition = AcquisitionPlan {
             folder: Some(path.into()),
             ..Default::default()
         };

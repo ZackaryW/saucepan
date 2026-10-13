@@ -62,7 +62,7 @@ optional credentials. A UUID alone does not change caller authority.
 `adopt_application_policies` and `adopt_claim_policies` require the expected application
 revision; `adopt_source_policies` requires the source's `policy_revision`. Claims keep
 their selection and context. Source changes retain provider data and discovery state.
-Managed `Request` inputs, including install/bootstrap and scoped acquisition, contain only selection data and policy references. The planner creates frozen `OutputPlan` evidence; callers cannot submit that evidence to these APIs. Claims without adopted policy evidence are rejected. Retrieval/acquisition stage APIs are the remaining public-contract cutover.
+Managed `Request` inputs, including install/bootstrap and scoped acquisition, contain only selection data and policy references. The planner creates frozen `OutputPlan` evidence; callers cannot submit that evidence to these APIs. Claims without adopted policy evidence are rejected. `RetrieveRequest` and `AcquisitionRequest` likewise accept only references. Their `RetrievalPlan` and `AcquisitionPlan` records describe derived execution evidence; provider and copy entry points accepting those plans are crate-private. No inline-policy merger or old-input adapter remains.
 
 Claim execution and registry validation use the shared policy resolver. Claims
 persist adopted evidence and effective choices, without an `overrides` object;

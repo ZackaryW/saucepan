@@ -5,7 +5,6 @@ pub(crate) mod adopt;
 pub(crate) mod authority;
 pub mod catalog;
 pub(crate) mod claims;
-pub(crate) mod compiled;
 pub mod composition;
 mod execution;
 pub mod fence;

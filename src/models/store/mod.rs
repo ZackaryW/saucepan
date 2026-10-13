@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, path::PathBuf};
 use uuid::Uuid;
 mod composition;
-pub use composition::{AcquiredDescriptor, AcquisitionRequest, Destination};
+pub use composition::{AcquiredDescriptor, AcquisitionPlan, Destination};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
@@ -175,3 +175,5 @@ pub struct ResolvedResource {
     pub directory: std::path::PathBuf,
     pub verification: VerificationMode,
 }
+
+pub use crate::models::policy::requests::Acquisition as AcquisitionRequest;

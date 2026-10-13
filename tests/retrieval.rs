@@ -1,3 +1,4 @@
+mod policy_fixture;
 mod support;
 use saucepan::{
     core::{
@@ -5,10 +6,9 @@ use saucepan::{
         retrieval::{RetrieveOptions, Retriever},
     },
     models::{
-        policy::PayloadVerification,
-        retrieval::{CachePolicy, MaterialKind, Ownership, RetrieveRequest, SourceInput},
+        retrieval::{MaterialKind, Ownership, RetrieveRequest, SourceInput},
         source::{Resolved, Source},
-        store::{AssetFilter, Selector},
+        store::Selector,
     },
 };
 use std::{
@@ -23,12 +23,14 @@ use std::{
 
 fn request(source: Source, selector: Selector) -> RetrieveRequest {
     RetrieveRequest {
-        provenance: Vec::new(),
         source: SourceInput::Inline { source },
         selector,
         asset: Default::default(),
-        cache: CachePolicy::Temporary {},
-        verification: PayloadVerification::None,
+        policy_refs: policy_fixture::fresh_refs(vec![
+            serde_json::json!({"type":"cache_policy","mode":"temporary"}),
+            serde_json::json!({"type":"verification_policy","policy_target":"payload","mode":"none"}),
+        ]),
+        destination: None,
         expected_sha256: None,
     }
 }
@@ -37,7 +39,7 @@ fn request(source: Source, selector: Selector) -> RetrieveRequest {
 fn root_free_child() {
     if let Some(path) = std::env::var_os("SAUCEPAN_TEST_FRESH_INPUT") {
         let source = Source::Local { path: path.into() };
-        let result = Retriever::retrieve(&request(source, Selector::Local)).unwrap();
+        let result = retrieve(&request(source, Selector::Local)).unwrap();
         assert_eq!(fs::read(result.source_path()).unwrap(), b"root free");
     }
 }
@@ -77,26 +79,28 @@ fn fresh_http_bypasses_an_existing_registered_source_and_preserves_original_byte
     store.register_source(source.clone()).unwrap();
     let before = saucepan::utils::tree::inspect(store.root(), Default::default()).unwrap();
     let mut req = request(source, Selector::Url);
-    let first = Retriever::retrieve(&req).unwrap();
+    let first = retrieve(&req).unwrap();
     let path = first.source_path().to_owned();
     assert_eq!(fs::read(&path).unwrap(), b"original archive bytes");
     assert_eq!(first.descriptor().kind, MaterialKind::File);
     assert_eq!(first.descriptor().verification.expected_sha256, None);
     assert_eq!(first.descriptor().verification.content_sha256, None);
-    let second = Retriever::retrieve(&req).unwrap();
+    let second = retrieve(&req).unwrap();
     assert_ne!(path, second.source_path());
     drop(first);
     assert!(!path.exists());
     let destination = root.path().join("caller.zip");
-    req.cache = CachePolicy::NoStore {
-        destination: destination.clone(),
-    };
-    let caller = Retriever::retrieve(&req).unwrap();
+    req.destination = Some(destination.clone());
+    policy_fixture::fresh_replace(
+        &mut req.policy_refs,
+        serde_json::json!({"type":"cache_policy","mode":"no_store"}),
+    );
+    let caller = retrieve(&req).unwrap();
     assert_eq!(caller.descriptor().ownership, Ownership::Caller);
     drop(caller);
     assert_eq!(fs::read(&destination).unwrap(), b"original archive bytes");
     assert_eq!(hits.load(Ordering::SeqCst), 3);
-    assert!(Retriever::retrieve(&req).is_err());
+    assert!(retrieve(&req).is_err());
     assert_eq!(
         hits.load(Ordering::SeqCst),
         3,
@@ -107,9 +111,13 @@ fn fresh_http_bypasses_an_existing_registered_source_and_preserves_original_byte
         saucepan::utils::tree::inspect(store.root(), Default::default()).unwrap()
     );
     drop(server);
-    req.cache = CachePolicy::Temporary {};
+    req.destination = None;
+    policy_fixture::fresh_replace(
+        &mut req.policy_refs,
+        serde_json::json!({"type":"cache_policy","mode":"temporary"}),
+    );
     assert!(
-        Retriever::retrieve(&req).is_err(),
+        retrieve(&req).is_err(),
         "a previous fresh response is not fallback cache"
     );
 }
@@ -126,21 +134,25 @@ fn local_capture_is_stable_and_caller_owned_delivery_is_disjoint() {
         },
         Selector::Local,
     );
-    let capture = Retriever::retrieve(&req).unwrap();
+    let capture = retrieve(&req).unwrap();
     fs::write(source.join("file"), b"two").unwrap();
     assert_eq!(
         fs::read(capture.source_path().join("file")).unwrap(),
         b"one"
     );
-    req.cache = CachePolicy::NoStore {
-        destination: source.join("inside"),
-    };
-    assert!(Retriever::retrieve(&req).is_err());
+    req.destination = Some(source.join("inside"));
+    policy_fixture::fresh_replace(
+        &mut req.policy_refs,
+        serde_json::json!({"type":"cache_policy","mode":"no_store"}),
+    );
+    assert!(retrieve(&req).is_err());
     assert!(!source.join("inside").exists());
-    req.cache = CachePolicy::NoStore {
-        destination: root.path().join("copy"),
-    };
-    let copy = Retriever::retrieve(&req).unwrap();
+    req.destination = Some(root.path().join("copy"));
+    policy_fixture::fresh_replace(
+        &mut req.policy_refs,
+        serde_json::json!({"type":"cache_policy","mode":"no_store"}),
+    );
+    let copy = retrieve(&req).unwrap();
     assert_eq!(fs::read(copy.source_path().join("file")).unwrap(), b"two");
     drop(copy);
     assert!(root.path().join("copy/file").exists());
@@ -152,19 +164,24 @@ fn expected_digest_checks_are_optional_but_never_fabricated() {
     let source = root.path().join("file");
     fs::write(&source, b"abc").unwrap();
     let mut req = request(Source::Local { path: source }, Selector::Local);
-    req.verification = PayloadVerification::Required;
-    assert!(Retriever::retrieve(&req).is_err());
+    policy_fixture::fresh_replace(
+        &mut req.policy_refs,
+        serde_json::json!({"type":"verification_policy","policy_target":"payload","mode":"required"}),
+    );
+    assert!(retrieve(&req).is_err());
     req.expected_sha256 = Some(saucepan::utils::tree::digest(&b"abc"[..]).unwrap());
-    let checked = Retriever::retrieve(&req).unwrap();
+    let checked = retrieve(&req).unwrap();
     assert_eq!(
         checked.descriptor().verification.expected_sha256,
         req.expected_sha256
     );
-    req.cache = CachePolicy::NoStore {
-        destination: root.path().join("bad"),
-    };
+    req.destination = Some(root.path().join("bad"));
+    policy_fixture::fresh_replace(
+        &mut req.policy_refs,
+        serde_json::json!({"type":"cache_policy","mode":"no_store"}),
+    );
     req.expected_sha256 = Some("0".repeat(64));
-    assert!(Retriever::retrieve(&req).is_err());
+    assert!(retrieve(&req).is_err());
     assert!(!root.path().join("bad").exists());
 }
 
@@ -185,12 +202,14 @@ fn release_retrieval_selects_original_asset_and_checks_upstream_digest() {
         },
         Selector::LatestStable,
     );
-    req.asset.filters.push(AssetFilter {
-        platform: None,
-        asset_patterns: vec!["*.zip".into()],
-    });
-    req.verification = PayloadVerification::Required;
-    let result = Retriever::retrieve_with(
+    req.asset.filter_refs = policy_fixture::fresh_refs(vec![
+        serde_json::json!({"type":"github_release_asset_filter","platform":null,"asset_patterns":["*.zip"]}),
+    ]);
+    policy_fixture::fresh_replace(
+        &mut req.policy_refs,
+        serde_json::json!({"type":"verification_policy","policy_target":"payload","mode":"required"}),
+    );
+    let result = retrieve_with(
         &req,
         &RetrieveOptions {
             test_github_api: Some(server.base.clone()),
@@ -245,7 +264,7 @@ fn git_retrieval_is_a_fresh_repository_with_exact_provenance() {
             reference: "main".into(),
         },
     );
-    let first = Retriever::retrieve(&req).unwrap();
+    let first = retrieve(&req).unwrap();
     assert_eq!(
         first.descriptor().resolved,
         Resolved::Git {
@@ -258,10 +277,12 @@ fn git_retrieval_is_a_fresh_repository_with_exact_provenance() {
     );
     fs::write(origin.join("file"), b"two").unwrap();
     git(&origin, &["commit", "-am", "second"]);
-    req.cache = CachePolicy::NoStore {
-        destination: root.path().join("repository"),
-    };
-    let second = Retriever::retrieve(&req).unwrap();
+    req.destination = Some(root.path().join("repository"));
+    policy_fixture::fresh_replace(
+        &mut req.policy_refs,
+        serde_json::json!({"type":"cache_policy","mode":"no_store"}),
+    );
+    let second = retrieve(&req).unwrap();
     assert_ne!(first.descriptor().resolved, second.descriptor().resolved);
     assert_eq!(
         git(
@@ -301,7 +322,8 @@ fn managed_git_cache_only_reads_survive_missing_origin_and_purge_keeps_objects()
     req.source = SourceInput::Registered {
         source_uuid: source.uuid,
     };
-    req.cache = CachePolicy::default();
+    req.policy_refs = Default::default();
+    req.destination = None;
     let cached = store.retrieve(&req).unwrap();
     let Ownership::Managed { uuid } = cached.descriptor().ownership else {
         panic!("managed")
@@ -309,10 +331,7 @@ fn managed_git_cache_only_reads_survive_missing_origin_and_purge_keeps_objects()
     let path = cached.source_path().to_owned();
     drop(cached);
     fs::rename(&origin, root.path().join("offline-origin")).unwrap();
-    req.cache = CachePolicy::Cached {
-        freshness: Some(Freshness::CacheOnly {}),
-        allow_stale: false,
-    };
+    policy_fixture::refresh(&store, &mut req, Freshness::CacheOnly {}, false);
     let offline = store.retrieve(&req).unwrap();
     assert_eq!(offline.source_path(), path);
     assert!(!store.purge_retrieval(uuid).unwrap());
@@ -322,4 +341,16 @@ fn managed_git_cache_only_reads_survive_missing_origin_and_purge_keeps_objects()
     assert!(store.purge_retrieval(uuid).unwrap());
     assert!(path.exists(), "purge must not prune shared Git data");
     assert!(store.source_path(uuid).is_err());
+}
+
+fn retrieve(
+    input: &RetrieveRequest,
+) -> anyhow::Result<saucepan::core::retrieval::RetrievedResource> {
+    Retriever::retrieve(input, &policy_fixture::fresh_catalog())
+}
+fn retrieve_with(
+    input: &RetrieveRequest,
+    options: &saucepan::core::retrieval::RetrieveOptions,
+) -> anyhow::Result<saucepan::core::retrieval::RetrievedResource> {
+    Retriever::retrieve_referenced(input, &policy_fixture::fresh_catalog(), options)
 }

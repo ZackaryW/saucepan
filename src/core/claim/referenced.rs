@@ -11,9 +11,7 @@ use crate::{
     },
     error::{Error, ErrorCode},
     models::{
-        claim::{
-            Claimed, CompiledEnsure, adopted::AdoptedPolicies, policy::Action, request::Ensure,
-        },
+        claim::{ClaimPlan, Claimed, adopted::AdoptedPolicies, policy::Action, request::Ensure},
         policy::{PolicyRefs, record::CacheMode},
         store::{OutputPlan, Selection},
     },
@@ -137,8 +135,8 @@ impl Store {
                 Some(app),
             )?;
             (
-                CompiledEnsure {
-                    adopted: Some(Box::new(adopted)),
+                ClaimPlan {
+                    adopted: Box::new(adopted),
                     scope: input.scope.clone(),
                     source_uuid: input.source_uuid,
                     selector: input.selector.clone(),
@@ -153,7 +151,7 @@ impl Store {
         };
         let mut execution = self.clone();
         execution.policy_fence = Some(fence);
-        let result = execution.ensure_compiled(app, &compiled, options);
+        let result = execution.ensure_planned(app, &compiled, options);
         // A concurrent first ensure may have published the same owner after our
         // planning snapshot. Replan once only for that convergent reuse case.
         // Existing owners, changed attachments, and new-entry work never retry.
@@ -162,19 +160,14 @@ impl Store {
             && result
                 .as_ref()
                 .is_err_and(|error| Error::from_anyhow(error).code == ErrorCode::RevisionConflict)
-            && compiled
-                .adopted
-                .as_ref()
-                .is_some_and(|p| p.behavior.identical == crate::models::policy::Identical::Reuse)
+            && compiled.adopted.behavior.identical == crate::models::policy::Identical::Reuse
         {
             let reusable = {
                 let _lock = self.lock()?;
                 let registry = self.registry(app)?;
-                let effective = crate::core::policy::adopt::effective(
-                    &compiled.adopted.as_ref().expect("planned claim").pinned(),
-                )?;
+                let effective = crate::core::policy::adopt::effective(&compiled.adopted.pinned())?;
                 let request = OutputPlan {
-                    adopted: compiled.adopted.clone(),
+                    adopted: Some(compiled.adopted.clone()),
                     source_uuid: compiled.source_uuid,
                     selector: compiled.selector.clone(),
                     selection: compiled.selection.clone(),

@@ -2,8 +2,8 @@ use crate::{
     error::{Error, ErrorCode, Result},
     models::{
         policy::{Freshness, PayloadVerification, RevisionPolicy},
-        retrieval::{CachePolicy, RetrieveRequest},
-        store::{AcquisitionRequest, Destination},
+        retrieval::{CachePolicy, RetrievalPlan},
+        store::{AcquisitionPlan, Destination},
     },
     utils::path::relative_path,
 };
@@ -13,7 +13,7 @@ fn invalid(message: &str) -> Error {
 }
 
 /// Pure preflight; does not resolve paths, open a store or contact a provider.
-pub fn validate_retrieval(request: &RetrieveRequest) -> Result<()> {
+pub fn validate_retrieval(request: &RetrievalPlan) -> Result<()> {
     if let Some(hash) = &request.expected_sha256 {
         if request.verification == PayloadVerification::None {
             return Err(invalid(
@@ -40,8 +40,8 @@ pub fn validate_retrieval(request: &RetrieveRequest) -> Result<()> {
 /// Context-free compatibility check; destination existence and permissions are
 /// validated by the operation before it creates staging or contacts a provider.
 pub fn validate_composition(
-    retrieval: &RetrieveRequest,
-    acquisition: &AcquisitionRequest,
+    retrieval: &RetrievalPlan,
+    acquisition: &AcquisitionPlan,
     update_due: bool,
 ) -> Result<()> {
     validate_retrieval(retrieval)?;
@@ -92,7 +92,7 @@ pub fn validate_composition(
     Ok(())
 }
 
-pub fn effective_revision(request: &AcquisitionRequest) -> Result<Option<RevisionPolicy>> {
+pub fn effective_revision(request: &AcquisitionPlan) -> Result<Option<RevisionPolicy>> {
     if matches!(request.destination, Destination::Managed {}) {
         let policy = request.revision_policy.unwrap_or_default();
         policy.keep()?;

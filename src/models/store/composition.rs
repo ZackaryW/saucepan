@@ -17,8 +17,9 @@ pub enum Destination {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(default, deny_unknown_fields)]
-pub struct AcquisitionRequest {
+#[serde(deny_unknown_fields)]
+pub struct AcquisitionPlan {
+    pub evaluated: crate::models::policy::effective::EvaluatedPolicies,
     pub adopted: Option<Box<crate::models::claim::adopted::AdoptedPolicies>>,
     pub provenance: Vec<crate::models::policy::effective::PolicyEvidence>,
     pub destination: Destination,

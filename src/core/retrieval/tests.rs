@@ -3,7 +3,7 @@ use crate::{
     models::{
         index::Record,
         policy::PayloadVerification,
-        retrieval::{CachePolicy, Ownership, RetrieveRequest, SourceInput},
+        retrieval::{CachePolicy, Ownership, RetrievalPlan, SourceInput},
         source::Source,
         store::Selector,
     },
@@ -27,7 +27,7 @@ fn retrieval_publication_recovers_at_every_boundary_in_both_integrity_modes() {
             let source = store
                 .register_source(Source::Local { path: input })
                 .unwrap();
-            let request = RetrieveRequest {
+            let request = RetrievalPlan {
                 provenance: Vec::new(),
                 source: SourceInput::Registered {
                     source_uuid: source.uuid,
@@ -38,7 +38,9 @@ fn retrieval_publication_recovers_at_every_boundary_in_both_integrity_modes() {
                 verification: PayloadVerification::None,
                 expected_sha256: None,
             };
-            let resource = store.retrieve(&request).unwrap();
+            let resource = store
+                .retrieve_prevalidated(&request, &Default::default())
+                .unwrap();
             let Ownership::Managed { uuid } = resource.descriptor().ownership else {
                 panic!("managed")
             };

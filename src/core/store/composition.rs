@@ -11,7 +11,7 @@ use crate::{
     models::{
         policy::{Policies, UpdatePolicy},
         retrieval::{Ownership, SourceInput},
-        store::{AcquisitionRequest, Destination, OutputPlan, Selection},
+        store::{AcquisitionPlan, Destination, OutputPlan, Selection},
     },
     utils::{fs::publish_prepared_directory, path::disjoint_destination},
 };
@@ -19,36 +19,23 @@ use anyhow::{Result, ensure};
 
 pub struct Acquirer;
 impl Acquirer {
-    /// Root-free fresh retrieval followed by independent materialization.
-    pub fn retrieve_and_acquire(
-        retrieval: &crate::models::retrieval::RetrieveRequest,
-        request: &AcquisitionRequest,
-    ) -> Result<AcquiredResource> {
-        Self::retrieve_and_acquire_with(retrieval, request, &Default::default())
-    }
-    pub fn retrieve_and_acquire_with(
-        retrieval: &crate::models::retrieval::RetrieveRequest,
-        request: &AcquisitionRequest,
+    pub(crate) fn compose_planned(
+        retrieval: &crate::models::retrieval::RetrievalPlan,
+        request: &AcquisitionPlan,
         options: &crate::core::retrieval::RetrieveOptions,
     ) -> Result<AcquiredResource> {
         validate_composition(retrieval, request, request.update_policy.due(None, 0))?;
         preflight_destination(retrieval, request)?;
-        let retrieved = crate::core::retrieval::Retriever::retrieve_with(retrieval, options)?;
+        let retrieved =
+            crate::core::retrieval::Retriever::retrieve_planned_with(retrieval, options)?;
         Self::materialize_checked(&retrieved, request)
     }
 
     /// Release this source lease before orchestrating an update. The caller may
     /// retain prior acquired-output leases independently.
-    pub fn refresh(
+    pub(crate) fn refresh_planned_with(
         retrieved: RetrievedResource,
-        request: &AcquisitionRequest,
-    ) -> Result<AcquiredResource> {
-        Self::refresh_with(retrieved, request, &Default::default())
-    }
-
-    pub fn refresh_with(
-        retrieved: RetrievedResource,
-        request: &AcquisitionRequest,
+        request: &AcquisitionPlan,
         options: &crate::core::retrieval::RetrieveOptions,
     ) -> Result<AcquiredResource> {
         let retrieval = retrieved.request.clone();
@@ -59,17 +46,17 @@ impl Acquirer {
             Some(store) => {
                 store.acquire_composed_authorized(&retrieval, request, options, authorization)
             }
-            None => Self::retrieve_and_acquire_with(&retrieval, request, options),
+            None => Self::compose_planned(&retrieval, request, options),
         }
     }
 
     pub(crate) fn materialize_checked(
         retrieved: &RetrievedResource,
-        request: &AcquisitionRequest,
+        request: &AcquisitionPlan,
     ) -> Result<AcquiredResource> {
         let mut offline = request.clone();
         offline.update_policy = UpdatePolicy::Manual {};
-        let mut result = Self::acquire(retrieved, &offline)?;
+        let mut result = Self::acquire_planned(retrieved, &offline)?;
         result.descriptor.update_policy = request.update_policy;
         result.descriptor.checked_source =
             (!retrieved.descriptor.stale).then(|| retrieved.descriptor.resolved.clone());
@@ -77,9 +64,9 @@ impl Acquirer {
     }
     /// Materialize a retrieval without fetching. Update orchestration uses the
     /// owning acquisition intent; callers may reuse this input for several copies.
-    pub fn acquire(
+    pub(crate) fn acquire_planned(
         retrieved: &RetrievedResource,
-        request: &AcquisitionRequest,
+        request: &AcquisitionPlan,
     ) -> Result<AcquiredResource> {
         validate_composition(&retrieved.request, request, false)?;
         if let (Some(store), Some(authorization)) = (&retrieved.store, &retrieved.authorization) {
@@ -202,8 +189,8 @@ impl Acquirer {
 }
 
 pub(crate) fn preflight_destination(
-    retrieval: &crate::models::retrieval::RetrieveRequest,
-    request: &AcquisitionRequest,
+    retrieval: &crate::models::retrieval::RetrievalPlan,
+    request: &AcquisitionPlan,
 ) -> Result<()> {
     if let Destination::Directory { path } = &request.destination {
         let output = crate::utils::path::new_destination(path)?;
@@ -223,7 +210,7 @@ pub(crate) fn preflight_destination(
 
 pub(crate) fn prepare(
     retrieved: &RetrievedResource,
-    request: &AcquisitionRequest,
+    request: &AcquisitionPlan,
     staging: Option<&Path>,
 ) -> Result<Prepared> {
     let temp = match staging {
@@ -246,7 +233,7 @@ pub(crate) fn prepare(
 
 pub(crate) fn managed_request(
     retrieved: &RetrievedResource,
-    request: &AcquisitionRequest,
+    request: &AcquisitionPlan,
 ) -> Result<OutputPlan> {
     let SourceInput::Registered { source_uuid } = retrieved.descriptor.source else {
         return Err(

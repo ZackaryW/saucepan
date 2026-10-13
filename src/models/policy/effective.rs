@@ -1,4 +1,4 @@
-//! Derived plans are evidence, never deserializable policy authority.
+//! Derived plans are persisted evidence, never accepted as caller policy authority.
 use super::{
     Freshness, Identical, PayloadVerification, RevisionPolicy, UpdatePolicy,
     record::{AccessRules, Axis, CacheMode, Constraints},
@@ -49,7 +49,8 @@ impl Default for Behavior {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct EvaluatedPolicies {
     pub behavior: Behavior,
     /// An absent axis comes from this contract's built-in default.

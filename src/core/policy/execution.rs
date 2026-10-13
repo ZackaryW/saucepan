@@ -40,7 +40,7 @@ impl Retriever {
             },
             input,
         )?;
-        Self::open_caller(&plan.request, descriptor)
+        Self::open_caller_planned(&plan.request, descriptor)
     }
     /// Inline fresh operations use only this caller-owned catalog. They never
     /// resolve a home directory or initialize a store/keyring.
@@ -58,7 +58,7 @@ impl Retriever {
             },
             input,
         )?;
-        Self::retrieve_with(&plan.request, options)
+        Self::retrieve_planned_with(&plan.request, options)
     }
 }
 impl Acquirer {
@@ -82,7 +82,7 @@ impl Acquirer {
             _temporary: retrieved._temporary.clone(),
             _coordination: None,
         };
-        Self::acquire(&checked, &request)
+        Self::acquire_planned(&checked, &request)
     }
     /// Own the handle when an automatic update may replace its source lease.
     pub fn acquire_or_refresh_referenced(
@@ -98,9 +98,9 @@ impl Acquirer {
             request.update_policy,
             crate::models::policy::UpdatePolicy::Manual {}
         ) {
-            Self::acquire(&retrieved, &request)
+            Self::acquire_planned(&retrieved, &request)
         } else {
-            Self::refresh_with(retrieved, &request, options)
+            Self::refresh_planned_with(retrieved, &request, options)
         }
     }
 
@@ -117,7 +117,7 @@ impl Acquirer {
         };
         let retrieval = prepare::retrieval(catalog, &attachments, retrieval)?;
         let acquisition = prepare::acquisition(catalog, &attachments, acquisition)?;
-        Self::retrieve_and_acquire_with(&retrieval.request, &acquisition.request, options)
+        Self::compose_planned(&retrieval.request, &acquisition.request, options)
     }
 }
 
@@ -126,7 +126,7 @@ fn acquisition_for_handle(
     input: &Acquisition,
     portable: &PolicyCatalog,
     scope: Option<&Scope>,
-) -> Result<(crate::models::store::AcquisitionRequest, Option<Store>)> {
+) -> Result<(crate::models::store::AcquisitionPlan, Option<Store>)> {
     let empty = PolicyRefs::default();
     if let Some(store) = &retrieved.store {
         let source_input = Retrieval {
@@ -330,7 +330,7 @@ impl Store {
                 store: context.store.clone(),
                 app: identity.app,
             }
-            .retrieve(&plan.request, scope, options)?
+            .retrieve_planned(&plan.request, scope, options)?
         } else {
             context
                 .store
@@ -385,7 +385,7 @@ impl Store {
                 store: context.store,
                 app: identity.app,
             }
-            .acquire_composed(&retrieval.request, &copied.request, scope, options)
+            .compose_planned(&retrieval.request, &copied.request, scope, options)
         } else {
             context.store.acquire_composed_authorized(
                 &retrieval.request,
@@ -417,5 +417,92 @@ impl AppSession {
     ) -> Result<AcquiredResource> {
         self.store
             .compose_referenced_scoped(input, acquisition, portable, scope, options)
+    }
+}
+
+impl Retriever {
+    pub fn retrieve(input: &Retrieval, catalog: &PolicyCatalog) -> Result<RetrievedResource> {
+        Self::retrieve_referenced(input, catalog, &Default::default())
+    }
+}
+impl Store {
+    pub fn retrieve(&self, input: &Retrieval) -> Result<RetrievedResource> {
+        self.retrieve_with(input, &Default::default())
+    }
+    pub fn retrieve_with(
+        &self,
+        input: &Retrieval,
+        options: &RetrieveOptions,
+    ) -> Result<RetrievedResource> {
+        self.retrieve_referenced(input, &PolicyCatalog::default(), options)
+    }
+}
+
+impl Acquirer {
+    pub fn acquire(retrieved: &RetrievedResource, input: &Acquisition) -> Result<AcquiredResource> {
+        let scope = retrieved
+            .authorization
+            .as_ref()
+            .and_then(|a| a.owner.scope.as_ref());
+        Self::acquire_referenced(retrieved, input, &PolicyCatalog::default(), scope)
+    }
+    pub fn refresh_with(
+        retrieved: RetrievedResource,
+        input: &Acquisition,
+        options: &RetrieveOptions,
+    ) -> Result<AcquiredResource> {
+        let scope = retrieved
+            .authorization
+            .as_ref()
+            .and_then(|a| a.owner.scope.clone());
+        Self::acquire_or_refresh_referenced(
+            retrieved,
+            input,
+            &PolicyCatalog::default(),
+            scope.as_ref(),
+            options,
+        )
+    }
+}
+impl Store {
+    pub fn acquire_composed(
+        &self,
+        retrieval: &Retrieval,
+        acquisition: &Acquisition,
+    ) -> Result<AcquiredResource> {
+        self.acquire_composed_with(retrieval, acquisition, &Default::default())
+    }
+    pub fn acquire_composed_with(
+        &self,
+        retrieval: &Retrieval,
+        acquisition: &Acquisition,
+        options: &RetrieveOptions,
+    ) -> Result<AcquiredResource> {
+        self.compose_referenced(retrieval, acquisition, &PolicyCatalog::default(), options)
+    }
+}
+impl AppSession {
+    pub fn retrieve(
+        &self,
+        input: &Retrieval,
+        scope: Option<&Scope>,
+        options: &RetrieveOptions,
+    ) -> Result<RetrievedResource> {
+        self.retrieve_referenced(input, &PolicyCatalog::default(), scope, options)
+    }
+    pub fn acquire_composed(
+        &self,
+        input: &Retrieval,
+        acquisition: &Acquisition,
+        scope: Option<&Scope>,
+        options: &RetrieveOptions,
+    ) -> Result<AcquiredResource> {
+        self.compose_referenced(
+            input,
+            acquisition,
+            &PolicyCatalog::default(),
+            scope,
+            options,
+        )
     }
 }

@@ -22,7 +22,7 @@ fn acquisition_selection_and_output_recover_together_in_each_integrity_mode() {
             let source = store
                 .register_source(Source::Local { path: input })
                 .unwrap();
-            let retrieval = RetrieveRequest {
+            let retrieval = RetrievalPlan {
                 provenance: Vec::new(),
                 source: SourceInput::Registered {
                     source_uuid: source.uuid,
@@ -33,11 +33,13 @@ fn acquisition_selection_and_output_recover_together_in_each_integrity_mode() {
                 verification: Default::default(),
                 expected_sha256: None,
             };
-            let acquisition = AcquisitionRequest {
+            let acquisition = AcquisitionPlan {
                 update_policy: UpdatePolicy::Always {},
                 ..Default::default()
             };
-            let first = store.acquire_composed(&retrieval, &acquisition).unwrap();
+            let first = store
+                .acquire_composed_authorized(&retrieval, &acquisition, &Default::default(), None)
+                .unwrap();
             let key = intent_key(&retrieval, &acquisition).unwrap();
             let mut state = store.acquisition_by_key(&key).unwrap().unwrap();
             let mut output = store.output(state.selected).unwrap();

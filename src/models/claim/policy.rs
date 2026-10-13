@@ -1,7 +1,7 @@
 use super::Scope;
 use crate::{
     error::{Error, ErrorCode, Result},
-    models::policy::{Identical, Policies, RevisionPolicy, UpdatePolicy},
+    models::policy::{Policies, RevisionPolicy, UpdatePolicy},
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -74,14 +74,4 @@ impl Effective {
         }
         Ok(())
     }
-}
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-pub(crate) struct Overrides {
-    pub identical: Option<Identical>,
-    pub revision: Option<RevisionPolicy>,
-    pub reclaim: Option<ReclaimPolicy>,
-    /// Output protection is registered by the app; overrides cannot remove it.
-    pub useable_app: Option<bool>,
-    pub update_policy: Option<UpdatePolicy>,
 }

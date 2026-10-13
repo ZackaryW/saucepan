@@ -1,15 +1,21 @@
 //! Inspect source material without publishing an acquired output.
 use saucepan::{
-    core::retrieval::Retriever,
+    core::{policy::catalog::PolicyCatalog, retrieval::Retriever},
     models::retrieval::{Ownership, RetrieveRequest},
 };
 
 fn main() -> anyhow::Result<()> {
     let input = std::env::args_os()
         .nth(1)
-        .ok_or_else(|| anyhow::anyhow!("usage: retrieve-source REQUEST.json"))?;
+        .ok_or_else(|| anyhow::anyhow!("usage: retrieve-source REQUEST.json POLICIES.json"))?;
     let request: RetrieveRequest = serde_json::from_slice(&std::fs::read(input)?)?;
-    let retrieved = Retriever::retrieve(&request)?;
+    let policies = std::env::args_os()
+        .nth(2)
+        .ok_or_else(|| anyhow::anyhow!("missing POLICIES.json"))?;
+    let definitions: Vec<saucepan::models::policy::PolicyRecord> =
+        serde_json::from_slice(&std::fs::read(policies)?)?;
+    let catalog = PolicyCatalog::new(definitions)?;
+    let retrieved = Retriever::retrieve(&request, &catalog)?;
     let metadata = std::fs::metadata(retrieved.source_path())?;
     if matches!(retrieved.descriptor().ownership, Ownership::Caller) {
         println!("{}", serde_json::to_string_pretty(retrieved.descriptor())?);

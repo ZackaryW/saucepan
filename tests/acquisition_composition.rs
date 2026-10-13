@@ -1,9 +1,9 @@
+mod policy_fixture;
 use saucepan::{
     core::{Store, retrieval::Retriever, store::Acquirer},
     models::{
         index::Record,
-        policy::PayloadVerification,
-        retrieval::{CachePolicy, Ownership, RetrieveRequest, SourceInput},
+        retrieval::{Ownership, RetrieveRequest, SourceInput},
         source::Source,
         store::{AcquisitionRequest, Destination, Format, Selector},
     },
@@ -12,12 +12,14 @@ use std::{fs, io::Write, path::Path, process::Command};
 
 fn request(source: Source, selector: Selector) -> RetrieveRequest {
     RetrieveRequest {
-        provenance: Vec::new(),
         source: SourceInput::Inline { source },
         selector,
         asset: Default::default(),
-        cache: CachePolicy::Temporary {},
-        verification: PayloadVerification::None,
+        policy_refs: policy_fixture::fresh_refs(vec![
+            serde_json::json!({"type":"cache_policy","mode":"temporary"}),
+            serde_json::json!({"type":"verification_policy","policy_target":"payload","mode":"none"}),
+        ]),
+        destination: None,
         expected_sha256: None,
     }
 }
@@ -53,7 +55,7 @@ fn one_repository_supplies_two_independent_offline_subpaths() {
     }
     git(&origin, &["add", "."]);
     git(&origin, &["commit", "-m", "fixture"]);
-    let source = Retriever::retrieve(&request(
+    let source = retrieve(&request(
         Source::Git {
             origin: origin.to_str().unwrap().into(),
         },
@@ -109,7 +111,8 @@ fn cached_archive_delivers_caller_and_managed_copies_independent_of_source_purge
     zip.finish().unwrap();
     let store = Store::create(&root.path().join("root")).unwrap();
     let mut req = request(Source::Local { path: archive }, Selector::Local);
-    req.cache = CachePolicy::default();
+    req.policy_refs = Default::default();
+    req.destination = None;
     let source = store.retrieve(&req).unwrap();
     let Ownership::Managed { uuid } = source.descriptor().ownership else {
         panic!()
@@ -156,8 +159,7 @@ fn fresh_handle_cannot_create_managed_effects_or_overwrite_its_input() {
     let input = root.path().join("input");
     fs::create_dir(&input).unwrap();
     fs::write(input.join("file"), b"original").unwrap();
-    let source =
-        Retriever::retrieve(&request(Source::Local { path: input }, Selector::Local)).unwrap();
+    let source = retrieve(&request(Source::Local { path: input }, Selector::Local)).unwrap();
     assert!(Acquirer::acquire(&source, &AcquisitionRequest::default()).is_err());
     assert!(
         Acquirer::acquire(
@@ -172,4 +174,10 @@ fn fresh_handle_cannot_create_managed_effects_or_overwrite_its_input() {
         .is_err()
     );
     assert!(!source.source_path().join("nested").exists());
+}
+
+fn retrieve(
+    input: &RetrieveRequest,
+) -> anyhow::Result<saucepan::core::retrieval::RetrievedResource> {
+    Retriever::retrieve(input, &policy_fixture::fresh_catalog())
 }

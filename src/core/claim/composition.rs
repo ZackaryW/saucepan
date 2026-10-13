@@ -9,8 +9,8 @@ use crate::{
     error::{Error, ErrorCode},
     models::{
         claim::{Scope, policy::Action},
-        retrieval::{CachePolicy, RetrieveRequest, SourceInput},
-        store::{AcquisitionRequest, acquisition::AcquisitionOwner},
+        retrieval::{CachePolicy, RetrievalPlan, SourceInput},
+        store::{AcquisitionPlan, acquisition::AcquisitionOwner},
     },
 };
 use anyhow::{Result, ensure};
@@ -28,7 +28,7 @@ impl Authorization {
         &self,
         store: &Store,
         source: Uuid,
-        acquisition: Option<&AcquisitionRequest>,
+        acquisition: Option<&AcquisitionPlan>,
     ) -> Result<()> {
         self.policy_fence.check(store)?;
         let application = store.application(self.owner.app)?;
@@ -74,7 +74,7 @@ impl Store {
         app: Uuid,
         scope: Option<&Scope>,
         source: Uuid,
-        acquisition: Option<&AcquisitionRequest>,
+        acquisition: Option<&AcquisitionPlan>,
     ) -> Result<Authorization> {
         let _lock = self.lock()?;
         let authorization = Authorization {
@@ -97,7 +97,7 @@ impl Store {
 
     pub(crate) fn retrieve_authorized(
         &self,
-        request: &RetrieveRequest,
+        request: &RetrievalPlan,
         options: &RetrieveOptions,
         authorization: Option<Authorization>,
     ) -> Result<RetrievedResource> {
@@ -166,9 +166,9 @@ impl Store {
     }
 }
 impl AppSession {
-    pub fn retrieve(
+    pub(crate) fn retrieve_planned(
         &self,
-        request: &RetrieveRequest,
+        request: &RetrievalPlan,
         scope: Option<&Scope>,
         options: &RetrieveOptions,
     ) -> Result<RetrievedResource> {
@@ -185,10 +185,10 @@ impl AppSession {
         store.retrieve_authorized(request, options, Some(authorization))
     }
 
-    pub fn acquire_composed(
+    pub(crate) fn compose_planned(
         &self,
-        retrieval: &RetrieveRequest,
-        acquisition: &AcquisitionRequest,
+        retrieval: &RetrievalPlan,
+        acquisition: &AcquisitionPlan,
         scope: Option<&Scope>,
         options: &RetrieveOptions,
     ) -> Result<AcquiredResource> {
@@ -233,7 +233,7 @@ impl AppSession {
 impl Store {
     pub(crate) fn open_caller_authorized(
         &self,
-        request: &RetrieveRequest,
+        request: &RetrievalPlan,
         descriptor: &crate::models::retrieval::RetrievedDescriptor,
         authorization: Option<Authorization>,
     ) -> Result<RetrievedResource> {
@@ -274,7 +274,7 @@ impl Store {
         inline.source = SourceInput::Inline { source };
         let mut supplied = descriptor.clone();
         supplied.source = inline.source.clone();
-        let mut result = Retriever::open_caller(&inline, &supplied)?;
+        let mut result = Retriever::open_caller_planned(&inline, &supplied)?;
         if let Some(authorization) = &authorization {
             authorization.check(self, source_uuid, None)?;
         }

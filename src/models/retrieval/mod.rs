@@ -49,7 +49,7 @@ impl Default for CachePolicy {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct RetrieveRequest {
+pub struct RetrievalPlan {
     #[serde(default)]
     pub provenance: Vec<crate::models::policy::effective::PolicyEvidence>,
     pub source: SourceInput,
@@ -120,7 +120,7 @@ pub enum RetrievalState {
 pub struct RetrievalRecord {
     pub uuid: Uuid,
     pub source_uuid: Uuid,
-    pub request: RetrieveRequest,
+    pub request: RetrievalPlan,
     pub kind: MaterialKind,
     pub resolved: Resolved,
     pub dependencies: BTreeMap<String, String>,
@@ -129,3 +129,6 @@ pub struct RetrievalRecord {
     pub checked_at: u64,
     pub state: RetrievalState,
 }
+
+/// Canonical reference-only retrieval input.
+pub use crate::models::policy::requests::Retrieval as RetrieveRequest;

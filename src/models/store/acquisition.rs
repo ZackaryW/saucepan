@@ -1,5 +1,5 @@
 //! Mutable selection/check state, independent of immutable output metadata.
-use super::{AcquisitionRequest, OutputPlan};
+use super::{AcquisitionPlan, OutputPlan};
 use crate::models::{retrieval::VerificationEvidence, source::Resolved};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -12,7 +12,7 @@ pub struct AcquisitionState {
     pub revision: u64,
     pub selected: Uuid,
     pub request: OutputPlan,
-    pub acquisition: AcquisitionRequest,
+    pub acquisition: AcquisitionPlan,
     pub last_success: Option<u64>,
     pub checked_source: Option<Resolved>,
     pub verification: VerificationEvidence,

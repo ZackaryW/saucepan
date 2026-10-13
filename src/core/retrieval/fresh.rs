@@ -7,7 +7,7 @@ use crate::{
     error::{Error, ErrorCode},
     models::{
         retrieval::{
-            CachePolicy, MaterialKind, Ownership, RetrieveRequest, RetrievedDescriptor, SourceInput,
+            CachePolicy, MaterialKind, Ownership, RetrievalPlan, RetrievedDescriptor, SourceInput,
         },
         source::Source,
     },
@@ -30,19 +30,15 @@ pub struct RetrieveOptions {
     pub test_github_api: Option<String>,
 }
 impl Retriever {
-    pub fn retrieve(request: &RetrieveRequest) -> Result<RetrievedResource> {
-        Self::retrieve_with(request, &RetrieveOptions::default())
-    }
-
-    pub fn retrieve_with(
-        request: &RetrieveRequest,
+    pub(crate) fn retrieve_planned_with(
+        request: &RetrievalPlan,
         options: &RetrieveOptions,
     ) -> Result<RetrievedResource> {
         Self::retrieve_exact(request, options, None)
     }
 
     pub(crate) fn retrieve_exact(
-        request: &RetrieveRequest,
+        request: &RetrievalPlan,
         options: &RetrieveOptions,
         exact: Option<&crate::models::source::Resolved>,
     ) -> Result<RetrievedResource> {
@@ -51,7 +47,7 @@ impl Retriever {
 
     /// Hold a caller's final publication fence only after network/material work.
     pub(crate) fn retrieve_finishing<G>(
-        request: &RetrieveRequest,
+        request: &RetrievalPlan,
         options: &RetrieveOptions,
         exact: Option<&crate::models::source::Resolved>,
         finish: impl FnOnce() -> Result<G>,
@@ -139,7 +135,7 @@ impl Retriever {
             (material.path, Ownership::Temporary {}, Some(Rc::new(work)))
         };
         Ok(RetrievedResource {
-            request: RetrieveRequest {
+            request: RetrievalPlan {
                 source: SourceInput::Inline {
                     source: normalized_source.clone(),
                 },

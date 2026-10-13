@@ -11,8 +11,7 @@ use crate::{
         index::Record,
         policy::Freshness,
         retrieval::{
-            CachePolicy, MaterialKind, RetrievalRecord, RetrievalState, RetrieveRequest,
-            SourceInput,
+            CachePolicy, MaterialKind, RetrievalPlan, RetrievalRecord, RetrievalState, SourceInput,
         },
         source::{Discovery, Resolved, Source, SourceRecord},
     },
@@ -26,30 +25,11 @@ use std::{fs, time::Duration};
 use uuid::Uuid;
 
 impl Store {
-    pub fn retrieve(&self, request: &RetrieveRequest) -> Result<RetrievedResource> {
-        self.retrieve_with(request, &RetrieveOptions::default())
-    }
-
-    pub fn retrieve_with(
-        &self,
-        request: &RetrieveRequest,
-        options: &RetrieveOptions,
-    ) -> Result<RetrievedResource> {
-        ensure!(
-            self.session.is_none(),
-            Error::new(
-                ErrorCode::AccessDenied,
-                "use the scoped application retrieval interface"
-            )
-        );
-        self.retrieve_prevalidated(request, options)
-    }
-
     /// Internal composition after the owning operation authorizes app/source/scope.
     /// App identities are retained; this must never become an administrative fallback.
     pub(crate) fn retrieve_prevalidated(
         &self,
-        request: &RetrieveRequest,
+        request: &RetrievalPlan,
         options: &RetrieveOptions,
     ) -> Result<RetrievedResource> {
         self.check_policy_fence()?;
@@ -167,7 +147,7 @@ impl Store {
     fn matching_retrieval(
         &self,
         source: &SourceRecord,
-        request: &RetrieveRequest,
+        request: &RetrievalPlan,
     ) -> Result<Option<RetrievalRecord>> {
         Ok(self
             .records()?
@@ -189,7 +169,7 @@ impl Store {
     fn fetch_retrieval(
         &self,
         source: &mut SourceRecord,
-        request: &RetrieveRequest,
+        request: &RetrievalPlan,
         options: &AcquireOptions,
         policy: Freshness,
         previous: Option<&RetrievalRecord>,
@@ -303,7 +283,7 @@ impl Store {
                 Uuid::new_v4()
             },
             source_uuid: source.uuid,
-            request: RetrieveRequest {
+            request: RetrievalPlan {
                 source: SourceInput::Registered {
                     source_uuid: source.uuid,
                 },
@@ -350,7 +330,7 @@ fn usable_age(policy: Freshness, checked: u64, now: u64) -> bool {
     }
 }
 
-fn selected_provenance(resolved: &Resolved, request: &RetrieveRequest) -> Result<Resolved> {
+fn selected_provenance(resolved: &Resolved, request: &RetrievalPlan) -> Result<Resolved> {
     match resolved {
         Resolved::Release { id, tag, assets } => {
             let selection = crate::models::store::Selection {

@@ -1,6 +1,6 @@
 //! Source-material ownership, separate from acquired-output ownership.
 use crate::{
-    models::retrieval::{RetrieveRequest, RetrievedDescriptor},
+    models::retrieval::{RetrievalPlan, RetrievedDescriptor},
     utils::lock::LockGuard,
 };
 use std::{path::Path, rc::Rc};
@@ -19,7 +19,7 @@ pub use fresh::{RetrieveOptions, Retriever};
 /// this handle; deserializing a descriptor cannot establish coordinated access.
 /// The handle is intentionally neither serializable nor cloneable.
 pub struct RetrievedResource {
-    pub(crate) request: RetrieveRequest,
+    pub(crate) request: RetrievalPlan,
     pub(crate) source: crate::models::source::Source,
     pub(crate) store: Option<crate::core::Store>,
     pub(crate) authorization: Option<crate::core::claim::composition::Authorization>,
@@ -28,7 +28,7 @@ pub struct RetrievedResource {
     pub(crate) _coordination: Option<LockGuard>,
 }
 impl RetrievedResource {
-    pub fn request(&self) -> &RetrieveRequest {
+    pub fn request(&self) -> &RetrievalPlan {
         &self.request
     }
 

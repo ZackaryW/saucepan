@@ -50,17 +50,13 @@ pub struct Claimed {
     pub acquired: super::store::Acquired,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct CompiledEnsure {
-    #[serde(default)]
-    pub adopted: Option<Box<adopted::AdoptedPolicies>>,
+#[derive(Debug, Clone)]
+pub(crate) struct ClaimPlan {
+    pub adopted: Box<adopted::AdoptedPolicies>,
     pub scope: Scope,
     pub source_uuid: Uuid,
     pub selector: super::store::Selector,
-    #[serde(default)]
     pub selection: super::store::Selection,
-    #[serde(default)]
     pub context: ClaimContext,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]

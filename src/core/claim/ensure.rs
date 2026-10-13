@@ -3,7 +3,7 @@ use crate::{
     core::{Store, index::Journal, source::AcquireOptions, store::ResourceLease},
     error::{Error, ErrorCode},
     models::{
-        claim::{Claim, Claimed, CompiledEnsure as EnsureRequest, CoveredView, policy::Action},
+        claim::{Claim, ClaimPlan as EnsureRequest, Claimed, CoveredView, policy::Action},
         index::Record,
         policy::Identical,
         store::{Acquired, OutputPlan},
@@ -27,7 +27,7 @@ struct Selected {
 impl Store {
     /// Ensure one ownership record per compatible scoped intent. Preparation is
     /// outside metadata coordination; final publication rechecks current state.
-    pub(crate) fn ensure_compiled(
+    pub(crate) fn ensure_planned(
         &self,
         app: Uuid,
         input: &EnsureRequest,
@@ -47,7 +47,7 @@ impl Store {
             let effective = self.claim_execution_policy(
                 input.source_uuid,
                 &registry.registry,
-                input.adopted.as_deref(),
+                Some(input.adopted.as_ref()),
             )?;
             if !matches!(
                 effective.update_policy,
@@ -70,10 +70,10 @@ impl Store {
             let effective = self.claim_execution_policy(
                 input.source_uuid,
                 &registry.registry,
-                input.adopted.as_deref(),
+                Some(input.adopted.as_ref()),
             )?;
             let request = OutputPlan {
-                adopted: input.adopted.clone(),
+                adopted: Some(input.adopted.clone()),
                 source_uuid: input.source_uuid,
                 selector: input.selector.clone(),
                 selection: input.selection.clone(),
@@ -155,7 +155,7 @@ impl Store {
             self.claim_execution_policy(
                 input.source_uuid,
                 &registry.registry,
-                input.adopted.as_deref(),
+                Some(input.adopted.as_ref()),
             )? == effective,
             Error::new(
                 ErrorCode::RevisionConflict,
@@ -164,7 +164,7 @@ impl Store {
         );
         // Recheck the original requested projection, not its owning broader request.
         let projected_request = OutputPlan {
-            adopted: input.adopted.clone(),
+            adopted: Some(input.adopted.clone()),
             source_uuid: input.source_uuid,
             selector: input.selector.clone(),
             selection: input.selection.clone(),
@@ -207,7 +207,7 @@ impl Store {
             .as_ref()
             .map(|existing| existing.claim.policy_refs.clone())
             .map(Ok)
-            .unwrap_or_else(|| self.adopted_refs(input.adopted.as_deref()))?;
+            .unwrap_or_else(|| self.adopted_refs(Some(input.adopted.as_ref())))?;
         let (id, relative) = if let Some(existing) = existing {
             (existing.claim.uuid, existing.relative)
         } else {

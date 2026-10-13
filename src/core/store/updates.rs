@@ -10,8 +10,8 @@ use crate::{
     models::{
         index::Record,
         policy::{Freshness, Identical, UpdatePolicy},
-        retrieval::{CachePolicy, Ownership, RetrieveRequest, SourceInput},
-        store::{AcquiredDescriptor, AcquisitionRequest, AcquisitionState, Destination},
+        retrieval::{CachePolicy, Ownership, RetrievalPlan, SourceInput},
+        store::{AcquiredDescriptor, AcquisitionPlan, AcquisitionState, Destination},
     },
     utils::lock::{LockGuard, LockMode},
 };
@@ -22,34 +22,10 @@ use uuid::Uuid;
 impl Store {
     /// Compose retrieval with acquisition. This owns the retrieval lifetime and
     /// can refresh without attempting to upgrade a caller-held source lock.
-    pub fn acquire_composed(
-        &self,
-        retrieval: &RetrieveRequest,
-        acquisition: &AcquisitionRequest,
-    ) -> Result<AcquiredResource> {
-        self.acquire_composed_with(retrieval, acquisition, &RetrieveOptions::default())
-    }
-
-    pub fn acquire_composed_with(
-        &self,
-        retrieval: &RetrieveRequest,
-        acquisition: &AcquisitionRequest,
-        options: &RetrieveOptions,
-    ) -> Result<AcquiredResource> {
-        ensure!(
-            self.session.is_none(),
-            Error::new(
-                ErrorCode::AccessDenied,
-                "use scoped application acquisition"
-            )
-        );
-        self.acquire_composed_authorized(retrieval, acquisition, options, None)
-    }
-
     pub(crate) fn acquire_composed_authorized(
         &self,
-        retrieval: &RetrieveRequest,
-        acquisition: &AcquisitionRequest,
+        retrieval: &RetrievalPlan,
+        acquisition: &AcquisitionPlan,
         options: &RetrieveOptions,
         mut authorization: Option<crate::core::claim::composition::Authorization>,
     ) -> Result<AcquiredResource> {
@@ -196,7 +172,7 @@ impl Store {
     pub(crate) fn publish_acquisition(
         &self,
         retrieved: &RetrievedResource,
-        request: &AcquisitionRequest,
+        request: &AcquisitionPlan,
         key: String,
         previous: Option<&AcquisitionState>,
         claim: Option<crate::core::claim::operations::ClaimTarget>,
@@ -326,8 +302,8 @@ impl Store {
 }
 
 pub(crate) fn scoped_intent_key(
-    retrieval: &RetrieveRequest,
-    acquisition: &AcquisitionRequest,
+    retrieval: &RetrievalPlan,
+    acquisition: &AcquisitionPlan,
     authorization: Option<&crate::core::claim::composition::Authorization>,
 ) -> Result<String> {
     let base = intent_key(retrieval, acquisition)?;
@@ -338,13 +314,14 @@ pub(crate) fn scoped_intent_key(
 }
 
 pub(super) fn intent_key(
-    retrieval: &RetrieveRequest,
-    acquisition: &AcquisitionRequest,
+    retrieval: &RetrievalPlan,
+    acquisition: &AcquisitionPlan,
 ) -> Result<String> {
     let mut acquisition = acquisition.clone();
     // Identity compares effective choices, not equivalent definition UUIDs.
     acquisition.provenance.clear();
     acquisition.adopted = None;
+    acquisition.evaluated = Default::default();
     acquisition.revision_policy =
         crate::core::policy::composition::effective_revision(&acquisition)?;
     json_digest(&(

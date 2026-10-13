@@ -124,8 +124,8 @@ to the caller. Git delivery is a directory containing `repo` and dependencies;
 `source_path()` identifies the bare `repo` directory inside it. Downloads and local
 files use the exact requested destination filename. Parent directories must exist.
 
-The native example `cargo run --example retrieve-source -- REQUEST.json` inspects
-source metadata while retaining the handle. It emits a descriptor only for
+The native example `cargo run --example retrieve-source -- REQUEST.json POLICIES.json` inspects
+source metadata while retaining the handle. The second file is the portable array of policy definitions. It emits a descriptor only for
 caller-owned results; temporary paths are not advertised after their owner exits.
 
 Managed native retrieval uses `store.retrieve_referenced(&request, &catalog, &options)` with cached mode.

@@ -13,8 +13,8 @@ use crate::{
             record::CacheMode,
             requests::{Acquisition, Retrieval},
         },
-        retrieval::{AssetSelection, CachePolicy, RetrieveRequest},
-        store::{AcquisitionRequest, Destination},
+        retrieval::{AssetSelection, CachePolicy, RetrievalPlan},
+        store::{AcquisitionPlan, Destination},
     },
 };
 use anyhow::{Result, ensure};
@@ -25,11 +25,11 @@ pub struct Attachments<'a> {
 }
 
 pub struct PreparedRetrieval {
-    pub(crate) request: RetrieveRequest,
+    pub(crate) request: RetrievalPlan,
     pub policies: EvaluatedPolicies,
 }
 pub struct PreparedAcquisition {
-    pub(crate) request: AcquisitionRequest,
+    pub(crate) request: AcquisitionPlan,
     pub policies: EvaluatedPolicies,
 }
 
@@ -70,7 +70,7 @@ pub fn retrieval(
             "retrieval destination requires no_store policy"
         )
     );
-    let request = RetrieveRequest {
+    let request = RetrievalPlan {
         provenance: policies
             .evidence
             .values()
@@ -119,7 +119,8 @@ pub fn acquisition(
         },
     )?;
     let b = &policies.behavior;
-    let request = AcquisitionRequest {
+    let request = AcquisitionPlan {
+        evaluated: policies.clone(),
         adopted: None,
         provenance: policies.evidence.values().cloned().collect(),
         destination: input.destination.clone(),

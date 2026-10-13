@@ -5,7 +5,7 @@ use crate::{
     models::{
         retrieval::MaterialKind,
         source::{Resolved, Source},
-        store::{AcquisitionRequest, Format},
+        store::{AcquisitionPlan, Format},
     },
     utils::{
         archive::extract_zip,
@@ -20,7 +20,7 @@ use std::{fs, path::Path};
 
 pub(super) fn copy(
     retrieved: &RetrievedResource,
-    request: &AcquisitionRequest,
+    request: &AcquisitionPlan,
     staging: &Path,
 ) -> Result<()> {
     let source = retrieved.source_path();

@@ -1,12 +1,12 @@
-//! Preserve the current managed request/result contract through the new stages.
+//! Execute managed output plans through source retrieval and offline copying.
 use super::{AcquireOptions, Prepared};
 use crate::{
     core::{Store, retrieval::RetrieveOptions, store::composition},
     models::{
         policy::{Freshness, PayloadVerification},
-        retrieval::{AssetSelection, CachePolicy, RetrieveRequest, SourceInput},
+        retrieval::{AssetSelection, CachePolicy, RetrievalPlan, SourceInput},
         source::Source,
-        store::{AcquisitionRequest, Format, OutputPlan},
+        store::{AcquisitionPlan, Format, OutputPlan},
     },
 };
 use anyhow::{Result, ensure};
@@ -21,7 +21,7 @@ impl Store {
         options: &AcquireOptions,
     ) -> Result<Prepared> {
         let source = self.source(request.source_uuid)?;
-        let mut retrieval = RetrieveRequest {
+        let mut retrieval = RetrievalPlan {
             provenance: Vec::new(),
             source: SourceInput::Inline {
                 source: source.source,
@@ -50,7 +50,7 @@ impl Store {
         )?;
         composition::prepare(
             &retrieved,
-            &AcquisitionRequest {
+            &AcquisitionPlan {
                 format: request.selection.format,
                 filename: request.selection.filename.clone(),
                 folder: request.selection.folder.clone(),
@@ -81,7 +81,7 @@ impl Store {
         &self,
         request: &OutputPlan,
         options: &AcquireOptions,
-    ) -> Result<(RetrieveRequest, AcquisitionRequest)> {
+    ) -> Result<(RetrievalPlan, AcquisitionPlan)> {
         let source = self.source(request.source_uuid)?;
         match &source.source {
             Source::Local { .. } | Source::Git { .. } | Source::GithubRepo { .. } => ensure!(
@@ -93,7 +93,7 @@ impl Store {
                 "downloads require raw or zip format"
             ),
         }
-        let mut retrieval = RetrieveRequest {
+        let mut retrieval = RetrievalPlan {
             provenance: Vec::new(),
             source: SourceInput::Registered {
                 source_uuid: request.source_uuid,
@@ -111,7 +111,7 @@ impl Store {
             verification: PayloadVerification::IfAvailable,
             expected_sha256: request.selection.sha256.clone(),
         };
-        let mut acquired = AcquisitionRequest {
+        let mut acquired = AcquisitionPlan {
             adopted: request.adopted.clone(),
             format: request.selection.format,
             filename: if matches!(source.source, Source::Local { .. }) {

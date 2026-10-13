@@ -1,9 +1,10 @@
+mod policy_fixture;
 use saucepan::{
     core::{Store, retrieval::RetrieveOptions},
     models::{
         index::Record,
-        policy::{Freshness, Identical, RevisionPolicy, UpdatePolicy},
-        retrieval::{CachePolicy, Ownership, RetrieveRequest, SourceInput},
+        policy::{Freshness, Identical, UpdatePolicy},
+        retrieval::{Ownership, RetrieveRequest, SourceInput},
         source::{Resolved, Source},
         store::{AcquisitionRequest, AcquisitionState, Selector},
     },
@@ -68,7 +69,6 @@ fn setup() -> (
         })
         .unwrap();
     let retrieval = RetrieveRequest {
-        provenance: Vec::new(),
         source: SourceInput::Registered {
             source_uuid: source.uuid,
         },
@@ -76,14 +76,20 @@ fn setup() -> (
             reference: "main".into(),
         },
         asset: Default::default(),
-        cache: CachePolicy::default(),
-        verification: Default::default(),
+        policy_refs: Default::default(),
+        destination: None,
         expected_sha256: None,
     };
     let acquisition = AcquisitionRequest {
         folder: Some("selected".into()),
-        update_policy: UpdatePolicy::MaxAge { seconds: 60 },
-        revision_policy: Some(RevisionPolicy::None {}),
+        policy_refs: policy_fixture::definitions(
+            &store,
+            vec![
+                serde_json::json!({"type":"update_policy","mode":"max_age","seconds":60}),
+                serde_json::json!({"type":"revision_policy","history":"none"}),
+            ],
+        )
+        .unwrap(),
         ..Default::default()
     };
     (root, store, retrieval, acquisition)
@@ -226,10 +232,12 @@ fn failed_update_and_stale_fallback_preserve_selection_and_last_success() {
             .is_err()
     );
     assert_eq!(serde_json::to_value(states(&store)).unwrap(), before);
-    retrieval.cache = CachePolicy::Cached {
-        freshness: None,
-        allow_stale: true,
-    };
+    policy_fixture::replace(
+        &store,
+        &mut retrieval.policy_refs,
+        serde_json::json!({"type":"stale_policy","allow_stale":true}),
+    )
+    .unwrap();
     let stale = store
         .acquire_composed_with(&retrieval, &acquisition, &at(160))
         .unwrap();
@@ -241,18 +249,21 @@ fn failed_update_and_stale_fallback_preserve_selection_and_last_success() {
 #[test]
 fn due_cache_only_is_rejected_and_new_entry_keeps_its_independent_meaning() {
     let (_root, store, mut retrieval, mut acquisition) = setup();
-    retrieval.cache = CachePolicy::Cached {
-        freshness: Some(Freshness::CacheOnly {}),
-        allow_stale: false,
-    };
+    policy_fixture::refresh(&store, &mut retrieval, Freshness::CacheOnly {}, false);
     assert!(
         store
             .acquire_composed_with(&retrieval, &acquisition, &at(100))
             .is_err()
     );
     assert!(states(&store).is_empty());
-    retrieval.cache = CachePolicy::default();
-    acquisition.identical = Identical::NewEntry;
+    retrieval.policy_refs = Default::default();
+    retrieval.destination = None;
+    policy_fixture::replace(
+        &store,
+        &mut acquisition.policy_refs,
+        serde_json::json!({"type":"identical_pull_policy","strategy":Identical::NewEntry}),
+    )
+    .unwrap();
     let first = store
         .acquire_composed_with(&retrieval, &acquisition, &at(100))
         .unwrap();
@@ -276,7 +287,12 @@ fn pinned_updates_stay_pinned_and_concurrent_requests_share_check_state() {
     retrieval.selector = Selector::Commit {
         commit: commit.clone(),
     };
-    acquisition.update_policy = UpdatePolicy::MaxAge { seconds: 100 };
+    policy_fixture::replace(&store, &mut acquisition.policy_refs, {
+        let mut value = serde_json::to_value(UpdatePolicy::MaxAge { seconds: 100 }).unwrap();
+        value["type"] = serde_json::json!("update_policy");
+        value
+    })
+    .unwrap();
     let threads: Vec<_> = (0..3)
         .map(|_| {
             let store = store.clone();
@@ -315,7 +331,12 @@ fn changed_policy_has_independent_proof_and_failed_materialization_does_not_adva
     let first = store
         .acquire_composed_with(&retrieval, &acquisition, &at(100))
         .unwrap();
-    acquisition.update_policy = UpdatePolicy::Always {};
+    policy_fixture::replace(&store, &mut acquisition.policy_refs, {
+        let mut value = serde_json::to_value(UpdatePolicy::Always {}).unwrap();
+        value["type"] = serde_json::json!("update_policy");
+        value
+    })
+    .unwrap();
     let second = store
         .acquire_composed_with(&retrieval, &acquisition, &at(101))
         .unwrap();

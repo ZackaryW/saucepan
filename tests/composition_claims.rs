@@ -12,7 +12,7 @@ use saucepan::{
         claim::{EnsureRequest, Scope, policy::AccessPolicy},
         index::Record,
         policy::UpdatePolicy,
-        retrieval::{CachePolicy, RetrieveRequest, SourceInput},
+        retrieval::{RetrieveRequest, SourceInput},
         source::Source,
         store::{AcquisitionRequest, Destination, Selector},
     },
@@ -79,18 +79,21 @@ fn unclaimed_operations_obey_scope_source_and_action_and_keep_independent_check_
         .uuid;
     let session = store.session(app, None).unwrap();
     let mut retrieval = RetrieveRequest {
-        provenance: Vec::new(),
         source: SourceInput::Registered {
             source_uuid: source.uuid,
         },
         selector: Selector::Local,
         asset: Default::default(),
-        cache: CachePolicy::default(),
-        verification: Default::default(),
+        policy_refs: Default::default(),
+        destination: None,
         expected_sha256: None,
     };
     let acquisition = AcquisitionRequest {
-        update_policy: UpdatePolicy::MaxAge { seconds: 60 },
+        policy_refs: policy_fixture::definitions(
+            &store,
+            vec![serde_json::json!({"type":"update_policy","mode":"max_age","seconds":60})],
+        )
+        .unwrap(),
         ..Default::default()
     };
     assert!(session.retrieve(&retrieval, None, &at(100)).is_err());
@@ -106,7 +109,12 @@ fn unclaimed_operations_obey_scope_source_and_action_and_keep_independent_check_
     denied_source.source = SourceInput::Inline {
         source: Source::Local { path: file.clone() },
     };
-    denied_source.cache = CachePolicy::Temporary {};
+    policy_fixture::replace(
+        &store,
+        &mut denied_source.policy_refs,
+        serde_json::json!({"type":"cache_policy","mode":"temporary"}),
+    )
+    .unwrap();
     assert!(
         session
             .retrieve(&denied_source, Some(&scope("a")), &at(100))
@@ -140,7 +148,12 @@ fn unclaimed_operations_obey_scope_source_and_action_and_keep_independent_check_
             .count(),
         2
     );
-    retrieval.cache = CachePolicy::Temporary {};
+    policy_fixture::replace(
+        &store,
+        &mut retrieval.policy_refs,
+        serde_json::json!({"type":"cache_policy","mode":"temporary"}),
+    )
+    .unwrap();
     let before = snapshot(store.root());
     let reader = RegisteredRetriever::open(store.root())
         .unwrap()
@@ -405,16 +418,17 @@ fn revoked_access_during_fresh_fetch_cannot_publish_caller_destination() {
     *edit.lock().unwrap() = Some((store.clone(), app));
     let destination = temp.path().join("download");
     let request = RetrieveRequest {
-        provenance: Vec::new(),
         source: SourceInput::Registered {
             source_uuid: source.uuid,
         },
         selector: Selector::Url,
         asset: Default::default(),
-        cache: CachePolicy::NoStore {
-            destination: destination.clone(),
-        },
-        verification: Default::default(),
+        destination: Some(destination.clone()),
+        policy_refs: policy_fixture::definitions(
+            &store,
+            vec![serde_json::json!({"type":"cache_policy","mode":"no_store"})],
+        )
+        .unwrap(),
         expected_sha256: None,
     };
     let reader = RegisteredRetriever::open(store.root())
@@ -499,14 +513,13 @@ fn rejected_compositions_do_not_register_sources_or_write_inside_the_store() {
     fs::write(&file, b"payload").unwrap();
     let store = native_root::create(&temp.path().join("root")).unwrap();
     let mut request = RetrieveRequest {
-        provenance: Vec::new(),
         source: SourceInput::Inline {
             source: Source::Local { path: file.clone() },
         },
         selector: Selector::Local,
         asset: Default::default(),
-        cache: CachePolicy::default(),
-        verification: Default::default(),
+        policy_refs: Default::default(),
+        destination: None,
         expected_sha256: None,
     };
     let before = snapshot(store.root());
@@ -518,20 +531,31 @@ fn rejected_compositions_do_not_register_sources_or_write_inside_the_store() {
     };
     assert!(store.acquire_composed(&request, &acquisition).is_err());
     assert_eq!(snapshot(store.root()), before);
-    request.cache = CachePolicy::Cached {
-        freshness: Some(saucepan::models::policy::Freshness::CacheOnly {}),
-        allow_stale: false,
-    };
+    policy_fixture::refresh(
+        &store,
+        &mut request,
+        saucepan::models::policy::Freshness::CacheOnly {},
+        false,
+    );
     for update_policy in [
         UpdatePolicy::Always {},
         UpdatePolicy::MaxAge { seconds: 60 },
     ] {
+        let policy_refs = policy_fixture::requested(
+            &store,
+            policy_fixture::Overrides {
+                update_policy: Some(update_policy),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let before = snapshot(store.root());
         assert!(
             store
                 .acquire_composed(
                     &request,
                     &AcquisitionRequest {
-                        update_policy,
+                        policy_refs: policy_refs.clone(),
                         ..Default::default()
                     }
                 )
@@ -543,17 +567,23 @@ fn rejected_compositions_do_not_register_sources_or_write_inside_the_store() {
     request.source = SourceInput::Registered {
         source_uuid: source.uuid,
     };
-    request.cache = CachePolicy::NoStore {
-        destination: temp.path().join("caller"),
-    };
+    request.destination = Some(temp.path().join("caller"));
+    request.policy_refs = policy_fixture::definitions(
+        &store,
+        vec![serde_json::json!({"type":"cache_policy","mode":"no_store"})],
+    )
+    .unwrap();
     let reader = RegisteredRetriever::open(store.root()).unwrap();
     let material = reader.retrieve(&request, &at(100)).unwrap();
     let mut descriptor = material.descriptor().clone();
     let disguised = store.root().join("disguised");
     fs::write(&disguised, b"payload").unwrap();
-    request.cache = CachePolicy::NoStore {
-        destination: disguised.clone(),
-    };
+    request.destination = Some(disguised.clone());
+    request.policy_refs = policy_fixture::definitions(
+        &store,
+        vec![serde_json::json!({"type":"cache_policy","mode":"no_store"})],
+    )
+    .unwrap();
     descriptor.path = disguised;
     let before = snapshot(store.root());
     assert!(reader.open_caller(&request, &descriptor).is_err());

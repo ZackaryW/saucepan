@@ -44,7 +44,7 @@ impl crate::core::Store {
         &self,
         source: uuid::Uuid,
         registry: &crate::models::claim::Registry,
-        acquisition: &crate::models::store::AcquisitionRequest,
+        acquisition: &crate::models::store::AcquisitionPlan,
     ) -> Result<crate::models::claim::policy::Effective> {
         if let Some(adopted) = acquisition.adopted.as_deref() {
             return self.claim_execution_policy(source, registry, Some(adopted));
@@ -52,13 +52,13 @@ impl crate::core::Store {
         let snapshot = self.metadata.snapshot()?;
         let catalog = super::persistence::load(&self.metadata, &snapshot)?;
         let source = self.source(source)?;
-        super::compiled::evaluate(
+        let plan = resolve::evaluate(
             &catalog,
             Inputs {
                 source: &source.policy_refs,
                 application: &registry.policy_refs,
                 request: &PolicyRefs::default(),
-                pinned: None,
+                pinned: Some(&acquisition.evaluated),
                 operation: Operation::Acquire,
                 managed_output: matches!(
                     acquisition.destination,
@@ -66,14 +66,8 @@ impl crate::core::Store {
                 ),
                 update_due: false,
             },
-            &crate::models::claim::policy::Overrides {
-                identical: Some(acquisition.identical),
-                revision: super::composition::effective_revision(acquisition)?,
-                useable_app: Some(acquisition.protection.is_some()),
-                update_policy: Some(acquisition.update_policy),
-                ..Default::default()
-            },
-        )
+        )?;
+        super::adopt::effective(&plan)
     }
 }
 
