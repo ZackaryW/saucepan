@@ -9,6 +9,12 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
+pub struct PathAccess {
+    pub policy_refs: PolicyRefs,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct AssetSelection {
     pub platform: Option<Platform>,
     pub filter_refs: PolicyRefs,

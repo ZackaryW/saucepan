@@ -1,5 +1,6 @@
 use crate::{models::store::Request, utils::path::relative_path};
 use anyhow::{Result, ensure};
+pub(crate) mod access;
 pub(crate) mod adopt;
 pub(crate) mod authority;
 pub mod catalog;

@@ -104,3 +104,16 @@ descriptor. Reopening validates caller ownership and the material again; seriali
 descriptors cannot manufacture managed ownership or a lease. Automatic acquisition
 updates use an owned source handle so it can be replaced safely. Borrowed native
 acquisition retains its original source guard through the copy operation.
+
+Path reads use `PathAccess { policy_refs }`. Native `resolve_referenced`,
+`lease_referenced` and `lease_view_referenced` resolve source/application defaults
+and explicit path policies through the same evaluator. Payload verification
+policies are rejected at this boundary. Verification still preserves the existing
+distinction between an observed address and a retained native lease.
+
+`path`, `run` and `run-claim` accept `--policy UUID` for a registered path policy.
+Omitting it uses attached defaults, then metadata verification. The convenience
+`--verification full` or `--verification metadata` is normalized to a transient
+leaf definition; combining it with `--policy` is rejected. `verify UUID` selects
+full verification through that same route. These read-time choices never adopt
+policies or rewrite retrieval/acquisition evidence.

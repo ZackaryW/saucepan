@@ -130,6 +130,33 @@ fn policy_lookup_uses_default_home_root_without_an_application() {
 }
 
 #[test]
+fn policy_guide_catalog_registers_and_exact_lookup_matches_the_documented_definition() {
+    let guide = include_str!("../docs/policy-resources.md");
+    let json = guide
+        .split("```json\n")
+        .nth(1)
+        .unwrap()
+        .split("```")
+        .next()
+        .unwrap();
+    let records: Vec<PolicyRecord> = serde_json::from_str(json).unwrap();
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("root");
+    value(run(&root, &["init"]));
+    let path = temp.path().join("policies.json");
+    fs::write(&path, json).unwrap();
+    value(run(&root, &["register-policies", path.to_str().unwrap()]));
+    let expected = records
+        .iter()
+        .find(|r| r.uuid.to_string() == "10000000-0000-4000-8000-000000000003")
+        .unwrap();
+    assert_eq!(
+        value(run(&root, &["policy", &expected.uuid.to_string()])),
+        serde_json::to_value(expected).unwrap()
+    );
+}
+
+#[test]
 fn application_payloads_reject_embedded_authority_and_persist_only_references() {
     use saucepan::core::claim::session::ApplicationRegistration;
     for field in ["access", "policies"] {

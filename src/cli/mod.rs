@@ -91,8 +91,8 @@ enum Commands {
         claim: uuid::Uuid,
         #[arg(long)]
         relative: Option<String>,
-        #[arg(long, value_enum, default_value = "metadata")]
-        verification: VerificationMode,
+        #[command(flatten)]
+        access: PathOptions,
         #[arg(last = true, required = true, num_args = 1..)]
         command: Vec<std::ffi::OsString>,
     },
@@ -215,8 +215,8 @@ enum Commands {
     },
     Path {
         uuid: uuid::Uuid,
-        #[arg(long, value_enum, default_value = "metadata")]
-        verification: VerificationMode,
+        #[command(flatten)]
+        access: PathOptions,
     },
     Verify {
         uuid: uuid::Uuid,
@@ -224,8 +224,8 @@ enum Commands {
     /// Run a consumer with SAUCEPAN_RESOURCE_DIR and a native lifetime lease.
     Run {
         uuid: uuid::Uuid,
-        #[arg(long, value_enum, default_value = "metadata")]
-        verification: VerificationMode,
+        #[command(flatten)]
+        access: PathOptions,
         #[arg(last = true, required = true, num_args = 1..)]
         command: Vec<std::ffi::OsString>,
     },
@@ -278,6 +278,16 @@ enum Commands {
         operation: Option<uuid::Uuid>,
     },
 }
+#[derive(clap::Args)]
+struct PathOptions {
+    /// Explicit verification override; omission uses attached path policy defaults.
+    #[arg(long, value_enum, conflicts_with = "policy_refs")]
+    verification: Option<VerificationMode>,
+    /// Registered path-verification policy UUID.
+    #[arg(long = "policy")]
+    policy_refs: Vec<uuid::Uuid>,
+}
+
 pub fn run() -> Result<()> {
     let args = match Args::try_parse() {
         Ok(args) => args,
@@ -396,7 +406,7 @@ fn run_store(args: Args) -> Result<()> {
                     app,
                     claim,
                     relative,
-                    verification,
+                    access,
                     command,
                 } => {
                     let view = crate::models::claim::CoveredView {
@@ -405,7 +415,11 @@ fn run_store(args: Args) -> Result<()> {
                         entry: uuid::Uuid::nil(),
                         relative,
                     };
-                    let lease = store.lease_view(&view, verification)?;
+                    let (input, catalog) = crate::core::policy::access::path_input(
+                        access.policy_refs,
+                        access.verification,
+                    )?;
+                    let lease = store.lease_view_referenced(&view, &input, &catalog)?;
                     let mut process = std::process::Command::new(&command[0]);
                     process
                         .args(&command[1..])
@@ -623,16 +637,30 @@ fn run_store(args: Args) -> Result<()> {
                     store.set_settings(app, serde_json::from_slice(&std::fs::read(file)?)?)?;
                     serde_json::json!({"updated":app})
                 }
-                Commands::Path { uuid, verification } => {
-                    serde_json::to_value(store.resolve(uuid, verification)?)?
+                Commands::Path { uuid, access } => {
+                    let (input, catalog) = crate::core::policy::access::path_input(
+                        access.policy_refs,
+                        access.verification,
+                    )?;
+                    serde_json::to_value(store.resolve_referenced(uuid, &input, &catalog)?)?
                 }
-                Commands::Verify { uuid } => serde_json::to_value(store.verify(uuid)?)?,
+                Commands::Verify { uuid } => {
+                    let (input, catalog) = crate::core::policy::access::path_input(
+                        vec![],
+                        Some(VerificationMode::Full),
+                    )?;
+                    serde_json::to_value(store.resolve_referenced(uuid, &input, &catalog)?)?
+                }
                 Commands::Run {
                     uuid,
-                    verification,
+                    access,
                     command,
                 } => {
-                    let lease = store.lease(uuid, verification)?;
+                    let (input, catalog) = crate::core::policy::access::path_input(
+                        access.policy_refs,
+                        access.verification,
+                    )?;
+                    let lease = store.lease_referenced(uuid, &input, &catalog)?;
                     let mut process = std::process::Command::new(&command[0]);
                     process
                         .args(&command[1..])
