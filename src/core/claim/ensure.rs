@@ -38,32 +38,18 @@ impl Store {
             let _lock = self.lock()?;
             self.check_policy_fence()?;
             let registry = self.registry(app)?;
-            if let Some(adopted) = &input.adopted {
-                let snapshot = self.metadata.snapshot()?;
-                let catalog = crate::core::policy::persistence::load(&self.metadata, &snapshot)?;
-                let source = self.source(input.source_uuid)?;
-                let plan = crate::core::policy::claims::surviving(
-                    &catalog,
-                    adopted,
-                    &source.policy_refs,
-                    &registry.registry.policy_refs,
-                )?;
-                ensure!(
-                    crate::core::policy::adopt::effective(&plan)?
-                        == registry.registry.policies.evaluate(&input.overrides)?,
-                    Error::new(
-                        ErrorCode::PolicyConflict,
-                        "claim execution differs from adopted policy"
-                    )
-                );
-            }
             self.authorize_resource(
                 &registry,
                 Action::Acquire,
                 Some(input.source_uuid),
                 Some(&input.scope),
             )?;
-            let effective = registry.registry.policies.evaluate(&input.overrides)?;
+            let effective = self.claim_execution_policy(
+                input.source_uuid,
+                &registry.registry,
+                input.adopted.as_deref(),
+                &input.overrides,
+            )?;
             if !matches!(
                 effective.update_policy,
                 crate::models::policy::UpdatePolicy::Manual {}
@@ -82,7 +68,12 @@ impl Store {
                 Some(input.source_uuid),
                 Some(&input.scope),
             )?;
-            let effective = registry.registry.policies.evaluate(&input.overrides)?;
+            let effective = self.claim_execution_policy(
+                input.source_uuid,
+                &registry.registry,
+                input.adopted.as_deref(),
+                &input.overrides,
+            )?;
             let request = Request {
                 adopted: input.adopted.clone(),
                 source_uuid: input.source_uuid,
@@ -163,7 +154,12 @@ impl Store {
             Some(&input.scope),
         )?;
         ensure!(
-            registry.registry.policies.evaluate(&input.overrides)? == effective,
+            self.claim_execution_policy(
+                input.source_uuid,
+                &registry.registry,
+                input.adopted.as_deref(),
+                &input.overrides
+            )? == effective,
             Error::new(
                 ErrorCode::RevisionConflict,
                 "registered policy changed during acquisition"

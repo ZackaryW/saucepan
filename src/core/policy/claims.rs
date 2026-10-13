@@ -13,6 +13,34 @@ use crate::{
 };
 use anyhow::{Result, ensure};
 
+impl crate::core::Store {
+    /// Adopted choices are resolved against current restrictions, never merged
+    /// with current defaults a second time by the execution engine.
+    pub(crate) fn claim_execution_policy(
+        &self,
+        source: uuid::Uuid,
+        registry: &crate::models::claim::Registry,
+        adopted: Option<&AdoptedPolicies>,
+        legacy: &crate::models::claim::policy::Overrides,
+    ) -> Result<crate::models::claim::policy::Effective> {
+        let Some(adopted) = adopted else {
+            // The remaining compiled native request entry points have not yet
+            // been cut over. Reference-only ensure never enters this branch.
+            return registry.policies.evaluate(legacy).map_err(Into::into);
+        };
+        let snapshot = self.metadata.snapshot()?;
+        let catalog = super::persistence::load(&self.metadata, &snapshot)?;
+        let source = self.source(source)?;
+        let plan = surviving(
+            &catalog,
+            adopted,
+            &source.policy_refs,
+            &registry.policy_refs,
+        )?;
+        super::adopt::effective(&plan)
+    }
+}
+
 pub(crate) fn validate_adopted(catalog: &PolicyCatalog, adopted: &AdoptedPolicies) -> Result<()> {
     let mut reconstructed = EvaluatedPolicies::default();
     for (axis, expected) in &adopted.evidence {

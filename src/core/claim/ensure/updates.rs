@@ -32,7 +32,12 @@ impl Store {
         let (existing, request, effective, mut authorization) = {
             let _lock = self.lock()?;
             let registry = self.registry(app)?;
-            let effective = registry.registry.policies.evaluate(&input.overrides)?;
+            let effective = self.claim_execution_policy(
+                input.source_uuid,
+                &registry.registry,
+                input.adopted.as_deref(),
+                &input.overrides,
+            )?;
             let mut request = Request {
                 adopted: input.adopted.clone(),
                 source_uuid: input.source_uuid,

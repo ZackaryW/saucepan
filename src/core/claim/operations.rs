@@ -277,7 +277,12 @@ impl Store {
                     .map(|claim| claim.overrides.clone())
             })
             .unwrap_or_else(|| request_overrides(request));
-        let effective = registry.registry.policies.evaluate(&overrides)?;
+        let effective = self.claim_execution_policy(
+            request.source_uuid,
+            &registry.registry,
+            request.adopted.as_deref(),
+            &overrides,
+        )?;
         let policy_refs = registry
             .claims
             .get(&target.id)

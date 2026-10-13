@@ -184,3 +184,83 @@ fn automatic_claims_retain_adopted_evidence_through_publication_and_reopen() {
         first.claim.request.adopted
     );
 }
+
+#[test]
+fn protection_defaults_do_not_reinterpret_surviving_claims() {
+    for automatic in [false, true] {
+        for configure in [false, true] {
+            let temp = tempfile::tempdir().unwrap();
+            let input = temp.path().join("input");
+            std::fs::write(&input, "one").unwrap();
+            let store = Store::create(&temp.path().join("root")).unwrap();
+            let source = store
+                .register_source(Source::Local {
+                    path: input.clone(),
+                })
+                .unwrap();
+            let app = store.register_app("consumer".into()).unwrap();
+            let protect = policy(json!({"type":"useable_app_policy"}));
+            let update = policy(json!({"type":"update_policy","mode":"always"}));
+            let required = policy(json!({"type":"policy_constraints","require_useable_app":true}));
+            store
+                .register_policies(&[protect.clone(), update.clone(), required.clone()])
+                .unwrap();
+            let request = Ensure {
+                scope: "main".to_string().try_into().unwrap(),
+                source_uuid: source.uuid,
+                selector: Selector::Local,
+                selection: Default::default(),
+                context: Default::default(),
+                policy_refs: if automatic {
+                    refs(&[&update])
+                } else {
+                    Default::default()
+                },
+            };
+            let first = store
+                .ensure_claim(app.uuid, &request, &Default::default())
+                .unwrap();
+            let revision = store.application(app.uuid).unwrap().revision;
+            if configure {
+                store
+                    .configure_application(
+                        app.uuid,
+                        saucepan::core::claim::session::ApplicationConfiguration {
+                            expected_revision: revision,
+                            policy_refs: refs(&[&protect]),
+                            credential: None,
+                        },
+                        None,
+                    )
+                    .unwrap();
+            } else {
+                store
+                    .adopt_application_policies(app.uuid, revision, refs(&[&protect]), None)
+                    .unwrap();
+            }
+            std::fs::write(&input, "two").unwrap();
+            let next = store
+                .ensure_claim(app.uuid, &request, &Default::default())
+                .unwrap();
+            assert_eq!(first.claim.uuid, next.claim.uuid);
+            assert_eq!(first.claim.request.adopted, next.claim.request.adopted);
+            assert_eq!(next.claim.effective.output.protection, None);
+            let reopened = Store::open(store.root()).unwrap();
+            let revision = reopened.application(app.uuid).unwrap().revision;
+            // A default may change, but an actual constraint cannot silently
+            // turn an existing unprotected claim into a protected one.
+            let error = reopened
+                .adopt_application_policies(app.uuid, revision, refs(&[&required]), None)
+                .unwrap_err();
+            assert_eq!(Error::from_anyhow(&error).code, ErrorCode::PolicyConflict);
+            assert_eq!(reopened.application(app.uuid).unwrap().revision, revision);
+            assert_eq!(
+                reopened.registry(app.uuid).unwrap().claims[&first.claim.uuid]
+                    .effective
+                    .output
+                    .protection,
+                None
+            );
+        }
+    }
+}

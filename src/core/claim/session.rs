@@ -229,7 +229,9 @@ impl Store {
                 )?;
             }
             claim.overrides = crate::core::policy::adopt::pinned(&claim.effective);
-            policies.evaluate(&claim.overrides)?;
+            if claim.request.adopted.is_none() {
+                policies.evaluate(&claim.overrides)?;
+            }
         }
         registry.registry.policy_refs = policy_refs;
         registry.registry.access = access;

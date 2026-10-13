@@ -179,7 +179,6 @@ impl Store {
         );
         let selected_refs = super::claims::behavior_refs(&catalog, &adopted)?;
         let overrides = pinned(&selected);
-        registry.registry.policies.evaluate(&overrides)?;
         if claim.policy_refs == selected_refs
             && claim.request.adopted.as_deref() == Some(&adopted)
             && claim.effective == selected
@@ -363,7 +362,9 @@ impl Store {
                 )?;
             }
             claim.overrides = pinned(&claim.effective);
-            settings.evaluate(&claim.overrides)?;
+            if claim.request.adopted.is_none() {
+                settings.evaluate(&claim.overrides)?;
+            }
         }
         if registry.registry.policy_refs == refs {
             return Ok(());
