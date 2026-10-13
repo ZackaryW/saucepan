@@ -32,6 +32,47 @@ pub fn register(store: &Store, access: AccessPolicy, settings: Registration) -> 
     if settings.defaults.output.protection.is_some() {
         values.push(json!({"type":"useable_app_policy"}));
     }
+    definitions(store, values)
+}
+
+pub fn requested(
+    store: &Store,
+    settings: saucepan::models::claim::policy::Overrides,
+) -> Result<PolicyRefs> {
+    let mut values = Vec::new();
+    if let Some(value) = settings.identical {
+        values.push(json!({"type":"identical_pull_policy","strategy":value}));
+    }
+    if let Some(value) = settings.reclaim {
+        values.push(json!({"type":"reclaim_policy","strategy":value.strategy()}));
+    }
+    for (kind, value) in [
+        (
+            "revision_policy",
+            settings.revision.map(serde_json::to_value),
+        ),
+        (
+            "update_policy",
+            settings.update_policy.map(serde_json::to_value),
+        ),
+    ] {
+        if let Some(value) = value {
+            let mut value = value?;
+            value["type"] = json!(kind);
+            values.push(value);
+        }
+    }
+    if settings.useable_app == Some(true) {
+        values.push(json!({"type":"useable_app_policy"}));
+    }
+    anyhow::ensure!(
+        settings.useable_app != Some(false),
+        "no policy disables required protection"
+    );
+    definitions(store, values)
+}
+
+pub fn definitions(store: &Store, values: Vec<Value>) -> Result<PolicyRefs> {
     let records: Vec<PolicyRecord> = values
         .into_iter()
         .map(|mut value| -> Result<_> {
@@ -43,4 +84,19 @@ pub fn register(store: &Store, access: AccessPolicy, settings: Registration) -> 
         })
         .collect::<Result<_>>()?;
     Ok(store.register_policies(&records)?.try_into()?)
+}
+
+pub fn replace(store: &Store, refs: &mut PolicyRefs, value: Value) -> Result<()> {
+    let next = definitions(store, vec![value])?;
+    let id = next.ids()[0];
+    let axis = store.policy(id)?.definition.axis();
+    let mut retained = Vec::new();
+    for existing in refs.ids() {
+        if store.policy(*existing)?.definition.axis() != axis {
+            retained.push(*existing);
+        }
+    }
+    retained.push(id);
+    *refs = retained.try_into()?;
+    Ok(())
 }

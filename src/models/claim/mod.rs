@@ -52,7 +52,7 @@ pub struct Claimed {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct EnsureRequest {
+pub(crate) struct CompiledEnsure {
     #[serde(default)]
     pub adopted: Option<Box<adopted::AdoptedPolicies>>,
     pub scope: Scope,
@@ -70,6 +70,7 @@ pub struct ClaimView {
     pub claim: Claim,
     pub state: super::store::Availability,
 }
+pub use request::Ensure as EnsureRequest;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]

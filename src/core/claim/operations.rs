@@ -50,9 +50,9 @@ impl Store {
         context: &ClaimContext,
         options: &AcquireOptions,
     ) -> Result<Claimed> {
-        self.ensure_claim(
+        self.ensure_compiled(
             app,
-            &crate::models::claim::EnsureRequest {
+            &crate::models::claim::CompiledEnsure {
                 adopted: None,
                 scope: scope.clone(),
                 source_uuid: request.source_uuid,

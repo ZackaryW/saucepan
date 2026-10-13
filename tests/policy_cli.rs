@@ -162,3 +162,35 @@ fn application_payloads_reject_embedded_authority_and_persist_only_references() 
         0
     );
 }
+
+#[test]
+fn ensure_rejects_embedded_policy_authority_before_claim_work() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("root");
+    let store = Store::create(&root).unwrap();
+    let app = store.register_app("consumer".into()).unwrap();
+    let path = temp.path().join("ensure.json");
+    let baseline = fs::read(root.join("root.json")).unwrap();
+    for field in ["overrides", "adopted", "policies"] {
+        let mut input = json!({"scope":"main", "source_uuid":Uuid::nil(), "selector":{"type":"local"}, "policy_refs":[]});
+        input[field] = json!({});
+        assert!(
+            serde_json::from_value::<saucepan::models::claim::EnsureRequest>(input.clone())
+                .is_err()
+        );
+        fs::write(&path, serde_json::to_vec(&input).unwrap()).unwrap();
+        error(
+            run(
+                &root,
+                &[
+                    "ensure-claim",
+                    &app.uuid.to_string(),
+                    path.to_str().unwrap(),
+                ],
+            ),
+            "invalid_request",
+        );
+    }
+    assert_eq!(baseline, fs::read(root.join("root.json")).unwrap());
+    assert!(store.claims(app.uuid).unwrap().is_empty());
+}

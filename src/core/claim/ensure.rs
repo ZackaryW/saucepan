@@ -3,7 +3,7 @@ use crate::{
     core::{Store, index::Journal, source::AcquireOptions, store::ResourceLease},
     error::{Error, ErrorCode},
     models::{
-        claim::{Claim, Claimed, CoveredView, EnsureRequest, policy::Action},
+        claim::{Claim, Claimed, CompiledEnsure as EnsureRequest, CoveredView, policy::Action},
         index::Record,
         policy::Identical,
         store::{Acquired, Request},
@@ -27,7 +27,7 @@ struct Selected {
 impl Store {
     /// Ensure one ownership record per compatible scoped intent. Preparation is
     /// outside metadata coordination; final publication rechecks current state.
-    pub fn ensure_claim(
+    pub(crate) fn ensure_compiled(
         &self,
         app: Uuid,
         input: &EnsureRequest,

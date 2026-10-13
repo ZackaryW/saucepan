@@ -3,7 +3,7 @@ use crate::models::{source::Source, store::Selector};
 use std::{fs, sync::Arc};
 
 #[test]
-fn primitive_commit_keeps_intervening_context_and_returns_that_snapshot() {
+fn primitive_commit_fences_intervening_context_and_preserves_selection() {
     for reuse in [false, true] {
         let tmp = tempfile::tempdir().unwrap();
         let file = tmp.path().join("file");
@@ -41,15 +41,13 @@ fn primitive_commit_keeps_intervening_context_and_returns_that_snapshot() {
                 .set_claim_context(app.uuid, claim.uuid, &edit, revision)
                 .unwrap();
         }));
-        let updated = store
+        let error = store
             .update_claim(app.uuid, claim.uuid, &Default::default())
-            .unwrap();
-        assert_eq!(updated.acquired.reused, reuse);
-        assert_eq!(updated.claim.context, labels);
-        assert_eq!(
-            serde_json::to_value(&updated.claim).unwrap(),
-            serde_json::to_value(&store.registry(app.uuid).unwrap().claims[&claim.uuid]).unwrap()
-        );
+            .unwrap_err();
+        assert_eq!(Error::from_anyhow(&error).code, ErrorCode::RevisionConflict);
+        let current = store.registry(app.uuid).unwrap();
+        assert_eq!(current.claims[&claim.uuid].context, labels);
+        assert_eq!(current.claims[&claim.uuid].entry_uuid, claim.entry_uuid);
     }
 }
 

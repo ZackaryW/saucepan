@@ -1,7 +1,7 @@
 use super::*;
 use crate::models::{
     claim::{
-        EnsureRequest,
+        CompiledEnsure as EnsureRequest,
         policy::{ReclaimPolicy, ReclaimStrategy},
     },
     policy::Identical,
@@ -36,7 +36,7 @@ fn recovery_keeps_newer_state_and_rejects_dependency_mismatch_before_publication
             strategy: ReclaimStrategy::RestoreExact,
         });
         let first = store
-            .ensure_claim(app, &request, &Default::default())
+            .ensure_compiled(app, &request, &Default::default())
             .unwrap();
         let mut pull = first.claim.request.clone();
         pull.policies.identical = Identical::NewEntry;

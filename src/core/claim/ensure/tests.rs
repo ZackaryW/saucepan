@@ -26,7 +26,7 @@ fn intervening_writers_cannot_be_overwritten_by_new_entry_ensure() {
             overrides: Default::default(),
         };
         let first = store
-            .ensure_claim(app, &request, &Default::default())
+            .ensure_compiled(app, &request, &Default::default())
             .unwrap();
         let writer = store.clone();
         let id = first.claim.uuid;
@@ -72,7 +72,7 @@ fn intervening_writers_cannot_be_overwritten_by_new_entry_ensure() {
             }
             _ => unreachable!(),
         }));
-        let result = store.ensure_claim(app, &request, &Default::default());
+        let result = store.ensure_compiled(app, &request, &Default::default());
         let code = Error::from_anyhow(&result.unwrap_err()).code;
         assert!(
             matches!(
@@ -135,7 +135,7 @@ fn intervening_writers_fence_automatic_ensure_check_state_and_selection() {
             },
         };
         let first = store
-            .ensure_claim(app, &request, &Default::default())
+            .ensure_compiled(app, &request, &Default::default())
             .unwrap();
         let before = serde_json::to_value(
             store
@@ -166,7 +166,7 @@ fn intervening_writers_fence_automatic_ensure_check_state_and_selection() {
             }
             _ => unreachable!(),
         }));
-        let result = store.ensure_claim(app, &request, &Default::default());
+        let result = store.ensure_compiled(app, &request, &Default::default());
         assert!(result.is_err(), "{action}");
         let after = serde_json::to_value(
             store

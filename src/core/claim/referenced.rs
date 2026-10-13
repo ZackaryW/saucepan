@@ -12,7 +12,7 @@ use crate::{
     error::{Error, ErrorCode},
     models::{
         claim::{
-            Claimed, EnsureRequest, adopted::AdoptedPolicies, policy::Action, request::Ensure,
+            Claimed, CompiledEnsure, adopted::AdoptedPolicies, policy::Action, request::Ensure,
         },
         policy::{PolicyRefs, record::CacheMode},
         store::{Request, Selection},
@@ -22,6 +22,14 @@ use anyhow::{Result, ensure};
 use uuid::Uuid;
 
 impl Store {
+    pub fn ensure_claim(
+        &self,
+        app: Uuid,
+        input: &Ensure,
+        options: &AcquireOptions,
+    ) -> Result<Claimed> {
+        self.ensure_referenced(app, input, options)
+    }
     pub fn ensure_referenced(
         &self,
         app: Uuid,
@@ -120,7 +128,7 @@ impl Store {
                 Some(app),
             )?;
             (
-                EnsureRequest {
+                CompiledEnsure {
                     adopted: Some(Box::new(adopted)),
                     scope: input.scope.clone(),
                     source_uuid: input.source_uuid,
@@ -134,7 +142,7 @@ impl Store {
         };
         let mut execution = self.clone();
         execution.policy_fence = Some(fence);
-        execution.ensure_claim(app, &compiled, options)
+        execution.ensure_compiled(app, &compiled, options)
     }
     pub(crate) fn adopted_refs(&self, adopted: Option<&AdoptedPolicies>) -> Result<PolicyRefs> {
         let Some(adopted) = adopted else {

@@ -15,8 +15,9 @@ output and binding remain intact. Current access restrictions always apply, even
 to cache hits, recovery and historical output replay.
 
 `tests/policy_claims.rs` exercises defaults, coverage, separate scopes, explicit
-adoption and automatic updates. The older nested registration/override inputs
-below remain transitional until the canonical CLI/public-contract cutover.
+adoption and automatic updates. `Store::ensure_claim`, `AppSession::ensure` and
+the CLI `ensure-claim` command accept the same reference-only `EnsureRequest`.
+Caller-supplied `overrides`, `policies` and adopted evidence are rejected.
 
 The Rust contracts live in `models::claim`; `core::claim` owns integrity-verified
 persistence, app sessions and the shared evaluator. App claims are stored in a
@@ -31,10 +32,11 @@ A policy independently restricts actions, source UUIDs, and exact scope strings:
 
 ```json
 {
+  "uuid": "10000000-0000-4000-8000-000000000001",
+  "type": "access_policy",
   "actions": ["read", "acquire", "lease", "update"],
   "sources": ["71dd0588-f70d-47e9-93d9-7fd4634dab5e"],
-  "scopes": ["project-a"],
-  "public_scopes": []
+  "scopes": ["project-a"]
 }
 ```
 
@@ -59,12 +61,12 @@ by deserializing an app request. Direct Rust administration is a trusted local
 API, not a sandbox against programs running as the same OS user.
 
 Registered retention and recovery policy is separate from permissions. Defaults
-keep ten entries and report unavailable content. Claim overrides must stay within
+keep ten entries and report unavailable content. Referenced choices must stay within
 registered retention bounds and allowed identical/recovery strategies; they may
 not remove required `useable_app` protection. `reclaim_policy` is typed:
 
 ```json
-{"type":"reclaim_policy","strategy":"restore_exact"}
+{"uuid":"10000000-0000-4000-8000-000000000002","type":"reclaim_policy","strategy":"restore_exact"}
 ```
 
 `tests/claim_contracts.rs` exercises literal scopes, strict parsing, omitted and
@@ -111,7 +113,7 @@ are subject to the same app claim policy when leased through a session.
 ## Scoped ensure and covered views
 
 `AppSession::ensure(&EnsureRequest, &AcquireOptions)` uses registered defaults
-for omitted overrides. Its explicit `scope` identifies the project independently
+for new claims without explicit policy references. Its explicit `scope` identifies the project independently
 of searchable context. With the default `reuse` policy, an exact available retry
 returns the existing claim and cached output without refreshing its source.
 Another scope gets an independent claim and can
@@ -127,7 +129,7 @@ Folder boundaries are path components: `packages/tool` does not cover
 incompatible ownership policies. Different context returns `claim_context_conflict`;
 replace labels with a revision-checked context operation.
 
-`new_entry` advances the compatible owner to a fresh output without duplicating
+An adopted `new_entry` policy advances the compatible owner to a fresh output without duplicating
 the claim. A covered request prepares the entire owning tree and validates the
 projection before publication. Concurrent changes are reconciled under the store
 lock or return a typed conflict; they are never silently overwritten.

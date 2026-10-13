@@ -8,7 +8,7 @@ use saucepan::{
     error::{Error, ErrorCode},
     models::{
         claim::{Claimed, EnsureRequest, Scope},
-        policy::{Identical, Policies},
+        policy::Policies,
         source::Source,
         store::{Request, Selector, VerificationMode},
     },
@@ -43,13 +43,12 @@ fn setup() -> (tempfile::TempDir, Store, uuid::Uuid, EnsureRequest) {
         )
         .unwrap();
     let request = EnsureRequest {
-        adopted: None,
         scope: scope("project-a"),
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),
         context: [("project".into(), "a".into())].into(),
-        overrides: Default::default(),
+        policy_refs: Default::default(),
     };
     (tmp, store, registered.application.uuid, request)
 }
@@ -135,19 +134,26 @@ fn reverse_overlap_context_changes_missing_projections_and_policy_conflicts_do_n
         ErrorCode::InvalidRequest
     );
     request.selection.folder = Some("pkg".into());
-    request.overrides.revision =
-        Some(saucepan::models::policy::RevisionPolicy::Latest { keep: 20 });
+    policy_fixture::replace(
+        &store,
+        &mut request.policy_refs,
+        serde_json::json!({"type":"revision_policy","history":"latest","keep":20}),
+    )
+    .unwrap();
     assert_eq!(
         code(session.ensure(&request, &Default::default()).unwrap_err()),
         ErrorCode::ClaimOverlap
     );
-    request.overrides.revision = Some(saucepan::models::policy::RevisionPolicy::Latest { keep: 0 });
-    assert_eq!(
-        code(session.ensure(&request, &Default::default()).unwrap_err()),
-        ErrorCode::PolicyConflict
+    assert!(
+        policy_fixture::replace(
+            &store,
+            &mut request.policy_refs,
+            serde_json::json!({"type":"revision_policy","history":"latest","keep":0})
+        )
+        .is_err()
     );
     assert_eq!(session.claims().unwrap().len(), 1);
-    request.overrides.revision = None;
+    request.policy_refs = Default::default();
     request.selection.folder = Some("pkg-other".into());
     let disjoint = session.ensure(&request, &Default::default()).unwrap();
     assert_ne!(disjoint.claim.uuid, selected.claim.uuid);
@@ -169,7 +175,20 @@ fn explicit_new_entry_advances_one_claim_and_a_covered_pull_keeps_the_whole_owni
     let (_tmp, store, app, mut request) = setup();
     let session = store.session(app, None).unwrap();
     let first = session.ensure(&request, &Default::default()).unwrap();
-    request.overrides.identical = Some(Identical::NewEntry);
+    policy_fixture::replace(
+        &store,
+        &mut request.policy_refs,
+        serde_json::json!({"type":"identical_pull_policy","strategy":"new_entry"}),
+    )
+    .unwrap();
+    store
+        .adopt_claim_policies(
+            app,
+            first.claim.uuid,
+            store.application(app).unwrap().revision,
+            request.policy_refs.clone(),
+        )
+        .unwrap();
     request.selection.folder = Some("pkg/sub".into());
     let next = session.ensure(&request, &Default::default()).unwrap();
     assert_eq!(next.claim.uuid, first.claim.uuid);
@@ -273,20 +292,36 @@ fn concurrent_registration_and_registered_defaults_are_applied_before_source_wor
     });
     assert!(ids.iter().all(|id| *id == ids[0]));
     let session = store.session(ids[0], None).unwrap();
-    request.overrides.revision = Some(saucepan::models::policy::RevisionPolicy::Latest { keep: 5 });
+    policy_fixture::replace(
+        &store,
+        &mut request.policy_refs,
+        serde_json::json!({"type":"revision_policy","history":"latest","keep":5}),
+    )
+    .unwrap();
     let before = fs::read(store.root().join("root.json")).unwrap();
     assert_eq!(
         code(session.ensure(&request, &Default::default()).unwrap_err()),
         ErrorCode::PolicyConflict
     );
     assert_eq!(fs::read(store.root().join("root.json")).unwrap(), before);
-    request.overrides.revision = None;
+    request.policy_refs = Default::default();
     let result = session.ensure(&request, &Default::default()).unwrap();
     assert_eq!(
         result.claim.effective.output.revision,
         saucepan::models::policy::RevisionPolicy::Latest { keep: 3 }
     );
-    assert_eq!(result.claim.overrides.revision, None);
+    assert!(request.policy_refs.ids().is_empty());
+    assert_eq!(
+        result
+            .claim
+            .request
+            .adopted
+            .as_ref()
+            .unwrap()
+            .behavior
+            .revision,
+        saucepan::models::policy::RevisionPolicy::Latest { keep: 3 }
+    );
     assert_eq!(
         store
             .source(request.source_uuid)
@@ -374,7 +409,12 @@ fn vanished_projected_folder_does_not_advance_owner_and_binary_views_require_man
     )
     .unwrap();
     request.selection.folder = Some("pkg/sub".into());
-    request.overrides.identical = Some(Identical::NewEntry);
+    policy_fixture::replace(
+        &store,
+        &mut request.policy_refs,
+        serde_json::json!({"type":"identical_pull_policy","strategy":"new_entry"}),
+    )
+    .unwrap();
     assert!(session.ensure(&request, &Default::default()).is_err());
     let registry = store.registry(app).unwrap();
     assert_eq!(

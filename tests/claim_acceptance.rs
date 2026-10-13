@@ -16,7 +16,7 @@ use saucepan::{
     models::{
         claim::{
             EnsureRequest,
-            policy::{Action, ReclaimPolicy, ReclaimStrategy},
+            policy::{Action, ReclaimStrategy},
         },
         index::lifecycle::{Installation, Phase},
         policy::{Identical, Protection, RevisionPolicy},
@@ -100,18 +100,25 @@ fn fresh_root_cross_feature_acceptance_with_real_binaries() {
         .uuid;
     let session = store.session(app, None).unwrap();
     let mut request = EnsureRequest {
-        adopted: None,
         scope: "public".to_string().try_into().unwrap(),
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),
         context: [("package".into(), "tool".into())].into(),
-        overrides: Default::default(),
+        policy_refs: Default::default(),
     };
-    request.overrides.revision = Some(saucepan::models::policy::RevisionPolicy::Latest { keep: 1 });
-    request.overrides.reclaim = Some(ReclaimPolicy::ReclaimPolicy {
-        strategy: ReclaimStrategy::RestoreExact,
-    });
+    policy_fixture::replace(
+        &store,
+        &mut request.policy_refs,
+        serde_json::json!({"type":"revision_policy","history":"latest","keep":1}),
+    )
+    .unwrap();
+    policy_fixture::replace(
+        &store,
+        &mut request.policy_refs,
+        serde_json::json!({"type":"reclaim_policy","strategy":ReclaimStrategy::RestoreExact}),
+    )
+    .unwrap();
     let first = session.ensure(&request, &Default::default()).unwrap();
     assert_eq!(
         session
@@ -126,9 +133,12 @@ fn fresh_root_cross_feature_acceptance_with_real_binaries() {
     assert_eq!(covered.claim.uuid, first.claim.uuid);
     request.selection.folder = None;
     request.scope = "private".to_string().try_into().unwrap();
-    request.overrides.reclaim = Some(ReclaimPolicy::ReclaimPolicy {
-        strategy: ReclaimStrategy::Refresh,
-    });
+    policy_fixture::replace(
+        &store,
+        &mut request.policy_refs,
+        serde_json::json!({"type":"reclaim_policy","strategy":ReclaimStrategy::Refresh}),
+    )
+    .unwrap();
     let private = session.ensure(&request, &Default::default()).unwrap();
     assert_eq!(first.claim.entry_uuid, private.claim.entry_uuid);
     let found = store

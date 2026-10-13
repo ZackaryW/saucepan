@@ -2,21 +2,33 @@
 
 Use a fresh root. Initialization defaults to basic checksum integrity without an
 OS keyring. Select `init --integrity keyring` for native-backed HMAC protection.
-Application credentials are independently optional in both modes. Earlier store
+Application credentials are independently optional within keyring mode; basic
+stores do not support credential-protected registrations. Earlier store
 layouts are not migrated.
 The examples select `./scratch` explicitly; omit `--root` to use the user-home
 `.saucepan` store.
+
+Create `policies.json` with the shared definitions:
+
+```json
+[
+ {"uuid":"10000000-0000-4000-8000-000000000001","type":"access_policy","scopes":["project-a","project-b"]},
+ {"uuid":"10000000-0000-4000-8000-000000000002","type":"claim_visibility_policy","public_scopes":["project-a"]},
+ {"uuid":"10000000-0000-4000-8000-000000000003","type":"policy_constraints","maximum_keep":20},
+ {"uuid":"10000000-0000-4000-8000-000000000004","type":"reclaim_policy","strategy":"restore_exact"}
+]
+```
 
 Create `registration.json`:
 
 ```json
 {"registration_key":"my-consumer","name":"Consumer","credentials_required":false,
- "access":{"scopes":["project-a","project-b"],"public_scopes":["project-a"]},
- "policies":{"maximum_keep":20}}
+ "policy_refs":["10000000-0000-4000-8000-000000000001","10000000-0000-4000-8000-000000000002","10000000-0000-4000-8000-000000000003"]}
 ```
 
 ```powershell
 saucepan --root ./scratch init
+saucepan --root ./scratch register-policies policies.json
 saucepan --root ./scratch register-application registration.json
 ```
 
@@ -30,7 +42,7 @@ Register a source, then place its UUID in `ensure.json`:
 ```json
 {"scope":"project-a","source_uuid":"SOURCE_UUID","selector":{"type":"local"},
  "selection":{},"context":{"package":"example"},
- "overrides":{"reclaim":{"type":"reclaim_policy","strategy":"restore_exact"}}}
+ "policy_refs":["10000000-0000-4000-8000-000000000004"]}
 ```
 
 ```powershell
@@ -58,7 +70,7 @@ Discovery does not grant ownership or direct-output access.
 
 ## Optional credentials and administration
 
-For a new protected registration, use a new registration key, set
+On a root initialized with `--integrity keyring`, use a new registration key, set
 `credentials_required` to true and choose a new secret destination. To enable
 credentials on the app registered above, use `configure-application` as described
 below; retrying registration with changed settings is a conflict.
@@ -79,8 +91,8 @@ discover whether the registration committed. Existing credentials are never
 redisclosed. Filesystem protection remains the OS's responsibility.
 
 `configure-application APP_UUID FILE --credential-out NEW_FILE` is trusted local
-administration. The JSON contains `expected_revision`, complete `access` and
-`policies` objects, and optional `credential`: `enable`, `rotate`, or `disable`.
+administration. The JSON contains `expected_revision`, the complete `policy_refs`
+list, and optional `credential`: `enable`, `rotate`, or `disable`.
 Supply current proof with `--credential-file` when already enabled. A stale
 revision or a policy that invalidates a surviving claim fails without mutation.
 `--as-app` cannot be used to turn an app operation into configuration or global

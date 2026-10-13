@@ -1,3 +1,4 @@
+mod policy_fixture;
 mod support;
 use saucepan::{
     core::{Store, claim::security::MemoryKeys, source::AcquireOptions},
@@ -24,19 +25,22 @@ use std::{
 fn code(error: anyhow::Error) -> ErrorCode {
     Error::from_anyhow(&error).code
 }
-fn request(source_uuid: uuid::Uuid, strategy: ReclaimStrategy) -> EnsureRequest {
+fn request(store: &Store, source_uuid: uuid::Uuid, strategy: ReclaimStrategy) -> EnsureRequest {
     EnsureRequest {
-        adopted: None,
         scope: "a".to_string().try_into().unwrap(),
         source_uuid,
         selector: Selector::Local,
         selection: Default::default(),
         context: [("label".into(), "retained".into())].into(),
-        overrides: saucepan::models::claim::policy::Overrides {
-            revision: Some(saucepan::models::policy::RevisionPolicy::Latest { keep: 1 }),
-            reclaim: Some(ReclaimPolicy::ReclaimPolicy { strategy }),
-            ..Default::default()
-        },
+        policy_refs: policy_fixture::requested(
+            store,
+            saucepan::models::claim::policy::Overrides {
+                revision: Some(saucepan::models::policy::RevisionPolicy::Latest { keep: 1 }),
+                reclaim: Some(ReclaimPolicy::ReclaimPolicy { strategy }),
+                ..Default::default()
+            },
+        )
+        .unwrap(),
     }
 }
 fn evict(store: &Store, claimed: &saucepan::models::claim::Claimed, options: &AcquireOptions) {
@@ -68,7 +72,7 @@ fn local_recovery_is_explicit_preserves_scope_and_never_activates() {
             .unwrap();
         let app = store.register_app("consumer".into()).unwrap().uuid;
         let session = store.session(app, None).unwrap();
-        let mut input_request = request(source.uuid, strategy);
+        let mut input_request = request(&store, source.uuid, strategy);
         let first = session.ensure(&input_request, &Default::default()).unwrap();
         input_request.scope = "b".to_string().try_into().unwrap();
         let independent = session.ensure(&input_request, &Default::default()).unwrap();
@@ -143,7 +147,7 @@ fn exact_local_recovery_distinguishes_missing_and_changed_bytes_without_redirect
     let session = store.session(app, None).unwrap();
     let first = session
         .ensure(
-            &request(source.uuid, ReclaimStrategy::RestoreExact),
+            &request(&store, source.uuid, ReclaimStrategy::RestoreExact),
             &Default::default(),
         )
         .unwrap();
@@ -207,7 +211,7 @@ fn exact_git_restores_saved_commit_after_branch_moves() {
         })
         .unwrap();
     let app = store.register_app("consumer".into()).unwrap().uuid;
-    let mut request = request(source.uuid, ReclaimStrategy::RestoreExact);
+    let mut request = request(&store, source.uuid, ReclaimStrategy::RestoreExact);
     request.selector = Selector::Ref {
         reference: "main".into(),
     };
@@ -271,7 +275,7 @@ fn remote_exact_uses_saved_url_and_rejects_replacement_while_refresh_honors_ttl(
             })
             .unwrap();
         let app = store.register_app("consumer".into()).unwrap().uuid;
-        let mut request = request(source.uuid, ReclaimStrategy::RestoreExact);
+        let mut request = request(&store, source.uuid, ReclaimStrategy::RestoreExact);
         request.selector = if release {
             Selector::LatestStable
         } else {
@@ -279,10 +283,13 @@ fn remote_exact_uses_saved_url_and_rejects_replacement_while_refresh_honors_ttl(
         };
         request.selection.format = saucepan::models::store::Format::Raw;
         request.selection.filename = Some("tool".into());
-        request.selection.filters = vec![saucepan::models::store::AssetFilter {
-            platform: None,
-            asset_patterns: vec!["tool".into()],
-        }];
+        request.selection.filter_refs = policy_fixture::definitions(
+            &store,
+            vec![serde_json::json!({
+                "type":"github_release_asset_filter", "platform": null, "asset_patterns":["tool"]
+            })],
+        )
+        .unwrap();
         let mut options = AcquireOptions {
             test_now: Some(100),
             test_github_api: Some(server.base.clone()),
@@ -311,9 +318,12 @@ fn remote_exact_uses_saved_url_and_rejects_replacement_while_refresh_honors_ttl(
             exact.claim.entry_uuid
         );
         request.scope = "refresh".to_string().try_into().unwrap();
-        request.overrides.reclaim = Some(ReclaimPolicy::ReclaimPolicy {
-            strategy: ReclaimStrategy::Refresh,
-        });
+        policy_fixture::replace(
+            &store,
+            &mut request.policy_refs,
+            serde_json::json!({"type":"reclaim_policy","strategy":ReclaimStrategy::Refresh}),
+        )
+        .unwrap();
         let refresh = store.ensure_claim(app, &request, &options).unwrap();
         evict(&store, &refresh, &options);
         options.test_now = Some(86500);

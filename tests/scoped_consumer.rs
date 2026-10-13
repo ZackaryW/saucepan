@@ -112,16 +112,19 @@ fn two_scopes_read_nested_packages_while_external_reclaim_waits_for_native_lifet
         let app = registered.application.uuid;
         let session = store.session(app, None).unwrap();
         let mut request = EnsureRequest {
-            adopted: None,
             scope: "project-a".to_string().try_into().unwrap(),
             source_uuid: source.uuid,
             selector: Selector::Local,
             selection: Default::default(),
             context: [("package".into(), "tool".into())].into(),
-            overrides: Default::default(),
+            policy_refs: Default::default(),
         };
-        request.overrides.revision =
-            Some(saucepan::models::policy::RevisionPolicy::Latest { keep: 1 });
+        policy_fixture::replace(
+            &store,
+            &mut request.policy_refs,
+            serde_json::json!({"type":"revision_policy","history":"latest","keep":1}),
+        )
+        .unwrap();
         let owner = session.ensure(&request, &Default::default()).unwrap();
         request.scope = "project-b".to_string().try_into().unwrap();
         let b = session.ensure(&request, &Default::default()).unwrap();
@@ -203,15 +206,19 @@ fn failed_view_verification_drops_ownership_and_unavailable_claim_has_a_stable_c
         .unwrap();
     let app = store.register_app("consumer".into()).unwrap().uuid;
     let mut request = EnsureRequest {
-        adopted: None,
         scope: "project".to_string().try_into().unwrap(),
         source_uuid: source.uuid,
         selector: Selector::Local,
         selection: Default::default(),
         context: Default::default(),
-        overrides: Default::default(),
+        policy_refs: Default::default(),
     };
-    request.overrides.revision = Some(saucepan::models::policy::RevisionPolicy::Latest { keep: 1 });
+    policy_fixture::replace(
+        &store,
+        &mut request.policy_refs,
+        serde_json::json!({"type":"revision_policy","history":"latest","keep":1}),
+    )
+    .unwrap();
     let session = store.session(app, None).unwrap();
     let first = session.ensure(&request, &Default::default()).unwrap();
     fs::write(first.acquired.directory.join("resource"), "changed").unwrap();
