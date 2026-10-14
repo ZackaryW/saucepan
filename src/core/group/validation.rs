@@ -143,13 +143,42 @@ impl Store {
             .map(|id| self.registry(id).map(|r| r.registry.policy_refs))
             .transpose()?
             .unwrap_or_default();
+        let initial = OutputPlan {
+            source_uuid: source.uuid,
+            selector: input.selector.clone(),
+            policies: Default::default(),
+            adopted: None,
+            selection: Selection {
+                platform: input.selection.platform.clone(),
+                filters: resolve::filters(&catalog, &input.selection.filter_refs)?,
+                format: input.selection.format,
+                filename: input.selection.filename.clone(),
+                folder: input.selection.folder.clone(),
+                bin: input.selection.bin.clone(),
+                sha256: input.selection.sha256.clone(),
+                ..Default::default()
+            },
+        };
+        let existing = match (owner, &input.claim) {
+            (Some(app), Some(intent)) => crate::core::claim::matching::select_identity(
+                self,
+                &self.registry(app)?,
+                &intent.scope,
+                &initial,
+            )?,
+            _ => None,
+        };
+        let adopted_before = existing
+            .as_ref()
+            .and_then(|m| m.claim.request.adopted.as_deref());
+        let pinned = adopted_before.map(|a| a.pinned());
         let plan = resolve::evaluate(
             &catalog,
             Inputs {
                 source: &source.policy_refs,
                 application: &app_refs,
                 request: &input.policy_refs,
-                pinned: None,
+                pinned: pinned.as_ref(),
                 operation: Operation::Compose,
                 managed_output: true,
                 update_due: false,
@@ -183,10 +212,20 @@ impl Store {
             sha256: input.selection.sha256.clone(),
             selection_policy: plan.behavior.selection.clone(),
         };
-        let adopted = crate::models::claim::adopted::AdoptedPolicies::from_plan(
+        let mut adopted = crate::models::claim::adopted::AdoptedPolicies::from_plan(
             &plan,
             input.selection.filter_refs.clone(),
         );
+        if let Some(before) = adopted_before {
+            ensure!(
+                before.behavior == adopted.behavior,
+                Error::new(
+                    ErrorCode::ClaimOverlap,
+                    "group cannot implicitly adopt claim policies"
+                )
+            );
+            adopted = before.clone();
+        }
         let request = OutputPlan {
             source_uuid: source.uuid,
             selector: input.selector.clone(),
@@ -198,7 +237,7 @@ impl Store {
         // Validate source/selector and cache combinations without retrieval side effects.
         let (retrieval, acquisition) = self.composition_requests(&request, &Default::default())?;
         crate::core::policy::composition::validate_composition(&retrieval, &acquisition, false)?;
-        crate::core::source::retrieve::validate(&source.source, &retrieval)?;
+        crate::core::source::retrieve::validate_selector(&source.source, &retrieval)?;
         Ok(request)
     }
 }

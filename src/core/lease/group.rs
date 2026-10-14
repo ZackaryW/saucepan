@@ -29,7 +29,7 @@ use uuid::Uuid;
 /// Owns every selected output until dropped. Descriptors alone do not retain files.
 pub struct GroupLease {
     pub(crate) leases: BTreeMap<Uuid, ResourceLease>,
-    descriptor: GroupDescriptor,
+    pub(crate) descriptor: GroupDescriptor,
 }
 impl GroupLease {
     pub fn descriptor(&self) -> &GroupDescriptor {

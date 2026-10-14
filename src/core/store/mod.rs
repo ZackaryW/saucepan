@@ -24,6 +24,15 @@ pub(crate) struct Acquisition {
     pub acquired: Acquired,
     pub claim: Option<Claim>,
     pub(crate) lease: Option<ResourceLease>,
+    pub(crate) pending_check: Option<crate::models::store::AcquisitionState>,
+}
+
+pub(crate) struct OutputPublication {
+    pub claim: Option<super::claim::operations::ClaimTarget>,
+    pub retain: bool,
+    pub force_new: bool,
+    pub state: Option<crate::models::store::AcquisitionState>,
+    pub defer_check: bool,
 }
 
 pub(crate) fn json_digest(value: &impl serde::Serialize) -> Result<String> {
@@ -189,6 +198,37 @@ impl Store {
         force_new: bool,
         state: Option<crate::models::store::AcquisitionState>,
     ) -> Result<Acquisition> {
+        self.publish_prepared_options(
+            request,
+            prepared,
+            OutputPublication {
+                claim,
+                retain,
+                force_new,
+                state,
+                defer_check: false,
+            },
+        )
+    }
+
+    pub(crate) fn publish_prepared_options(
+        &self,
+        request: &OutputPlan,
+        prepared: super::source::Prepared,
+        publication: OutputPublication,
+    ) -> Result<Acquisition> {
+        let OutputPublication {
+            claim,
+            retain,
+            force_new,
+            state,
+            defer_check,
+        } = publication;
+        ensure!(
+            !defer_check || (claim.is_none() && retain),
+            "candidate publication must retain without publishing claims"
+        );
+        let mut pending_check = None;
         let content = prepared.temp.path().join("content");
         let files = manifest(&content)?;
         if let Some(relative) = claim.as_ref().and_then(|target| target.projection.as_ref()) {
@@ -307,7 +347,11 @@ impl Store {
             }
             if let Some(mut state) = state {
                 state.selected = entry.uuid;
-                records.push(Record::Acquisition(Box::new(state)));
+                if defer_check {
+                    pending_check = Some(state);
+                } else {
+                    records.push(Record::Acquisition(Box::new(state)));
+                }
             }
             if !records.is_empty() {
                 self.commit(Journal {
@@ -331,6 +375,7 @@ impl Store {
                 },
                 lease,
                 claim: committed_claim,
+                pending_check,
             });
         }
         let sequence = outputs
@@ -363,7 +408,11 @@ impl Store {
         let mut records = vec![Record::Output(Box::new(entry.clone()))];
         if let Some(mut state) = state {
             state.selected = entry.uuid;
-            records.push(Record::Acquisition(Box::new(state)));
+            if defer_check {
+                pending_check = Some(state);
+            } else {
+                records.push(Record::Acquisition(Box::new(state)));
+            }
         }
         let mut registries = Vec::new();
         let mut committed_claim = None;
@@ -394,6 +443,7 @@ impl Store {
             },
             lease,
             claim: committed_claim,
+            pending_check,
         })
     }
 }

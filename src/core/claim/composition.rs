@@ -22,6 +22,7 @@ pub(crate) struct Authorization {
     pub owner: AcquisitionOwner,
     pub revision: u64,
     pub update: bool,
+    pub action: Action,
 }
 impl Authorization {
     pub(crate) fn check(
@@ -35,7 +36,7 @@ impl Authorization {
         let registry = store.registry(self.owner.app)?;
         store.authorize_resource(
             &registry,
-            Action::Acquire,
+            self.action,
             Some(source),
             self.owner.scope.as_ref(),
         )?;
@@ -90,6 +91,7 @@ impl Store {
             },
             revision: self.application(app)?.revision,
             update: false,
+            action: Action::Acquire,
         };
         authorization.check(self, source, acquisition)?;
         Ok(authorization)

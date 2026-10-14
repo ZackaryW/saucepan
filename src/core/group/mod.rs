@@ -1,4 +1,10 @@
 //! Persistent group ownership and orchestration; native use guards live in lease.
+mod access;
+mod intent;
+mod pin;
+mod plan;
+mod prepare;
+mod publish;
 mod registry;
 mod validation;
 use crate::{
@@ -18,6 +24,9 @@ use crate::{
     },
 };
 use anyhow::{Result, ensure};
+pub use prepare::PreparedGroup;
+#[cfg(test)]
+mod tests;
 use uuid::Uuid;
 pub(crate) fn identity(group: &GroupRecord) -> Identity {
     Identity {

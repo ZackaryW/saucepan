@@ -32,6 +32,22 @@ pub(crate) struct Material {
 }
 
 pub(crate) fn validate(source: &Source, request: &RetrievalPlan) -> Result<()> {
+    validate_selector(source, request)?;
+    if matches!(source, Source::Local { path } if plain_metadata(path)?.is_dir()) {
+        ensure!(
+            request.expected_sha256.is_none()
+                && request.verification != PayloadVerification::Required,
+            Error::new(
+                ErrorCode::InvalidRequest,
+                "expected payload digest requires file material"
+            )
+        );
+    }
+    Ok(())
+}
+
+/// Structural provider preflight without touching upstream files or the network.
+pub(crate) fn validate_selector(source: &Source, request: &RetrievalPlan) -> Result<()> {
     let valid = matches!(
         (source, &request.selector),
         (Source::Local { .. }, Selector::Local)
@@ -59,9 +75,7 @@ pub(crate) fn validate(source: &Source, request: &RetrievalPlan) -> Result<()> {
             "unsupported download transport"
         );
     }
-    if matches!(source, Source::Git { .. } | Source::GithubRepo { .. })
-        || matches!(source, Source::Local { path } if plain_metadata(path)?.is_dir())
-    {
+    if matches!(source, Source::Git { .. } | Source::GithubRepo { .. }) {
         ensure!(
             request.expected_sha256.is_none()
                 && request.verification != PayloadVerification::Required,

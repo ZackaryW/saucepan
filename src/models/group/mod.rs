@@ -39,4 +39,7 @@ pub struct SelectedMember {
     pub scope: Option<Scope>,
     pub relative: Option<String>,
     pub policy_provenance: Vec<PolicyEvidence>,
+    pub selected_source: crate::models::source::Resolved,
+    pub checked_source: Option<crate::models::source::Resolved>,
+    pub last_success: Option<u64>,
 }

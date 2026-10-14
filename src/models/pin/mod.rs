@@ -58,6 +58,28 @@ pub struct PinRecord {
     pub request: PinRequest,
     pub witnesses: Vec<PinWitness>,
     pub state: PinState,
+    pub group: Option<GroupPinReceipt>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GroupPinRequest {
+    pub registration_key: Scope,
+    pub policy_refs: PolicyRefs,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GroupPinOperation {
+    Prepare,
+    Pin,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GroupPinReceipt {
+    pub operation: GroupPinOperation,
+    pub expected_revision: u64,
+    pub group: crate::models::group::GroupRecord,
+    pub stale: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

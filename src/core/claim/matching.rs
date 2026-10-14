@@ -9,13 +9,13 @@ use crate::{
 };
 use anyhow::{Result, ensure};
 
-pub(super) struct Match {
+pub(crate) struct Match {
     pub claim: Claim,
     pub relative: Option<String>,
 }
 
 /// Match ownership only within an explicit scope. Context does not form identity.
-pub(super) fn select(
+pub(crate) fn select(
     store: &Store,
     registry: &RegistryState,
     scope: &Scope,
@@ -24,7 +24,7 @@ pub(super) fn select(
 ) -> Result<Option<Match>> {
     select_inner(store, registry, scope, request, Some(effective))
 }
-pub(super) fn select_identity(
+pub(crate) fn select_identity(
     store: &Store,
     registry: &RegistryState,
     scope: &Scope,
@@ -147,7 +147,7 @@ fn select_inner(
     Ok(matches.into_iter().next().map(|(_, matched)| matched))
 }
 
-fn projection(parent: Option<&str>, child: Option<&str>) -> Option<String> {
+pub(crate) fn projection(parent: Option<&str>, child: Option<&str>) -> Option<String> {
     match (parent, child) {
         (None, Some(child)) => Some(child.to_owned()),
         (Some(parent), Some(child)) => child

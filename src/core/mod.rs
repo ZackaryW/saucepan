@@ -58,6 +58,12 @@ pub struct Store {
     #[cfg(test)]
     pub(crate) before_claim_commit: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
     #[cfg(test)]
+    pub(crate) group_publication_observer: Option<
+        std::sync::Arc<
+            dyn Fn(claim::persistence::Publication) -> crate::error::Result<()> + Send + Sync,
+        >,
+    >,
+    #[cfg(test)]
     pub(crate) access_observer:
         Option<std::sync::Arc<dyn Fn(crate::utils::tree::IoEvent) + Send + Sync>>,
 }
@@ -176,6 +182,8 @@ impl Store {
             #[cfg(test)]
             before_claim_commit: None,
             #[cfg(test)]
+            group_publication_observer: None,
+            #[cfg(test)]
             access_observer: None,
         })
     }
@@ -226,6 +234,8 @@ impl Store {
             metadata,
             #[cfg(test)]
             before_claim_commit: None,
+            #[cfg(test)]
+            group_publication_observer: None,
             #[cfg(test)]
             access_observer: None,
         };

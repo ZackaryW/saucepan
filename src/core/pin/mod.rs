@@ -77,6 +77,7 @@ impl Store {
                     request,
                     witnesses,
                     state: PinState::Active,
+                    group: None,
                 },
                 fences,
             )

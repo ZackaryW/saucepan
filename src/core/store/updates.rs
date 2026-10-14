@@ -179,32 +179,7 @@ impl Store {
     ) -> Result<AcquiredResource> {
         let output_plan = composition::managed_request(retrieved, request)?;
         let prepared = composition::prepare(retrieved, request, Some(&self.root.join(".staging")))?;
-        let checked = retrieved.descriptor.origin_checked && !retrieved.descriptor.stale;
-        let state = AcquisitionState {
-            uuid: previous.map_or_else(Uuid::new_v4, |s| s.uuid),
-            key,
-            revision: previous
-                .map_or(Some(1), |s| s.revision.checked_add(1))
-                .ok_or_else(|| anyhow::anyhow!("acquisition revision overflow"))?,
-            selected: Uuid::nil(),
-            request: output_plan.clone(),
-            acquisition: request.clone(),
-            last_success: if checked {
-                retrieved.descriptor.checked_at
-            } else {
-                previous.and_then(|s| s.last_success)
-            },
-            checked_source: if checked {
-                Some(retrieved.descriptor.resolved.clone())
-            } else {
-                previous.and_then(|s| s.checked_source.clone())
-            },
-            verification: retrieved.descriptor.verification.clone(),
-            owner: retrieved
-                .authorization
-                .as_ref()
-                .map(|authorization| authorization.owner.clone()),
-        };
+        let state = acquisition_check(retrieved, request, &output_plan, key, previous)?;
         let _lock = self.lock()?;
         if let Some(authorization) = &retrieved.authorization {
             authorization.check(self, output_plan.source_uuid, Some(request))?;
@@ -239,6 +214,35 @@ impl Store {
             _lease: result.lease,
             _retrieval: None,
         })
+    }
+
+    /// Publish complete immutable bytes while deferring successful-check selection.
+    /// The caller must keep the returned guard through its metadata transaction.
+    pub(crate) fn prepare_acquisition_candidate(
+        &self,
+        retrieved: &RetrievedResource,
+        request: &AcquisitionPlan,
+        key: String,
+        previous: Option<&AcquisitionState>,
+    ) -> Result<super::Acquisition> {
+        let output_plan = composition::managed_request(retrieved, request)?;
+        let prepared = composition::prepare(retrieved, request, Some(&self.root.join(".staging")))?;
+        let state = acquisition_check(retrieved, request, &output_plan, key, previous)?;
+        let _lock = self.lock()?;
+        if let Some(authorization) = &retrieved.authorization {
+            authorization.check(self, output_plan.source_uuid, Some(request))?;
+        }
+        self.publish_prepared_options(
+            &output_plan,
+            prepared,
+            super::OutputPublication {
+                claim: None,
+                retain: true,
+                force_new: false,
+                state: Some(state),
+                defer_check: true,
+            },
+        )
     }
 
     fn selected_acquisition(
@@ -299,6 +303,41 @@ impl Store {
         lease.verify(self, &output)?;
         Ok(lease)
     }
+}
+
+fn acquisition_check(
+    retrieved: &RetrievedResource,
+    request: &AcquisitionPlan,
+    output_plan: &crate::models::store::OutputPlan,
+    key: String,
+    previous: Option<&AcquisitionState>,
+) -> Result<AcquisitionState> {
+    let checked = retrieved.descriptor.origin_checked && !retrieved.descriptor.stale;
+    Ok(AcquisitionState {
+        uuid: previous.map_or_else(Uuid::new_v4, |s| s.uuid),
+        key,
+        revision: previous
+            .map_or(Some(1), |s| s.revision.checked_add(1))
+            .ok_or_else(|| anyhow::anyhow!("acquisition revision overflow"))?,
+        selected: Uuid::nil(),
+        request: output_plan.clone(),
+        acquisition: request.clone(),
+        last_success: if checked {
+            retrieved.descriptor.checked_at
+        } else {
+            previous.and_then(|s| s.last_success)
+        },
+        checked_source: if checked {
+            Some(retrieved.descriptor.resolved.clone())
+        } else {
+            previous.and_then(|s| s.checked_source.clone())
+        },
+        verification: retrieved.descriptor.verification.clone(),
+        owner: retrieved
+            .authorization
+            .as_ref()
+            .map(|authorization| authorization.owner.clone()),
+    })
 }
 
 pub(crate) fn scoped_intent_key(

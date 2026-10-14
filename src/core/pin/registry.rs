@@ -31,6 +31,29 @@ impl Store {
                     )
                 );
                 self.validate_pin_policy(&pin.request)?;
+                if let Some(receipt) = &pin.group {
+                    let outputs: std::collections::BTreeSet<_> = receipt
+                        .group
+                        .selected
+                        .as_ref()
+                        .context(Error::new(
+                            ErrorCode::IntegrityError,
+                            "pin group receipt has no selection",
+                        ))?
+                        .members
+                        .values()
+                        .map(|m| m.output_uuid)
+                        .collect();
+                    ensure!(
+                        receipt.group.owner == pin.owner
+                            && receipt.expected_revision > 0
+                            && outputs.into_iter().collect::<Vec<_>>() == pin.request.outputs,
+                        Error::new(
+                            ErrorCode::IntegrityError,
+                            "pin group receipt identity mismatch"
+                        )
+                    );
+                }
                 Ok(pin)
             })
             .collect()
@@ -41,7 +64,7 @@ impl Store {
             .find(|p| p.uuid == uuid)
             .context(Error::new(ErrorCode::InvalidRequest, "unknown pin"))
     }
-    pub(super) fn validate_pin_policy(&self, request: &PinRequest) -> Result<()> {
+    pub(crate) fn validate_pin_policy(&self, request: &PinRequest) -> Result<()> {
         let snapshot = self.metadata.snapshot()?;
         let catalog = persistence::load(&self.metadata, &snapshot)?;
         ensure!(
@@ -89,7 +112,7 @@ impl Store {
             scope,
         })
     }
-    pub(super) fn authorize_pin(&self, pin: &PinRecord, action: Action) -> Result<()> {
+    pub(crate) fn authorize_pin(&self, pin: &PinRecord, action: Action) -> Result<()> {
         if let Some(session) = &self.session {
             ensure!(
                 pin.owner == Some(session.app),
@@ -109,7 +132,7 @@ impl Store {
         }
         Ok(())
     }
-    pub(super) fn pin_paths(&self, pin: PinRecord) -> Result<PinnedOutputs> {
+    pub(crate) fn pin_paths(&self, pin: PinRecord) -> Result<PinnedOutputs> {
         let paths = pin
             .request
             .outputs
