@@ -8,6 +8,7 @@ pub(crate) mod claims;
 pub mod composition;
 mod execution;
 pub mod fence;
+pub mod group;
 pub(crate) mod persistence;
 pub mod prepare;
 pub mod resolve;
