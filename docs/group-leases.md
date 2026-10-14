@@ -63,3 +63,34 @@ paths, not authorization tokens or serialized lifetime guards.
 This is a cooperative lifetime and policy boundary, not a filesystem sandbox.
 Persistent groups, automatic retrieval and atomic multi-resource updates are
 separate future changes.
+
+## Native consumers
+
+`Store::lease_group(&request, &catalog)` supports trusted local output access.
+`store.session(app_uuid, credential)?.lease_group(&request, &catalog)` applies the
+app's current restrictions to every member. Pass `PolicyCatalog::default()` when
+all references are registered or omitted. Credentials are required only for apps
+that opted in.
+
+Keep the returned `GroupLease` alive while using `group.member("hooks")?.directory`.
+Its descriptor maps names to paths, selected output/claim UUIDs, verification and
+policy provenance. Duplicate-output names share one guard but keep independent
+directory views. Dropping the guard releases all outputs together. Native guards
+are not inherited by unrelated child processes.
+
+Admission selects all resources under coordination, scans outside global
+coordination, then rechecks relevant app and source revisions. Concurrent updates,
+release, uninstall, credential changes or policy adoption fail admission cleanly.
+Unrelated policy registration does not invalidate it. Once admitted, a group pins
+its original outputs even when claims subsequently change or disappear; a later
+group sees the new selection. Reclaim waits for every retaining consumer to finish.
+
+Run the native example against prepared outputs:
+
+```text
+cargo run --example group_consumer -- ROOT GROUP_JSON
+cargo run --example group_consumer -- ROOT GROUP_JSON APP_UUID
+```
+
+The example in `examples/group_consumer.rs` opens each live directory and drops the
+guard explicitly. A copied descriptor does not retain files after that drop.

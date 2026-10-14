@@ -4,6 +4,7 @@ pub mod claim;
 pub(crate) mod consumer;
 pub mod index;
 pub mod launch;
+pub mod lease;
 pub mod lifecycle;
 pub mod policy;
 pub mod query;
@@ -232,6 +233,9 @@ impl Store {
         Ok(store)
     }
     pub(crate) fn lock(&self) -> Result<StoreGuard> {
+        self.lock_with_timeout(Duration::from_secs(30))
+    }
+    pub(crate) fn lock_with_timeout(&self, timeout: Duration) -> Result<StoreGuard> {
         if let Some(native) =
             HELD_LOCKS.with(|locks| locks.borrow().get(&self.root).and_then(Weak::upgrade))
         {
@@ -252,7 +256,7 @@ impl Store {
         let native = Rc::new(LockGuard::acquire(
             &self.root.join(".locks/mutation"),
             LockMode::Exclusive,
-            Duration::from_secs(30),
+            timeout,
         )?);
         if self.metadata_only {
             self.metadata.require_reconciled()?;

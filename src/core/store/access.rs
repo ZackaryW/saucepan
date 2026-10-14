@@ -45,6 +45,14 @@ impl ResourceLease {
         Ok(())
     }
     pub(crate) fn project(&mut self, output: &OutputEntry, relative: Option<&str>) -> Result<()> {
+        self.resource.directory = self.directory_view(output, relative)?;
+        Ok(())
+    }
+    pub(crate) fn directory_view(
+        &self,
+        output: &OutputEntry,
+        relative: Option<&str>,
+    ) -> Result<PathBuf> {
         anyhow::ensure!(
             self.entry_uuid() == output.uuid,
             Error::new(ErrorCode::IntegrityError, "view output identity mismatch")
@@ -68,9 +76,9 @@ impl ResourceLease {
                     "view directory is unavailable"
                 )
             );
-            self.resource.directory = directory;
+            return Ok(directory);
         }
-        Ok(())
+        Ok(self.directory().to_owned())
     }
 
     /// Used only by dedicated single-launch CLI/shim processes. Other spawns
@@ -157,12 +165,19 @@ impl Store {
     }
     /// Caller holds mutation coordination until selection and native ownership complete.
     pub(crate) fn metadata_lease_locked(&self, output: &OutputEntry) -> Result<ResourceLease> {
+        self.metadata_lease_with_timeout(output, Duration::from_secs(30))
+    }
+    pub(crate) fn metadata_lease_with_timeout(
+        &self,
+        output: &OutputEntry,
+        timeout: Duration,
+    ) -> Result<ResourceLease> {
         let entry = output.uuid;
         let directory = self.metadata_path(output)?;
         let coordination = LockGuard::acquire(
             &self.root.join(format!(".locks/use-{entry}")),
             LockMode::Shared,
-            Duration::from_secs(30),
+            timeout,
         )?;
         let marker_path = self
             .root
