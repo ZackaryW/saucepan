@@ -22,7 +22,7 @@ use uuid::Uuid;
 pub(crate) const TEMP_PREFIX: &str = "saucepan-owned-";
 const TEMP_MARKER: &str = ".saucepan-consumer";
 
-struct ConsumerMarker {
+pub(crate) struct ConsumerMarker {
     file: Option<File>,
     marker: PathBuf,
     temporary: Option<PathBuf>,
@@ -48,7 +48,9 @@ impl Drop for ConsumerMarker {
         }
     }
 }
-fn temporary_marker(owner: &mut Option<Rc<tempfile::TempDir>>) -> Result<Option<ConsumerMarker>> {
+pub(crate) fn temporary_marker(
+    owner: &mut Option<Rc<tempfile::TempDir>>,
+) -> Result<Option<ConsumerMarker>> {
     let Some(owner) = owner.take() else {
         return Ok(None);
     };

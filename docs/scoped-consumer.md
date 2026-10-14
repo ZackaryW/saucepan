@@ -1,5 +1,11 @@
 # Native scoped consumer
 
+For one consumer using several prepared resources, use a [group lease](group-leases.md).
+`AppSession::lease_group` checks every named claim/output under one app context,
+optionally narrows access with referenced policies, and retains all selected outputs
+under one guard. The CLI equivalent is `saucepan --as-app APP_UUID run-group group.json
+-- PROGRAM`. Output-only trusted local groups also work without an application.
+
 For the flat-policy native flow, use `AppSession::ensure` with
 `models::claim::EnsureRequest`: supply an explicit `scope`, source UUID,
 selector, content selection, optional context and registered `policy_refs`.

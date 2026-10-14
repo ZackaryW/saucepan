@@ -57,28 +57,7 @@ impl ResourceLease {
             self.entry_uuid() == output.uuid,
             Error::new(ErrorCode::IntegrityError, "view output identity mismatch")
         );
-        if let Some(relative) = relative {
-            anyhow::ensure!(
-                output
-                    .files
-                    .get(relative)
-                    .is_some_and(|entry| entry.digest.is_none()),
-                Error::new(
-                    ErrorCode::InvalidRequest,
-                    "view is not a directory in the output manifest"
-                )
-            );
-            let directory = beneath(self.directory(), relative)?;
-            anyhow::ensure!(
-                plain_metadata(&directory)?.is_dir(),
-                Error::new(
-                    ErrorCode::ContentUnavailable,
-                    "view directory is unavailable"
-                )
-            );
-            return Ok(directory);
-        }
-        Ok(self.directory().to_owned())
+        directory_view(self.directory(), output, relative)
     }
 
     /// Used only by dedicated single-launch CLI/shim processes. Other spawns
@@ -89,6 +68,37 @@ impl ResourceLease {
         let file = crate::utils::lifetime::inheritable_marker(&self.marker_path)?;
         self.file = Some(file);
         Ok(())
+    }
+}
+
+/// Caller coordinates selection; ownership can be acquired after all views validate.
+pub(crate) fn directory_view(
+    root: &Path,
+    output: &OutputEntry,
+    relative: Option<&str>,
+) -> Result<PathBuf> {
+    if let Some(relative) = relative {
+        anyhow::ensure!(
+            output
+                .files
+                .get(relative)
+                .is_some_and(|entry| entry.digest.is_none()),
+            Error::new(
+                ErrorCode::InvalidRequest,
+                "view is not a directory in the output manifest"
+            )
+        );
+        let directory = beneath(root, relative)?;
+        anyhow::ensure!(
+            plain_metadata(&directory)?.is_dir(),
+            Error::new(
+                ErrorCode::ContentUnavailable,
+                "view directory is unavailable"
+            )
+        );
+        Ok(directory)
+    } else {
+        Ok(root.to_owned())
     }
 }
 

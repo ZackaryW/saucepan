@@ -149,7 +149,11 @@ impl Store {
                     GroupMemberDescriptor {
                         output_uuid: id,
                         claim_uuid: claim_id,
-                        directory: Default::default(),
+                        directory: crate::core::store::access::directory_view(
+                            &self.metadata_path(&output)?,
+                            &output,
+                            member.relative.as_deref(),
+                        )?,
                         relative: member.relative.clone(),
                         verification: mode,
                         policy_provenance: evidence.into_values().collect(),
@@ -162,10 +166,6 @@ impl Store {
             let mut leases = BTreeMap::new();
             for (id, output) in &outputs {
                 leases.insert(*id, self.metadata_lease_with_timeout(output, remaining())?);
-            }
-            for member in descriptor.members.values_mut() {
-                member.directory = leases[&member.output_uuid]
-                    .directory_view(&outputs[&member.output_uuid], member.relative.as_deref())?;
             }
             (leases, descriptor, outputs, modes, fences)
         };

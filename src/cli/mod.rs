@@ -5,6 +5,7 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 mod composition;
 mod credentials;
+mod group;
 mod policies;
 mod root;
 mod source_query;
@@ -41,7 +42,7 @@ struct Args {
     /// Store directory; defaults to .saucepan in the user's home directory.
     #[arg(long, global = true)]
     root: Option<PathBuf>,
-    /// Portable leaf policy catalog for retrieve/acquisition commands.
+    /// Portable leaf policy catalog for retrieval/acquisition and run-group.
     #[arg(long = "policies", global = true)]
     portable_policies: Option<PathBuf>,
     #[arg(long, global = true, hide = true)]
@@ -225,6 +226,13 @@ enum Commands {
         #[arg(last = true, required = true, num_args = 1..)]
         command: Vec<std::ffi::OsString>,
     },
+    /// Run with all named resources retained; sets SAUCEPAN_RESOURCE_GROUP_FILE.
+    RunGroup {
+        /// Group request JSON (at most 1 MiB); targets must already be prepared.
+        file: PathBuf,
+        #[arg(last = true, required = true, num_args = 1..)]
+        command: Vec<std::ffi::OsString>,
+    },
     Reclaim,
     Reacquire {
         uuid: uuid::Uuid,
@@ -308,10 +316,19 @@ pub fn run() -> Result<()> {
 // Keep the store command frame out of root-free composition execution.
 fn run_store(args: Args) -> Result<()> {
     anyhow::ensure!(
-        args.portable_policies.is_none(),
+        args.portable_policies.is_none() || matches!(args.command, Commands::RunGroup { .. }),
         crate::error::Error::new(
             crate::error::ErrorCode::InvalidRequest,
-            "--policies is supported by retrieval/acquisition commands"
+            "--policies is supported by retrieval/acquisition and run-group"
+        )
+    );
+    anyhow::ensure!(
+        !matches!(args.command, Commands::RunGroup { .. })
+            || args.credential_file.is_none()
+            || args.as_app.is_some(),
+        crate::error::Error::new(
+            crate::error::ErrorCode::InvalidRequest,
+            "run-group credential-file requires as-app"
         )
     );
     let explicit_root = args.root.is_some();
@@ -661,6 +678,14 @@ fn run_store(args: Args) -> Result<()> {
                         .env("SAUCEPAN_RESOURCE_DIR", lease.directory());
                     let code = crate::core::launch::launch_leased(process, lease)?;
                     std::process::exit(code);
+                }
+                Commands::RunGroup { file, command } => {
+                    std::process::exit(group::run(
+                        &store,
+                        &file,
+                        args.portable_policies.as_deref(),
+                        &command,
+                    )?);
                 }
                 Commands::Reclaim => serde_json::to_value(store.reclaim()?)?,
                 Commands::Reacquire { uuid } => {

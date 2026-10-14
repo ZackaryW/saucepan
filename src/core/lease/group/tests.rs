@@ -415,3 +415,28 @@ fn reversed_groups_and_reclaim_progress_while_another_group_scans() {
     assert!(store.lease_group(&invalid, &Default::default()).is_err());
     assert!(available(&store, first) && available(&store, second));
 }
+
+#[test]
+fn partial_marker_inheritance_and_spawn_failure_release_all_outputs() {
+    for partial in [false, true] {
+        let (tmp, store, request, first) = fixture();
+        let preparation = store.lease(first, VerificationMode::Metadata).unwrap();
+        fs::write(tmp.path().join("input/hooks/script"), "second").unwrap();
+        let second = store.acquire(&request).unwrap().entry.uuid;
+        let mut request = group(first);
+        request.members[1].target = GroupTarget::Output { uuid: second };
+        let mut owned = store.lease_group(&request, &Default::default()).unwrap();
+        drop(preparation);
+        if partial {
+            owned.leases.values_mut().nth(1).unwrap().inherit().unwrap();
+        }
+        let result = crate::core::lease::launch::launch_group(
+            std::process::Command::new(tmp.path().join("missing-program")),
+            owned,
+        );
+        assert!(result.is_err());
+        assert!(available(&store, first) && available(&store, second));
+        assert!(!store.has_live_execution(first).unwrap());
+        assert!(!store.has_live_execution(second).unwrap());
+    }
+}

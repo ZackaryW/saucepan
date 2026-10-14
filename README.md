@@ -59,6 +59,12 @@ Acquisition returns `entry`, `directory`, `reused`, `update_checked`, `stale`, a
 
 `path` defaults to metadata checks without hashing payloads. Use `path OUTPUT_UUID --verification full` or `verify OUTPUT_UUID` for explicit integrity verification. Bare paths have no retained reclaim protection; native consumers hold `ResourceLease` guards. See [resource access](docs/resource-access.md) for ownership and verification contracts.
 
+Use `run-group group.json -- PROGRAM` to retain several named prepared outputs for
+one child, or `Store::lease_group` / `AppSession::lease_group` for native callers.
+App identity and group policy boundaries are optional; claim targets require an
+app context. Groups do not fetch or update resources. See [group leases](docs/group-leases.md)
+for payloads, flat policy references and the runnable consumer examples.
+
 `models/{source,retrieval,index,store,policy,claim}` defines the contract, matching `core` modules own behavior, `cli` adapts commands, and `utils` contains domain-independent mechanics. `saucepan-shim` is a separate binary that reads its sibling `.shim.json` app identifier and the application's committed binding.
 
 Portable helpers require caller-owned stable roots. Atomic file replacement does not imply a multi-file transaction or power-loss directory durability; native locks coordinate cooperating callers. Path validation rejects unsafe/ambiguous names; it does not isolate hostile processes running as the same user.

@@ -94,3 +94,42 @@ cargo run --example group_consumer -- ROOT GROUP_JSON APP_UUID
 
 The example in `examples/group_consumer.rs` opens each live directory and drops the
 guard explicitly. A copied descriptor does not retain files after that drop.
+
+## CLI consumers
+
+Build `cargo build --example group_reader`, then launch the example against a
+prepared request. Windows uses the `.exe` suffix; Unix omits it:
+
+```text
+saucepan run-group group.json -- target/debug/examples/group_reader.exe
+saucepan --as-app APP_UUID run-group group.json --policies policies.json -- target/debug/examples/group_reader.exe
+```
+
+The default store is the user's `~/.saucepan`. Use `--root PATH` for a disposable
+or alternate store. For a protected app, add `--credential-file PATH`. Requests
+and portable catalogs each have a 1 MiB limit; the resulting descriptor is bounded
+to 16 MiB. Rejected admission writes no successful paths and starts no child.
+`--error-format json` exposes the existing structured errors.
+
+The child gets `SAUCEPAN_RESOURCE_GROUP_FILE`, an absolute path to an owned UTF-8
+JSON file with a `members` object. Each name maps to `output_uuid`, optional
+`claim_uuid`, `directory`, `relative`, `verification` and `policy_provenance`.
+No credential or native handle value is included. Saucepan removes stale singular
+`SAUCEPAN_RESOURCE_DIR` and `SAUCEPAN_SOURCE_PATH/KIND/COMMIT` variables from the
+child environment. Parent environment, working directory, literal arguments and
+stdin/stdout/stderr are preserved. The child's exit status is propagated.
+
+Each distinct output and the descriptor directory have inherited native ownership.
+On Windows, killing the waiting wrapper does not release a live child's resources.
+On Unix the dedicated wrapper executes the child in place. Closed output markers
+are swept by reclaim; closed descriptor scratch is swept on later consumer launch.
+Setup/spawn failure releases ownership, making any remaining markers reclaimable.
+Children must retain inherited handles for the duration of use; closing handles
+or detaching work that discards them ends that protection. This behavior is confined
+to the dedicated CLI boundary; native library calls do not make handles inheritable.
+
+`tests/group_leases.rs` exercises three separate command/hook/service outputs,
+optional app identity, a scoped boundary, duplicate directory views, claim updates,
+release, reclaim and wrapper termination. It is a disposable Zush-shaped fixture;
+it does not modify Zush or Power Eagle. Windows execution is verified here;
+Linux/macOS execution requires their corresponding test runs.

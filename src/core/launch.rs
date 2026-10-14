@@ -72,10 +72,17 @@ impl Store {
 /// Only the dedicated CLI/shim processes call this boundary. Never use it for
 /// in-process resource access: Unix replaces the caller's process with the tool.
 pub(crate) fn launch_leased(
-    mut command: std::process::Command,
+    command: std::process::Command,
     mut lease: ResourceLease,
 ) -> Result<i32> {
     lease.inherit()?;
+    let result = launch_command(command);
+    drop(lease);
+    result
+}
+
+/// Ownership is held by the caller across exec/spawn, including setup failures.
+pub(crate) fn launch_command(mut command: std::process::Command) -> Result<i32> {
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -86,7 +93,6 @@ pub(crate) fn launch_leased(
         // Remain in the console group. Inherited native ownership survives
         // wrapper termination until the target closes its handle or exits.
         let status = command.spawn()?.wait()?;
-        drop(lease);
         Ok(status.code().unwrap_or(1))
     }
 }
