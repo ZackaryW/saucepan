@@ -6,9 +6,9 @@ export interface Base {
 }
 export interface AccessPolicy extends Base {
   type: "access_policy";
-  sources?: (string)[];
-  scopes?: (string)[];
-  actions?: (Action)[];
+  sources?: (string)[] | null;
+  scopes?: (string)[] | null;
+  actions?: (Action)[] | null;
 }
 export interface SourceVisibilityPolicy extends Base {
   type: "source_visibility_policy";

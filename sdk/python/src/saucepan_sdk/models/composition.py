@@ -12,7 +12,7 @@ class RegisteredSource(TypedDict):
 type SourceInput = InlineSource | RegisteredSource
 
 class AssetSelection(TypedDict, total=False):
-    platform: Platform
+    platform: Platform | None
     filter_refs: list[str]
 
 class Retrieval(TypedDict):
@@ -20,8 +20,8 @@ class Retrieval(TypedDict):
     selector: Selector
     asset: NotRequired[AssetSelection]
     policy_refs: NotRequired[list[str]]
-    destination: NotRequired[str]
-    expected_sha256: NotRequired[str]
+    destination: NotRequired[str | None]
+    expected_sha256: NotRequired[str | None]
 
 class SimpleDestination(TypedDict):
     mode: Literal["managed", "temporary"]
@@ -33,8 +33,8 @@ class DirectoryDestination(TypedDict):
 class Acquisition(TypedDict, total=False):
     destination: SimpleDestination | DirectoryDestination
     format: Literal["natural", "raw", "zip"]
-    filename: str
-    folder: str
+    filename: str | None
+    folder: str | None
     bin: list[str]
     policy_refs: list[str]
 

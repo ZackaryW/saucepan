@@ -90,18 +90,26 @@ class CliTransport:
         limit = min(config.input_limit, call.payload_limit or config.input_limit)
         if limit <= 0:
             raise TransportError("invalid_input")
+        started = False
         try:
             with payload_files(values, limit=limit) as paths:
                 if call.policies is not None:
                     prefix.extend(["--policies", paths["policies"]])
                 argv = [paths[str(i)] if isinstance(arg, Payload) else arg for i, arg in enumerate(call.argv)]
-                return invoke(config.executable, [*prefix, *argv], timeout=options.timeout,
-                              capture=options.capture, capture_limit=config.capture_limit, cancel=options.cancel)
+                try:
+                    result = invoke(config.executable, [*prefix, *argv], timeout=options.timeout,
+                                    capture=options.capture, capture_limit=config.capture_limit, cancel=options.cancel)
+                except TransportError as error:
+                    started = error.started
+                    raise
+                started = True
+                return result
         except TransportError as error:
             error.indeterminate = call.mutates and error.started
             raise
         except OSError:
-            raise TransportError("payload_io") from None
+            raise TransportError("payload_io", started=started,
+                                 indeterminate=call.mutates and started) from None
 
     def json(self, config: Config, call: Call) -> object:
         result = self._invoke(config, call, RunOptions(capture=True, timeout=config.timeout))

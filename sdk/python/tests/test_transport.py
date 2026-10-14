@@ -1,4 +1,5 @@
 import concurrent.futures
+from contextlib import contextmanager
 import json
 from pathlib import Path
 import sys
@@ -6,6 +7,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest.mock import patch
 
 from saucepan_sdk import Client, SaucepanError, TransportError
 from saucepan_sdk.transport import Call, CliTransport, Config, Payload
@@ -110,6 +112,35 @@ class TransportTests(unittest.TestCase):
                 self.execute(source, mutates=True, required=('uuid',))
             self.assertEqual(error.exception.kind, 'protocol')
             self.assertTrue(error.exception.indeterminate)
+
+    def test_cleanup_failure_preserves_mutation_uncertainty(self):
+        marker = Path(self.temp.name) / 'committed'
+
+        @contextmanager
+        def failing_cleanup(values, *, limit):
+            with payload_files(values, limit=limit) as paths:
+                yield paths
+            raise OSError('simulated cleanup failure')
+
+        def execute_mutation(*args, **kwargs):
+            return invoke(sys.executable, ['-c',
+                'from pathlib import Path; import sys; Path(sys.argv[1]).touch(); print("{}")',
+                str(marker)])
+
+        with patch('saucepan_sdk.transport.payload_files', failing_cleanup), \
+             patch('saucepan_sdk.transport.invoke', execute_mutation), \
+             self.assertRaises(TransportError) as error:
+            CliTransport().json(Config(), Call([], mutates=True))
+        self.assertTrue(marker.exists())
+        self.assertEqual(error.exception.kind, 'payload_io')
+        self.assertTrue(error.exception.started)
+        self.assertTrue(error.exception.indeterminate)
+
+        with patch('saucepan_sdk.transport.payload_files', side_effect=OSError()), \
+             self.assertRaises(TransportError) as error:
+            CliTransport().json(Config(), Call([], mutates=True))
+        self.assertFalse(error.exception.started)
+        self.assertFalse(error.exception.indeterminate)
 
 
 if __name__ == '__main__':

@@ -10,7 +10,7 @@ export interface RegisteredSource {
 }
 export type SourceInput = InlineSource | RegisteredSource;
 export interface AssetSelection {
-  platform?: Platform;
+  platform?: Platform | null;
   filter_refs?: (string)[];
 }
 export interface Retrieval {
@@ -18,8 +18,8 @@ export interface Retrieval {
   selector: Selector;
   asset?: AssetSelection;
   policy_refs?: (string)[];
-  destination?: string;
-  expected_sha256?: string;
+  destination?: string | null;
+  expected_sha256?: string | null;
 }
 export interface SimpleDestination {
   mode: "managed" | "temporary";
@@ -31,8 +31,8 @@ export interface DirectoryDestination {
 export interface Acquisition {
   destination?: SimpleDestination | DirectoryDestination;
   format?: "natural" | "raw" | "zip";
-  filename?: string;
-  folder?: string;
+  filename?: string | null;
+  folder?: string | null;
   bin?: (string)[];
   policy_refs?: (string)[];
 }

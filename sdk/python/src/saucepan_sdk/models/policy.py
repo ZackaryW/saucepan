@@ -8,9 +8,9 @@ class Base(TypedDict):
 
 class AccessPolicy(Base):
     type: Literal["access_policy"]
-    sources: NotRequired[list[str]]
-    scopes: NotRequired[list[str]]
-    actions: NotRequired[list[Action]]
+    sources: NotRequired[list[str] | None]
+    scopes: NotRequired[list[str] | None]
+    actions: NotRequired[list[Action] | None]
 
 class SourceVisibilityPolicy(Base):
     type: Literal["source_visibility_policy"]

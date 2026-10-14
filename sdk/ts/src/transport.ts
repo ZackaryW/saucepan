@@ -45,9 +45,14 @@ export class NodeTransport implements Transport {
       return await payloadFiles(values, limit, async paths => {
         if (call.policies !== undefined) prefix.push('--policies', paths.get('policies')!);
         const argv = call.argv.map((arg, index) => arg instanceof Payload ? paths.get(String(index))! : arg);
-        const result = await invoke(config.executable, [...prefix, ...argv], { ...options, captureLimit: config.captureLimit });
-        started = true;
-        return result;
+        try {
+          const result = await invoke(config.executable, [...prefix, ...argv], { ...options, captureLimit: config.captureLimit });
+          started = true;
+          return result;
+        } catch (error) {
+          if (error instanceof TransportError) started = error.started;
+          throw error;
+        }
       });
     } catch (error) {
       if (error instanceof TransportError) { error.indeterminate = !!call.mutates && error.started; throw error; }
