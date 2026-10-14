@@ -56,17 +56,21 @@ separately tested with an isolated home and no app or credentials.
 
 The final full run includes the create-new descriptor write and isolated marker
 fixture. Windows console interruption ran successfully in the focused group
-suite. All 16 tasks are complete; the change remains active for later sync/archive.
+suite. All 16 tasks are complete. On 2026-10-14 the change was synced to the
+main specifications and archived as `2026-10-14-add-group-leases`; all 22 main
+specifications passed strict validation. Temporary change-state cleanup succeeded
+with no state to remove.
 
 The full suite log is `target/group-leases-full-tests.log`. Counts use each Cargo
 target's final summary, excluding nested child-fixture summaries.
 
 No hosted workflows, Linux/macOS runs, native keyring smoke tests, MSRV runs,
-external consumer edits, push, sync or archive are part of this change. Optional
+external consumer edits or push were part of the runtime verification. Optional
 native keyring tests remain opt-in; injected-key and basic-mode fixtures cover the
 app and integrity contracts without assuming a usable OS keyring. Persistent
 group registration, retrieval orchestration and atomic multi-resource updates
-remain separate future work. Active change artifacts stay outside commits.
+remain separate future work. Finalized specifications and archived artifacts are
+committed; active change artifacts stay outside commits.
 
 ## Dependency decisions
 
