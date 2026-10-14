@@ -1,5 +1,7 @@
 # Source discovery
 
+[← Saucepan guide](../README.md#sources-and-acquisition)
+
 Source discovery finds registered provider definitions before any application has
 claimed or downloaded them. It is separate from claim context queries and remote
 release/ref discovery. It never fetches, refreshes, reads payloads, creates claims

@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Documentation examples are also consumed by Rust contract tests.
+*.md text eol=lf

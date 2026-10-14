@@ -101,7 +101,7 @@ For this change, registered definitions are retained indefinitely; there is no d
 
 Utility assessment: reuse existing UUID parsing, hashing, locking, bounded JSON, atomic publication and test fixture helpers. The policy resolver is domain logic, not a generic utility framework. No general policy library, graph abstraction, repository reorganization or parallel persistence mechanism is warranted. Public inputs change together in the integration checkpoint; temporary internal adapters can keep earlier checkpoints buildable but must not become a supported second public contract.
 
-The subsequent user-requested crate review is recorded in `docs/composition-utilities.md#crate-reuse-decisions`, with inclusion/defer reasons and reconsideration criteria. The implemented cleanup consolidates on the existing `sha2` 0.11 dependency and makes the already locked `hex` crate a direct dependency for digest encoding. `walkdir` and `dunce` remain candidates pending equivalent filesystem/Git behavior checks; neither was added. This does not change policy semantics or reduce the required public-contract cutover.
+The subsequent user-requested crate review is recorded in `openspec/changes/archive/2026-10-13-flatten-policy-resources/utilities.md#crate-reuse-decisions`, with inclusion/defer reasons and reconsideration criteria. The implemented cleanup consolidates on the existing `sha2` 0.11 dependency and makes the already locked `hex` crate a direct dependency for digest encoding. `walkdir` and `dunce` remain candidates pending equivalent filesystem/Git behavior checks; neither was added. This does not change policy semantics or reduce the required public-contract cutover.
 
 ### 7. Concrete Power Eagle shape
 

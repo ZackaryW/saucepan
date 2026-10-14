@@ -1,7 +1,7 @@
 # Resource access verification
 
 This is historical checkpoint evidence. Its earlier record layout and scripts do
-not define current schema compatibility. Use [claim registry verification](claim-verification.md)
+not define current schema compatibility. Use [claim registry verification](../2026-10-10-secure-application-claim-registry/verification.md)
 for the current implementation and runnable acceptance commands.
 
 ## Lifecycle regression run
@@ -14,7 +14,7 @@ successful old-process inherited-marker protection and unchanged mock launchers.
 The old reader starts against an isolated copy of its original record shape;
 the recipe restores current metadata after the target has started. This is
 process-lifetime compatibility, not old-writer/new-metadata compatibility.
-See [lifecycle verification](lifecycle-verification.md) for that checkpoint's whole-change
+See [lifecycle verification](../2026-10-09-reconcile-application-lifecycle/verification.md) for that checkpoint's whole-change
 evidence. All counts and binary identities in the sections below are historical.
 
 ## Application deactivation follow-up
@@ -140,4 +140,4 @@ schemas, source providers, dependencies, retention rules, SDKs, or production
 root selection. The intentional behavior change is metadata-default access;
 full verification remains explicit and available. At that checkpoint planning
 artifacts remained local under `openspec/changes`; the baseline and this change
-have since been synced and archived. See [current specs](../openspec/specs/README.md).
+have since been synced and archived. See [current specs](../../../specs/README.md).

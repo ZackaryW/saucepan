@@ -1,5 +1,7 @@
 # Durable output pins
 
+[← Saucepan guide](../README.md#resource-lifetime-groups-and-pins)
+
 A pin keeps an exact set of output UUIDs available until explicitly released. It survives the process that created it and does not follow a moving claim. Ordinary acquisition, claims, and invocation leases do not create pins.
 
 Register this immutable policy through `saucepan register-policies pin-policy.json`:

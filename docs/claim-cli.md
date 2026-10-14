@@ -1,10 +1,12 @@
 # Application claim CLI
 
+[← Saucepan guide](../README.md#application-claims-and-queries)
+
 Use a fresh root. Initialization defaults to basic checksum integrity without an
 OS keyring. Select `init --integrity keyring` for native-backed HMAC protection.
-Application credentials are independently optional within keyring mode; basic
-stores do not support credential-protected registrations. Earlier store
-layouts are not migrated.
+Application credentials are independently optional in either integrity mode.
+Basic checksums do not protect against a filesystem writer who replaces metadata
+and recomputes them. Earlier store layouts are not migrated.
 The examples select `./scratch` explicitly; omit `--root` to use the user-home
 `.saucepan` store.
 
@@ -69,8 +71,8 @@ Discovery does not grant ownership or direct-output access.
 
 ## Optional credentials and administration
 
-On a root initialized with `--integrity keyring`, use a new registration key, set
-`credentials_required` to true and choose a new secret destination. To enable
+In either integrity mode, use a new registration key, set `credentials_required`
+to true and choose a new secret destination. To enable
 credentials on the app registered above, use `configure-application` as described
 below; retrying registration with changed settings is a conflict.
 

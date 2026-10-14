@@ -1,10 +1,10 @@
 # Simulated installation
 
 This is historical checkpoint evidence. Its earlier record layout and scripts do
-not define current schema compatibility. Use [optional keyring verification](optional-keyring-verification.md)
+not define current schema compatibility. Use [optional keyring verification](../2026-10-13-make-keyring-protection-optional/verification.md)
 for the current implementation and runnable acceptance commands.
 
-For current basic-store acceptance, use `cargo test --locked --test claim_acceptance`. It uses real built binaries and local source inputs in a disposable root while preserving `mock/`. The separately updated two-build release harness and its current results are described in [optional keyring verification](optional-keyring-verification.md). The earlier run remains recorded in [lifecycle verification](lifecycle-verification.md).
+For current basic-store acceptance, use `cargo test --locked --test claim_acceptance`. It uses real built binaries and local source inputs in a disposable root while preserving `mock/`. The separately updated two-build release harness and its current results are described in [optional keyring verification](../2026-10-13-make-keyring-protection-optional/verification.md). The earlier run remains recorded in [lifecycle verification](../2026-10-09-reconcile-application-lifecycle/verification.md).
 
 The original run used `uv run --no-project python scripts/acceptance.py` from the repository. That harness built actual release executables with build IDs `acceptance-a` and `acceptance-b`, packaged them as ZIP assets, and served them through an explicit loopback GitHub-compatible fixture. It used the provider and CLI of that checkpoint for every source, acquisition, claim, activation, and reclaim operation. Do not rerun this old-layout recipe against the preserved mock or a current store.
 
@@ -36,7 +36,7 @@ $report = Get-Content ./target/acceptance/latest.json -Raw | ConvertFrom-Json
 
 The fixture HTTP server exists only during the harness run. Its cached discovery can still be inspected afterward, and the installed executable runs offline. A new live acquisition after expiry needs a running fixture or a production source. Rerunning the harness creates a fresh fixture source instead of changing the production GitHub API default.
 
-For current real-release usage, choose a freshly initialized root as `$root` and follow [application lifecycle](application-lifecycle.md). Register `github_release` and save its UUID in a request with ZIP/raw format, platform selection, `bin`, and `useable_app` protection. The commands are:
+For current real-release usage, choose a freshly initialized root as `$root` and follow [application lifecycle](../../../../docs/application-lifecycle.md). Register `github_release` and save its UUID in a request with ZIP/raw format, platform selection, `bin`, and `useable_app` protection. The commands are:
 
 ```powershell
 saucepan --root $root bootstrap request.json ./target/release/saucepan-shim.exe
@@ -74,5 +74,5 @@ the old application-record shape, then restores current metadata after the
 target has acquired its lease. This tests a surviving old process across an
 upgrade; it does not promise that an old launcher reads new application records.
 It never replaces the original shim. See
-[verification evidence](resource-access-verification.md) for scenario coverage
+[verification evidence](../2026-10-09-efficient-resource-access/evidence.md) for scenario coverage
 and the latest recorded build identities.

@@ -1,5 +1,7 @@
 # Resource access
 
+[← Saucepan guide](../README.md#resource-lifetime-groups-and-pins)
+
 For lifetime beyond an updater process, [explicit output pins](output-pins.md)
 retain exact output UUIDs until release. [Registered groups](resource-groups.md)
 add saved intent and atomic preparation; their ordinary read-only opening remains

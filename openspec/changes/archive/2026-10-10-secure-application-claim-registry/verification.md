@@ -1,10 +1,10 @@
 # Claim registry verification
 
-Historical checkpoint: these results predate the flat-policy contract. Use [flat-policy verification](policy-verification.md) for current evidence; earlier harness payloads are not supported inputs.
+Historical checkpoint: these results predate the flat-policy contract. Use [flat-policy verification](../2026-10-13-flatten-policy-resources/verification.md) for current evidence; earlier harness payloads are not supported inputs.
 
 This report records the earlier protected-only checkpoint. Current ordinary
 acceptance uses basic integrity without keyring access; see
-[optional keyring verification](optional-keyring-verification.md) for the later
+[optional keyring verification](../2026-10-13-make-keyring-protection-optional/verification.md) for the later
 runtime modes, test selection and two-build release evidence.
 
 Verified on Windows x86_64 with Rust 1.98.1 on 2026-10-09. The package remains
@@ -12,7 +12,7 @@ Rust-only: native keyring, HKDF/HMAC, serde and native lifetime guards; no Pytho
 runtime binding or metadata encryption was introduced.
 
 The counts and digests below belong to the claim-registry checkpoint, before
-source discovery and its CLI improvements. See the [documentation map](README.md)
+source discovery and its CLI improvements. See the [documentation map](../../../../README.md)
 for subsequent capabilities, current check commands and remaining evidence gaps.
 
 ## Integrated fresh-root acceptance

@@ -10,19 +10,9 @@ consumer error codes. Source discovery supports anonymous public lookup, optiona
 application identity and direct CLI filters, with the user-home `.saucepan` store
 as the default. New stores use basic checksums without keyring access; explicit
 keyring mode retains HMAC protection. App credentials remain independently opt-in
-in both modes. Current usage and verification:
-
-| Implemented responsibility | Documentation |
-| --- | --- |
-| Registry, scope, access and output policy | [Claim policies](../../docs/claim-policies.md) |
-| Basic checksums, optional HMAC protection and native key custody | [Claim integrity](../../docs/claim-integrity.md) |
-| CLI registration, credentials, recovery and machine errors | [Claim CLI](../../docs/claim-cli.md) |
-| Native scoped/view lifetime integration | [Scoped consumer](../../docs/scoped-consumer.md) |
-| Source discovery, visibility and CLI filters | [Source query](../../docs/source-query.md) |
-| Integrated acceptance and host limitations | [Verification](../../docs/optional-keyring-verification.md) |
-
-See the [documentation map](../../docs/README.md) for the distinction between
-current contracts, dated execution evidence and remaining verification gaps.
+in both modes. The [repository README](../../README.md) organizes user-facing
+guides by topic. Designs, dependency decisions and dated verification reports
+belong to their active or archived OpenSpec change, not to a parallel docs index.
 
 This implementation accepts its explicit basic contract and supported protected
 contract; protected stores never fall back to basic verification. Historical
@@ -36,8 +26,11 @@ Read overlapping requirements together using these responsibility boundaries:
 | [store-layout](store-layout/spec.md) | Root layout, current data contract and rejection of pre-reimplementation stores |
 | [source-resolution](source-resolution/spec.md) | Provider resolution, discovery freshness and asset selection |
 | [source-query](source-query/spec.md) | Source metadata discovery, public visibility and optional CLI filters |
+| [source-retrieval](source-retrieval/spec.md) | Original source material, retrieval modes and lifetime |
 | [output-acquisition](output-acquisition/spec.md) | Immutable output identity, acquisition and reuse |
+| [acquisition-refresh](acquisition-refresh/spec.md) | Copied-result refresh and selected-source observations |
 | [output-policies](output-policies/spec.md) | Retention demand, protection and reclaim eligibility |
+| [policy-resources](policy-resources/spec.md) | Immutable policy definitions, lookup and explicit adoption |
 | [application-claims](application-claims/spec.md) | Request-bearing associations, context metadata and primitive claim operations |
 | [claim-query](claim-query/spec.md) | Application-scoped context matching, public claim discovery and consistent snapshots |
 | [claim-recovery](claim-recovery/spec.md) | Explicit unavailable-content recovery and exact restoration |
@@ -49,6 +42,9 @@ Read overlapping requirements together using these responsibility boundaries:
 | [shim-maintenance](shim-maintenance/spec.md) | Launcher ownership, adoption, replacement and verified cleanup |
 | [self-management](self-management/spec.md) | Saucepan's use of the shared managed application contracts |
 | [resource-access](resource-access/spec.md) | Exact-output lookup and native/process lifetime ownership |
+| [group-leases](group-leases/spec.md) | One invocation lifetime for named prepared outputs |
+| [resource-groups](resource-groups/spec.md) | Registered intent, atomic preparation and selected generations |
+| [output-pins](output-pins/spec.md) | Explicit durable retention of exact outputs |
 | [content-verification](content-verification/spec.md) | Metadata/full checking and mandatory integrity boundaries |
 | [lease-marker-cleanup](lease-marker-cleanup/spec.md) | Process-marker creation and safe stale-marker cleanup |
 

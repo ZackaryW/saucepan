@@ -52,9 +52,9 @@ All 65 local documentation-link targets exist. Windows x86_64, Rust 1.98.1 only.
 
 ## Boundaries and final evidence
 
-No implementation tasks remain. See `docs/policy-verification.md` for the
+No implementation tasks remain. See `openspec/changes/archive/2026-10-13-flatten-policy-resources/verification.md` for the
 combined contract and validation coverage. Crate inclusion/defer reasons remain in
-`docs/composition-utilities.md`: consolidated sha2, existing hex; no walkdir,
+`openspec/changes/archive/2026-10-13-flatten-policy-resources/utilities.md`: consolidated sha2, existing hex; no walkdir,
 dunce or generic graph/IAM engine without equivalence and benefit evidence.
 
 Do not migrate historical mock/user roots, edit Power Eagle, push, run hosted CI,

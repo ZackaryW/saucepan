@@ -1,5 +1,7 @@
 # Application claim policies
 
+[← Saucepan guide](../README.md#application-claims-and-queries)
+
 The flat-policy native flow registers standalone definitions with
 `Store::register_policies`, attaches app defaults with
 `Store::adopt_application_policies`, and calls `AppSession::ensure_referenced`

@@ -80,9 +80,9 @@ tests, Linux/macOS execution, MSRV execution, historical mock migration, push,
 sync or archive were performed.
 Injected custody verifies protected behavior without asserting OS keyring setup.
 Crate inclusion and deferral reasons remain in
-[composition utilities](composition-utilities.md#crate-reuse-decisions).
+[composition utilities](utilities.md#crate-reuse-decisions).
 
 This report retains the flat-policy checkpoint's dated evidence. See
-[group-lease verification](group-lease-verification.md) for the subsequent grouped
+[group-lease verification](../2026-10-14-add-group-leases/verification.md) for the subsequent grouped
 consumer extension. Historical verification reports retain their dated evidence
 and are explicitly marked as earlier contracts.

@@ -1,14 +1,14 @@
 # Application lifecycle verification
 
 This is historical checkpoint evidence. Its earlier record layout and scripts do
-not define current schema compatibility. Use [claim registry verification](claim-verification.md)
+not define current schema compatibility. Use [claim registry verification](../2026-10-10-secure-application-claim-registry/verification.md)
 for the current implementation and runnable acceptance commands.
 
 Verified on Windows x86_64 on 2026-10-08. The coordinated change covers managed
 install, update, rollback, launcher ownership/maintenance, uninstall and explicit
 reconciliation. At that checkpoint, earlier changes were unarchived and planning
 artifacts were kept outside implementation commits. They have since been synced
-and archived; use [current specs](../openspec/specs/README.md) for the baseline.
+and archived; use [current specs](../../../specs/README.md) for the baseline.
 
 ## Executed checks
 

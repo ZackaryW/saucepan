@@ -1,5 +1,7 @@
 # Policy resources
 
+[← Saucepan guide](../README.md#sources-and-acquisition)
+
 The flat policy contract gives each definition its own immutable UUID. Applications,
 sources and claims associate those records through `policy_refs`; release selection
 uses an ordered `filter_refs` list. Policy definitions never reference other policies.

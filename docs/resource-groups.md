@@ -1,5 +1,7 @@
 # Registered resource groups
 
+[← Saucepan guide](../README.md#resource-lifetime-groups-and-pins)
+
 A group saves resource intent under an explicit local or app owner. Registration checks sources, policy references and authority without retrieving anything. It creates no claims or pins.
 
 Example local definition (replace the source UUID with a registered source):

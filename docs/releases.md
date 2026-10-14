@@ -1,5 +1,7 @@
 # Release builds
 
+[← Saucepan guide](../README.md#managed-applications-and-releases)
+
 The workflows in `.github/workflows/` adapt the previous Saucepan repository's
 release and native-platform checks to the Rust manager and shim. The separate
 `sdk-checks.yml` verifies thin Python/TypeScript adapters; SDK installation does
@@ -123,7 +125,7 @@ For a Windows x64 GitHub release request, use an asset pattern such as
 launcher maintenance. Routine managed self-update still changes the selected
 application output rather than replacing the installed shim.
 
-## Local verification and remaining evidence
+## Local checks
 
 The CI-only packaging helper uses Python 3.11+ standard-library archive/TOML support;
 Python is not a Rust manager runtime dependency. The separately installed Python
@@ -139,19 +141,10 @@ validation, incomplete build sets, missing shims, SDK metadata/source mismatch,
 unsafe/duplicate members, mixed commit evidence and overwrite refusal. Workflow
 syntax can be checked with `actionlint`.
 
-On 2026-10-10, both workflows passed `actionlint` (without optional ShellCheck or
-Pyflakes), and all five packaging tests passed locally. A locked, offline Windows
-release build produced both binaries; extracting the generated ZIP preserved
-their SHA-256 hashes, and the extracted manager returned
-`saucepan 0.1.0+v0.1.0` from `--version`. This was a local packaging check, not a
-GitHub publication or an installed-shim acceptance run.
-
-Adding workflows does not establish that hosted builds have passed. Native
-Linux/macOS behavior, cross-target release builds and the Rust 1.89 job need
-actual runner evidence. The full release-download/bootstrap/self-update/rollback
-acceptance gap described in the [documentation map](README.md) remains separate:
-building and publishing assets does not exercise Saucepan consuming those assets.
-See [SDK verification](sdk-verification.md) for the current local SDK evidence.
+Hosted workflow results are separate from local packaging checks. Validate the
+target platforms and the release-download/bootstrap/update/rollback flow before
+claiming end-to-end acceptance. Dated results belong to the relevant OpenSpec
+change; see [specifications and change history](../README.md#specifications-and-change-history).
 
 To publish, commit the intended version and lockfile, push that commit, then push
 the matching tag to the destination GitHub repository. This workflow work does

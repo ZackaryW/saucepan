@@ -1,10 +1,10 @@
 # Composition verification — 2026-10-13
 
-Historical checkpoint: these results predate the flat-policy contract. Use [flat-policy verification](policy-verification.md) for current evidence; earlier harness payloads are not supported inputs.
+Historical checkpoint: these results predate the flat-policy contract. Use [flat-policy verification](../2026-10-13-flatten-policy-resources/verification.md) for current evidence; earlier harness payloads are not supported inputs.
 
 This records `compose-retrieval-and-acquisition` on Windows x86_64 with Rust
 1.98.1, using disposable fixtures and locally built manager/shim binaries.
-The [composition guide](composition.md) describes the public contracts.
+The [composition guide](../../../../docs/composition.md) describes the public contracts.
 
 ## Executed checks
 

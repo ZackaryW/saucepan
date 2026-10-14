@@ -1,5 +1,7 @@
 # Group leases
 
+[← Saucepan guide](../README.md#resource-lifetime-groups-and-pins)
+
 An inline group retains already prepared outputs for one consumer. It does not retrieve,
 update, recover, register an application or create claims. Prepare resources first.
 

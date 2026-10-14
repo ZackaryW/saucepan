@@ -1,5 +1,7 @@
 # Retrieval and acquisition contracts
 
+[← Saucepan guide](../README.md#sources-and-acquisition)
+
 ## Flat policy integration
 
 The reference-based native entry points are `Retriever::retrieve_referenced`,

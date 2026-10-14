@@ -1,5 +1,7 @@
 # Language SDKs
 
+[← Integrating an application](../README.md#integrating-an-application)
+
 `python/` and `ts/` adapt the current Rust CLI. Rust owns policy evaluation, source retrieval, output publication and retention. SDK installation does not install the manager. No external consumer repository is migrated by this work.
 
 The operation inventory under `contracts/` tracks argument layouts, types, identity and real-binary coverage. Managed executable installation, bootstrap, activation, shim maintenance and uninstall wrappers are excluded from the initial resource-consumer API.
@@ -47,9 +49,9 @@ npm's Git dependency support does not select a package subdirectory. Use the bui
 
 Both SDKs preserve the flat UUID policy shape. Installation does not fetch a manager, app denial does not fall back to local administration, and optional configuration remains omitted until supplied. Managed executable/shim lifecycle methods are outside this initial SDK surface. Neither SDK supervises detached services or guarantees that arbitrary runtimes propagate inherited native handles to grandchildren. Use explicit durable pins when a host cannot preserve the documented guard lifetime.
 
-## Verification and dependencies
+## Development
 
-The Python and TypeScript packages use their standard runtime process/filesystem APIs. Hatchling/build and mypy are Python build/development tools; TypeScript/@types/node are locked Node development tools. Pydantic/Zod, Execa and native FFI dependencies are excluded because they would add a second validation or invocation layer without a demonstrated need. Rust owns policy semantics and storage.
+The SDKs use standard-library/Node runtime APIs. Install the Python development group and Node development dependencies for typing, tests and packaging. Dependency decisions and dated acceptance results belong to the corresponding OpenSpec change, described under [specifications and change history](../README.md#specifications-and-change-history).
 
 Build the manager once, then run:
 
@@ -66,4 +68,4 @@ uv run --no-project python sdk/check_packages.py verify --directory target/sdk-d
 
 Set `SAUCEPAN_TEST_BINARY` to select an explicit executable for resource tests. Add `--binary /absolute/path/to/saucepan` to installed-package verification to exercise an operation after installation. No hosted run is triggered by these commands.
 
-`contracts/fixtures/resource_flow.py` exercises all 46 mapped commands against isolated roots and local Git. `test_consumers.py` verifies Python/Node interoperability: pinned A after native updater exit while B is selected, grouped command/hook/service files, and read-only lookup followed by one project's explicit upgrade. External Power Eagle/Zush/PowerSpec repositories remain untouched; host bridge, catalog mapping and activation are their integration responsibilities. See the [verification report](../docs/sdk-verification.md) for platform-specific evidence.
+`contracts/operations.json` maps the current adapter methods to CLI operations. Resource fixtures use isolated roots and local Git; consumer fixtures exercise cross-language pin handover, grouped execution and scoped upgrades. They are not migrations of external applications.

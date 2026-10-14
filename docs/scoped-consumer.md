@@ -1,5 +1,7 @@
 # Native scoped consumer
 
+[← Saucepan guide](../README.md#integrating-an-application)
+
 For one consumer using several prepared resources, use a [group lease](group-leases.md).
 `AppSession::lease_group` checks every named claim/output under one app context,
 optionally narrows access with referenced policies, and retains all selected outputs

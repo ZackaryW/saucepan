@@ -1,5 +1,7 @@
 # Application lifecycle
 
+[← Saucepan guide](../README.md#managed-applications-and-releases)
+
 CLI commands use the user-home `.saucepan` store by default. Examples below use
 `--root ROOT` to keep a selected installation isolated. Commands identifying an
 application apply its registered policies; supply `--credential-file FILE` when
