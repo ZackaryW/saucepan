@@ -143,7 +143,7 @@ jobs:
           unzip -q "artifacts/saucepan-$RELEASE_TAG-aarch64-apple-darwin.zip" -d aarch64
           for binary in saucepan saucepan-shim; do
             lipo -create -output "universal/$binary" "x86_64/$binary" "aarch64/$binary"
-            lipo -verify_arch x86_64 arm64 "universal/$binary"
+            lipo "universal/$binary" -verify_arch x86_64 arm64
             chmod +x "universal/$binary"
           done
           python scripts/release.py package --target universal-apple-darwin --binary-dir universal
