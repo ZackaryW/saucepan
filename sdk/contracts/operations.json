@@ -168,7 +168,7 @@
     "typescript": "registerPolicies",
     "argv": "FILE",
     "request": "Policy[]",
-    "response": "Policy[]",
+    "response": "UUID[]",
     "identity": "local",
     "mode": "json",
     "mutates": true,

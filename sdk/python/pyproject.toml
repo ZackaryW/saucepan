@@ -17,6 +17,9 @@ dev = ["build>=1.2,<2", "mypy>=1.15,<2"]
 [tool.hatch.build.targets.wheel]
 packages = ["src/saucepan_sdk"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"README.md" = "saucepan_sdk/README.md"
+
 [tool.mypy]
 strict = true
 files = ["src/saucepan_sdk"]

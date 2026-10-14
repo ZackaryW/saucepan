@@ -17,3 +17,30 @@ The transport uses literal argv and per-call closed JSON files. JSON calls defau
 Guarded runs inherit streams and have no implicit timeout. Captured run streams are bytes, never parsed as JSON. Explicit cancellation kills/reaps the SDK-owned wrapper, not necessarily its descendants. Durable pins require explicit unpin; returned paths alone provide no retention.
 
 Development: `uv run --group dev python -m unittest discover -s tests` and `uv run --group dev mypy` from this directory. Standard library process/files/typing cover runtime needs; Hatchling builds packages, mypy checks types and unittest exercises behavior. Pydantic, Execa-equivalents and async wrappers are deliberately absent because Rust owns semantic validation.
+
+## Resource workflow
+
+```python
+client = Client(executable="/path/to/saucepan", root="/disposable/store")
+client.init()
+source = client.register_source({"type": "git", "origin": "/path/to/local/repo"})
+app = client.register_application({"registration_key": "my-tool", "name": "My tool"})
+bound = client.for_app(app["uuid"])
+selected = bound.ensure_claim(app["uuid"], {
+    "source_uuid": source["uuid"], "selector": {"type": "ref", "reference": "HEAD"},
+    "scope": "project-a", "selection": {"folder": "skills"},
+})
+views = bound.query_claims({"app": app["uuid"], "scope": "project-a", "where": []})
+# Lookup does not refresh. Updating is an explicit operation on this claim.
+updated = bound.update_claim(app["uuid"], selected["claim"]["uuid"])
+```
+
+`query_sources()` requires neither an app nor a JSON file; anonymous discovery sees only explicitly public sources. To use unrestricted local acquisition, call `acquire(request)` on an unbound client. An app-bound `acquire` requires an explicit scope. Raw metadata results preserve Rust's wire names; inputs use the TypedDict declarations in `saucepan_sdk.models`.
+
+`retrieve` returns `{request, descriptor}` describing original material; `source_path` looks up its address without fetching. `acquire_retrieved` returns copied/extracted results. Inline no-store operations accept an explicit portable `policies` catalog and caller-owned destinations without opening a root. Temporary content uses `run_retrieved` or `run_acquired` to retain its lifetime.
+
+For persistent sets, call `register_group`, then `prepare_group`. A `pin` argument is explicit and requires `expected_revision` and a registered `pin_policy`. Inspect with `pin`/`pins`, then call `unpin` only when all readers of those exact paths are finished. Ordinary group preparation creates no retention promise. `run_group`, `run_registered_group` and `prepare_run_group` retain resources through Rust's native process boundary.
+
+Trusted administration can supply `credential_file` to `Client` when configuring a credential-protected app; that proof does not automatically select an app identity. App-bound calls use `for_app(app, credential_file=...)`. Conflicting app arguments fail before execution. No credential bytes are loaded by this library.
+
+Real-binary tests use `SAUCEPAN_TEST_BINARY` (otherwise the repository's debug build), isolated temporary roots and local Git fixtures. No network or real consumer repositories are needed. The fixture coverage inventory includes all 46 resource operations; cross-platform and external consumer integration remain separately reported evidence.

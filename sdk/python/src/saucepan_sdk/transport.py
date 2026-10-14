@@ -51,6 +51,30 @@ def check_shape(value: object, call: Call) -> None:
     valid = (isinstance(value, list) if call.shape == "array" else isinstance(value, dict))
     if not valid or (isinstance(value, dict) and any(key not in value for key in call.required)):
         raise TransportError("protocol", started=True)
+    # A small envelope check, not a second semantic schema/policy evaluator.
+    strings = {'uuid', 'app', 'root', 'integrity', 'type', 'entry_uuid', 'directory',
+               'path', 'verification', 'released', 'removed', 'state'}
+    objects = {'source', 'claim', 'view', 'acquired', 'entry', 'request', 'descriptor',
+               'ownership', 'definition', 'group', 'resources', 'paths', 'outputs', 'context', 'deferred', 'pending'}
+    arrays = {'sources', 'claims', 'policy_refs', 'reclaimed', 'stale'}
+    if isinstance(value, dict):
+        for key in call.required:
+            item = value[key]
+            expected: type[object] | None = (str if key in strings else dict if key in objects
+                else list if key in arrays else int if key in {'revision', 'generation', 'policy_revision'}
+                else bool if key == 'purged' else None)
+            if expected is not None and type(item) is not expected:
+                raise TransportError('protocol', started=True)
+        if 'type' in call.required and value['type'] not in {
+            'application', 'output', 'retrieval', 'acquisition', 'access_policy', 'source_visibility_policy',
+            'claim_visibility_policy', 'cache_policy', 'refresh_policy', 'stale_policy', 'verification_policy',
+            'github_release_asset_filter', 'selection_policy', 'identical_pull_policy', 'update_policy',
+            'revision_policy', 'reclaim_policy', 'useable_app_policy', 'pin_policy', 'policy_constraints'}:
+            raise TransportError('protocol', started=True)
+    elif isinstance(value, list):
+        expected_item = str if call.argv[0] == 'register-policies' else dict
+        if any(not isinstance(item, expected_item) for item in value):
+            raise TransportError('protocol', started=True)
 
 
 class CliTransport:
