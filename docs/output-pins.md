@@ -20,6 +20,8 @@ When upgrading, acquire B, pin B with a new registration key, switch consumers t
 
 `saucepan pin PIN_UUID` inspects a receipt; `saucepan pins --key KEY` finds receipts by registration key. An equivalent retry returns the same active pin; different targets under the same key conflict. Released receipts remain inspectable and cannot be reactivated. Repeated unpin is harmless; an unknown UUID is an error.
 
+Inspection adds an `outputs` map to the receipt: each UUID reports its exact `path`, recorded `state`, and current metadata-level `available` flag. Missing payloads remain inspectable as unavailable; this flag is not a full file-content verification. Native `pin`/`pins` return `PinInspection`, separating the saved `pin` from these live observations.
+
 Use `--as-app APP_UUID` and, when enabled, `--credential-file FILE` for app-owned pins. Admission requires a real readable owned claim and the `pin` action. Inspection uses its captured source and scope even after that claim moves or is released. The independent `unpin` action permits cleanup without permitting new retention. Current credentials and source/scope restrictions still apply. Trusted local administration can inspect and release orphaned pins after app uninstall; uninstall itself never releases them.
 
 Pin requests accept exactly one registered `pin_policy`. It is not an app/source default or an acquisition policy. Unknown fields, duplicate outputs, more than 128 targets, and CLI payloads over 1 MiB are rejected. Multiple targets are admitted together: verification failure creates no partial pin. Reclaim verifies the pin catalog before deleting any outputs and refuses corrupted metadata.

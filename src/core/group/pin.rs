@@ -315,7 +315,7 @@ impl Store {
             fence.check(self)?;
         }
         ensure!(
-            self.pin(pin.uuid)?.state == PinState::Active,
+            self.pin(pin.uuid)?.pin.state == PinState::Active,
             Error::new(ErrorCode::RevisionConflict, "pin was released during retry")
         );
         Ok(PreparedGroup {

@@ -16,7 +16,7 @@ use crate::{
     models::{
         claim::policy::Action,
         lease::{GroupMember, GroupRequest, GroupTarget},
-        pin::{PinRecord, PinRequest, PinState, PinnedOutputs},
+        pin::{PinInspection, PinRecord, PinRequest, PinState, PinnedOutputs},
     },
 };
 use anyhow::{Result, ensure};
@@ -125,26 +125,26 @@ impl Store {
     }
 
     /// Inspect using captured source/scope witnesses, even after the claim moves.
-    pub fn pin(&self, uuid: Uuid) -> Result<PinRecord> {
+    pub fn pin(&self, uuid: Uuid) -> Result<PinInspection> {
         let _lock = self.lock()?;
         let pin = self.find_pin(uuid)?;
         self.authorize_pin(&pin, Action::Read)?;
-        Ok(pin)
+        self.inspect_pin(pin)
     }
     /// App sessions see only their own authorized pins; trusted administration sees all owners.
-    pub fn pins(&self, key: Option<&str>) -> Result<Vec<PinRecord>> {
+    pub fn pins(&self, key: Option<&str>) -> Result<Vec<PinInspection>> {
         let _lock = self.lock()?;
         if let Some(session) = &self.session {
             self.check_session(&self.registry(session.app)?)?;
         }
-        Ok(self
-            .pin_records_locked()?
+        self.pin_records_locked()?
             .into_iter()
             .filter(|p| {
                 key.is_none_or(|key| p.request.registration_key.as_str() == key)
                     && self.authorize_pin(p, Action::Read).is_ok()
             })
-            .collect())
+            .map(|pin| self.inspect_pin(pin))
+            .collect()
     }
     /// Release is metadata-only: missing payloads and moved claims do not prevent cleanup.
     pub fn unpin(&self, uuid: Uuid) -> Result<PinRecord> {
@@ -165,10 +165,10 @@ impl AppSession {
     pub fn pin_outputs(&self, request: &PinRequest) -> Result<PinnedOutputs> {
         self.store.pin_outputs(request)
     }
-    pub fn pin(&self, uuid: Uuid) -> Result<PinRecord> {
+    pub fn pin(&self, uuid: Uuid) -> Result<PinInspection> {
         self.store.pin(uuid)
     }
-    pub fn pins(&self, key: Option<&str>) -> Result<Vec<PinRecord>> {
+    pub fn pins(&self, key: Option<&str>) -> Result<Vec<PinInspection>> {
         self.store.pins(key)
     }
     pub fn unpin(&self, uuid: Uuid) -> Result<PinRecord> {

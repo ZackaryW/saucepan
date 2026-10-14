@@ -61,8 +61,8 @@ Descriptors report the actual mode and policy provenance. These are informationa
 paths, not authorization tokens or serialized lifetime guards.
 
 This is a cooperative lifetime and policy boundary, not a filesystem sandbox.
-Persistent groups, automatic retrieval and atomic multi-resource updates are
-separate future changes.
+For saved intent, automatic preparation and atomic metadata selections, use
+[registered groups](resource-groups.md).
 
 ## Native consumers
 

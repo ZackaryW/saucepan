@@ -87,3 +87,18 @@ pub struct PinnedOutputs {
     pub pin: PinRecord,
     pub paths: std::collections::BTreeMap<Uuid, PathBuf>,
 }
+
+/// Live inspection data is never persisted in the immutable pin receipt.
+#[derive(Debug, Clone, Serialize)]
+pub struct PinInspection {
+    #[serde(flatten)]
+    pub pin: PinRecord,
+    pub outputs: std::collections::BTreeMap<Uuid, PinOutput>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PinOutput {
+    pub path: PathBuf,
+    pub state: crate::models::store::Availability,
+    pub available: bool,
+}

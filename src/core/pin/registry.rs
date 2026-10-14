@@ -5,6 +5,34 @@ use crate::{
 };
 use anyhow::Context;
 impl Store {
+    pub(super) fn inspect_pin(&self, pin: PinRecord) -> Result<PinInspection> {
+        let outputs = pin
+            .request
+            .outputs
+            .iter()
+            .map(|id| {
+                let output = self.output(*id)?;
+                let available = match self.metadata_path(&output) {
+                    Ok(_) => true,
+                    Err(error)
+                        if Error::from_anyhow(&error).code == ErrorCode::ContentUnavailable =>
+                    {
+                        false
+                    }
+                    Err(error) => return Err(error),
+                };
+                Ok((
+                    *id,
+                    crate::models::pin::PinOutput {
+                        path: self.root().join("store").join(id.to_string()),
+                        state: output.state,
+                        available,
+                    },
+                ))
+            })
+            .collect::<Result<_>>()?;
+        Ok(PinInspection { pin, outputs })
+    }
     pub(crate) fn pin_records_locked(&self) -> Result<Vec<PinRecord>> {
         let snapshot = self.metadata.snapshot()?;
         snapshot

@@ -141,7 +141,7 @@ fn invalid_roles_targets_and_retries_have_no_partial_effects() {
     wrong = f.pin.clone();
     wrong.outputs = vec![new.entry.uuid];
     assert!(f.store.pin_outputs(&wrong).is_err());
-    assert_eq!(f.store.pin(first.pin.uuid).unwrap().request, f.pin);
+    assert_eq!(f.store.pin(first.pin.uuid).unwrap().pin.request, f.pin);
 }
 
 #[test]
@@ -162,7 +162,7 @@ fn app_witness_survives_claim_release_and_cleanup_has_its_own_permission() {
     request.outputs = vec![claim.claim.entry_uuid];
     let pinned = session.pin_outputs(&request).unwrap();
     session.release(claim.claim.uuid).unwrap();
-    assert_eq!(session.pin(pinned.pin.uuid).unwrap(), pinned.pin);
+    assert_eq!(session.pin(pinned.pin.uuid).unwrap().pin, pinned.pin);
     let other = f.store.register_app("other".into()).unwrap();
     assert!(
         f.store
@@ -355,7 +355,47 @@ fn protected_store_pin_survives_uninstall_and_is_administratively_releasable() {
     session.uninstall(false, None).unwrap();
     assert!(session.pin(pin.pin.uuid).is_err());
     let reopened = Store::open_with_keys(&root, &keys).unwrap();
-    assert_eq!(reopened.pin(pin.pin.uuid).unwrap().state, PinState::Active);
+    assert_eq!(
+        reopened.pin(pin.pin.uuid).unwrap().pin.state,
+        PinState::Active
+    );
     assert!(pin.paths[&claim.claim.entry_uuid].exists());
     reopened.unpin(pin.pin.uuid).unwrap();
+}
+
+#[test]
+fn inspection_reports_exact_paths_missing_payloads_and_released_reclamation() {
+    let f = Fixture::new();
+    let pinned = f.store.pin_outputs(&f.pin).unwrap();
+    let id = f.pin.outputs[0];
+    let inspected = f.store.pin(pinned.pin.uuid).unwrap();
+    assert_eq!(inspected.outputs[&id].path, pinned.paths[&id]);
+    assert!(inspected.outputs[&id].available);
+    // History-none retains the current output; make this pinned revision historical.
+    f.store.acquire(&f.request).unwrap();
+    fs::remove_dir_all(&pinned.paths[&id]).unwrap();
+    let inspected = f.store.pins(Some("consumer/a")).unwrap().remove(0);
+    assert!(!inspected.outputs[&id].available);
+    assert_eq!(
+        inspected.outputs[&id].state,
+        saucepan::models::store::Availability::Ready
+    );
+    f.store.unpin(pinned.pin.uuid).unwrap();
+    f.store.reclaim().unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_saucepan"))
+        .arg("--root")
+        .arg(f.store.root())
+        .arg("pin")
+        .arg(pinned.pin.uuid.to_string())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(result["state"], "released");
+    assert_eq!(result["outputs"][id.to_string()]["available"], false);
+    assert_eq!(result["outputs"][id.to_string()]["state"], "reclaimed");
 }
