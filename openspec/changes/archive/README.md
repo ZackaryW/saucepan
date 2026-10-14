@@ -32,3 +32,4 @@ the historical contracts.
 | Flat policies | [Verification](2026-10-13-flatten-policy-resources/verification.md), [utility and crate decisions](2026-10-13-flatten-policy-resources/utilities.md) |
 | Group leases | [Verification](2026-10-14-add-group-leases/verification.md) |
 | Registered groups and pins | [Verification](2026-10-14-orchestrate-resource-groups/verification.md), [consumer assessment](2026-10-14-orchestrate-resource-groups/consumer-assessment.md) |
+| Python and TypeScript SDKs | [Verification](2026-10-14-add-language-sdks/verification.md), [design and dependency decisions](2026-10-14-add-language-sdks/design.md) |

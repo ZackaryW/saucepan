@@ -45,6 +45,8 @@ Read overlapping requirements together using these responsibility boundaries:
 | [group-leases](group-leases/spec.md) | One invocation lifetime for named prepared outputs |
 | [resource-groups](resource-groups/spec.md) | Registered intent, atomic preparation and selected generations |
 | [output-pins](output-pins/spec.md) | Explicit durable retention of exact outputs |
+| [language-sdks](language-sdks/spec.md) | Typed Python/TypeScript operations, explicit identity, transport failures and native lifetimes |
+| [sdk-distribution](sdk-distribution/spec.md) | Source/package installation, release evidence and selective SDK checks |
 | [content-verification](content-verification/spec.md) | Metadata/full checking and mandatory integrity boundaries |
 | [lease-marker-cleanup](lease-marker-cleanup/spec.md) | Process-marker creation and safe stale-marker cleanup |
 
