@@ -4,6 +4,8 @@ Rust source acquisition with separate source working data, immutable outputs, an
 
 See the [documentation map](docs/README.md) for current usage, specification ownership, and dated verification evidence.
 
+[Python and TypeScript SDKs](sdk/README.md) provide typed resource, claim, group and pin calls using the Rust CLI. They accept request objects, support source installation and keep application identity and retention explicit. The manager is installed separately.
+
 [Composable retrieval and acquisition](docs/composition.md) separates original source material from copied results. `retrieve` and `source-path` expose source material; `acquire-retrieved` copies or extracts it. `run-retrieved` and `run-acquired` retain paths for child processes. Inline temporary/no-store requests need no home, store, app or keyring. Cached retrieval, acquisition updates and revision history have independent policies.
 
 [Release workflows](docs/releases.md) build platform ZIPs containing both the manager and shim, with checksums and native CI checks before publication.
