@@ -181,7 +181,8 @@ jobs:
       - uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
-          target_commitish: ${{ needs.prepare.outputs.commit }}
+          # prepare requires an existing tag; no tag-creation target is needed.
+          # An older target_commitish can require Workflows write permission.
           name: ${{ needs.prepare.outputs.tag }}
           prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}
           files: |
