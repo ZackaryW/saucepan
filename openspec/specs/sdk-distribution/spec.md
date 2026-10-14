@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Distribute the Python and TypeScript SDKs from this repository with independently installable artifacts and verified parity against the Rust executable from the same release commit.
+Distribute independently installable Python and TypeScript SDK artifacts from the Rust release commit, with separately selectable workflows for runtime and installation verification.
 
 ## Requirements
 
@@ -24,8 +24,8 @@ The package under sdk/ts SHALL provide a documented source build and installable
 - **WHEN** a separate project installs the generated tarball and imports the client
 - **THEN** JavaScript and declarations resolve without reaching into sdk/ts/src or running native installation steps
 
-### Requirement: Release packages are tied to verified source and binary evidence
-SDK archives SHALL be built from the exact release commit and accompany the existing binary assets. A validated SDK manifest SHALL record package versions, artifact identities and the tested Rust release tag/commit. Release validation SHALL check the complete expected binary and SDK asset set and include all published payloads in checksum coverage. Missing, unexpected, duplicate or inconsistent artifacts SHALL block publication. This workflow SHALL not publish to npm or PyPI or infer arbitrary executable compatibility from a version string.
+### Requirement: Release packages are tied to source and artifact identity
+SDK archives SHALL be built from the exact release commit and accompany the existing binary assets. A validated SDK manifest SHALL record package versions, artifact identities and the Rust release tag/commit. The manifest SHALL identify artifact provenance without claiming that optional runtime checks ran. Release validation SHALL check the complete expected binary and SDK asset set and include all published payloads in checksum coverage. Missing, unexpected, duplicate or inconsistent artifacts SHALL block publication. This workflow SHALL not publish to npm or PyPI or infer arbitrary executable compatibility from a version string.
 
 #### Scenario: Incomplete SDK artifact set
 - **WHEN** a release is missing a required SDK archive or its manifest disagrees with package metadata
@@ -47,12 +47,20 @@ Both languages SHALL have a checked operation inventory and real-binary tests us
 - **THEN** lookup does not refresh it, and explicit preparation can advance only the intended consumer scope
 
 ### Requirement: SDK validation preserves selective CI execution
-Hosted SDK checks SHALL run only on manual selection or as release dependencies, with selectable language/platform for manual runs. Release SDK validation SHALL cover supported Windows/macOS/Linux process boundaries against the release commit without multiplying the full Rust test matrix per SDK. Platform-independent archives SHALL be built once per release. Planning and implementation SHALL not automatically trigger hosted runs or package publication.
+Native Rust, minimum-version, optional keyring, SDK runtime and SDK installation checks SHALL be separately selectable checking workflows, independent of release publication. Checking workflows SHALL accept a target commit or tag and support their applicable platform/language selectors. SDK archive installation and source-install verification SHALL be an explicit option, disabled by default, that checks both packages on one platform. Release workflows SHALL build platform-independent SDK archives once and validate artifact integrity without invoking or depending on these checking workflows. An omitted check SHALL not be represented as passed. Ordinary branch pushes SHALL not automatically start checks or publish packages.
 
 #### Scenario: Selected manual check
 - **WHEN** the user requests only Python SDK checks on Windows
 - **THEN** unrelated TypeScript and other-platform SDK checks are not scheduled by that selection
 
-#### Scenario: SDK verification fails before release
-- **WHEN** a required SDK contract or installed-package check fails
-- **THEN** the complete release publication job does not proceed
+#### Scenario: Release without optional verification
+- **WHEN** a release is triggered for an existing valid version tag
+- **THEN** it builds and validates the complete artifact set without scheduling native Rust tests, keyring checks, SDK contract tests or SDK installation tests
+
+#### Scenario: Explicit package installation check
+- **WHEN** a caller enables package checks for a selected commit or tag
+- **THEN** the checking workflow verifies installed archives and source installs for both SDKs on one platform, separately from release publication
+
+#### Scenario: Verification failure is reported independently
+- **WHEN** a selected SDK or native check fails
+- **THEN** that checking workflow reports failure without becoming an automatic release dependency or implying that unselected checks passed

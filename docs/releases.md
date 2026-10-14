@@ -9,8 +9,8 @@ not build or download the Rust manager.
 
 ## Checks and publication
 
-`core-platforms.yml` runs only on manual dispatch and calls from the release
-workflow. Pull requests and ordinary branch pushes do not start hosted checks;
+`core-platforms.yml` runs on manual dispatch or an explicit reusable-workflow
+call. The release workflow does not invoke it. Pull requests and ordinary branch pushes do not start hosted checks;
 this keeps the full platform matrix an explicit CI expense. It runs formatting, Clippy,
 all-target tests and packaging checks on Windows, macOS and Linux. Ordinary tests
 use basic stores and need no native credential service. Optional `check_keyring`
@@ -28,28 +28,33 @@ to false; select it only when testing native custody on configured runners.
 The equivalent GitHub CLI command for basic Linux checks is:
 
 ```sh
-gh workflow run core-platforms.yml -f platform=linux -F check_msrv=false
+gh workflow run core-platforms.yml -f ref=v0.9.0 -f platform=linux -F check_msrv=false
 ```
 
-Platform/MSRV selectors apply only to standalone manual checks. Release calls
-always run ordinary checks on all three platforms and MSRV, including when the
-release itself is dispatched manually. Tag releases omit native custody checks;
-manual releases can additionally require them with `check_keyring: true`.
-Explicitly selected native failures block publication. A selective run
-does not establish that omitted platforms pass on a new revision.
+Use `ref` to check a specific commit or tag; leaving it empty checks the selected
+workflow ref. Platform/MSRV/keyring selectors apply to checking workflows only.
+A failing check fails that run; it is not an automatic publication gate. A
+selective run does not establish that omitted platforms pass on a new revision.
 
-SDK checks are also manual or reusable release dependencies only. Select
+SDK checks are also separate manual or explicitly reusable workflows. Select
 `language` (`python`, `ts`, or `both`) and `platform` on `sdk-checks.yml`:
 
 ```sh
-gh workflow run sdk-checks.yml -f language=python -f platform=windows
+gh workflow run sdk-checks.yml -f ref=v0.9.0 -f language=python -f platform=windows
 ```
 
 The selected job builds one native manager, runs only the requested SDK checks
 and checks real-binary operation coverage. `both` adds cross-language consumer
-fixtures. Release calls select both SDKs on Windows/macOS/Linux; they do not
-repeat Rust all-target tests per language or build six target architectures per
-SDK. The Node SDK needs Node 22+, and Python checks use the minimum Python 3.12.
+fixtures. These jobs do not repeat Rust all-target tests per language or build
+six target architectures per SDK. The Node SDK needs Node 22+, and Python checks
+use the minimum Python 3.12. Optional `check_packages` defaults to false; enabling
+it adds one Linux job that builds and installs both SDK packages, checks source
+installs and exercises an explicit native binary. This package job checks both
+languages independently of the runtime language/platform selection:
+
+```sh
+gh workflow run sdk-checks.yml -f ref=v0.9.0 -f language=both -f platform=linux -F check_packages=true
+```
 
 To retry failures on the same revision, GitHub's
 [Re-run failed jobs](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/re-run-workflows-and-jobs?tool=cli)
@@ -73,16 +78,18 @@ the recent macOS native-keychain failure is not resolved by making it optional.
 `release.yml` runs on a pushed `v*` tag or manual dispatch with an **existing** tag.
 The tag must equal `v` followed by the version in that tag's `Cargo.toml`, such as
 `v0.9.0` or `v0.10.0-rc.1`. Both paths check out the tag, resolve it to a commit,
-and build and test that same commit. Manual dispatch does not package the latest
+and build that same commit. Manual dispatch does not package the latest
 default-branch source under an unrelated version. Prerelease tags produce
 GitHub prereleases, which Saucepan's `latest_stable` selector excludes.
 The tagged commit must include this repository's release scripts and workflows.
 
-Release packaging waits for the complete core and SDK platform checks to pass, so failed
-checks do not spend runner time on the six-target build matrix. Each build
-uses `Cargo.lock`, builds both binaries, and sets `SAUCEPAN_BUILD_ID`
-to the tag. Publication waits for every selected check, target build, universal
-package, installed SDK archive checks and archive validation. Only the publication job has `contents: write`.
+Release packaging starts after tag validation. It does not run the core test
+matrix, MSRV, native keyring, SDK runtime or package-installation checks. Run the
+checking workflows separately for the commit you want to verify. The platform
+build matrix still produces the native binaries being published: each build
+uses `Cargo.lock`, builds both binaries, and sets `SAUCEPAN_BUILD_ID` to the tag.
+Publication waits for every target build, the universal package, SDK packaging
+and exact asset/manifest/checksum validation. Only the publication job has `contents: write`.
 Existing release assets are not overwritten; use a new version/tag for changed
 bytes. Release notes are generated by GitHub.
 
@@ -104,11 +111,12 @@ mode metadata despite [artifact transfer's permission behavior](https://github.c
 The platform-independent SDK archives are built once from that same commit:
 Python wheel and source distribution, TypeScript npm tarball and
 `sdk-manifest.json`. The manifest records both SDK package versions, their exact
-filenames and hashes, and the tested Rust tag/commit. SDK versions come from
+filenames and hashes, and the Rust tag/commit. This identifies the source being
+packaged; it does not assert that optional checks passed. SDK versions come from
 their own package metadata and can differ from Rust's version.
 
-The packaging job installs the archives outside the checkout and exercises the
-current binary, source installation and declarations. The publication validator
+The optional SDK checking job installs archives outside the checkout and exercises
+the selected binary, source installation and declarations. The publication validator
 requires the exact seven ZIPs plus those three SDK archives and manifest,
 cross-checks package/source identities and contents, rejects unsafe or duplicate
 members and refuses mixed-commit manifests. Unexpected files/directories fail

@@ -3,6 +3,10 @@ name: Core platform checks
 on:
   workflow_dispatch:
     inputs:
+      ref:
+        description: Commit or tag to verify (empty uses selected workflow ref)
+        type: string
+        default: ''
       platform:
         description: Native platform checks to run
         type: choice
@@ -19,9 +23,17 @@ on:
   workflow_call:
     inputs:
       ref:
-        description: Exact commit to verify for a release
+        description: Commit or tag to verify
         type: string
         default: ''
+      platform:
+        description: Native platform checks to run
+        type: string
+        default: all
+      check_msrv:
+        description: Also check minimum Rust 1.89 on Windows
+        type: boolean
+        default: true
       check_keyring:
         description: Require native keyring integration in addition to ordinary checks
         type: boolean
@@ -36,7 +48,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Reusable release calls have no platform input and always select all.
         os: ${{ fromJSON('{"all":["windows-latest","macos-latest","ubuntu-latest"],"windows":["windows-latest"],"macos":["macos-latest"],"linux":["ubuntu-latest"]}')[inputs.platform || 'all'] }}
     runs-on: ${{ matrix.os }}
     env:
@@ -90,8 +101,7 @@ jobs:
 
   msrv:
     name: Minimum Rust 1.89 (Windows)
-    # Use input presence, not event_name: manual releases are also dispatches.
-    if: ${{ !inputs.platform || inputs.check_msrv }}
+    if: inputs.check_msrv
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7

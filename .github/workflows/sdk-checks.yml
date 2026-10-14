@@ -3,6 +3,10 @@ name: SDK checks
 on:
   workflow_dispatch:
     inputs:
+      ref:
+        description: Commit or tag to verify (empty uses selected workflow ref)
+        type: string
+        default: ''
       platform:
         description: Native process platform to verify
         type: choice
@@ -13,12 +17,28 @@ on:
         type: choice
         default: both
         options: [both, python, ts]
+      check_packages:
+        description: Also verify both SDK archives and source installs on Linux
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       ref:
-        description: Exact release commit to verify
+        description: Commit or tag to verify
         type: string
         required: true
+      platform:
+        description: Native process platform to verify
+        type: string
+        default: all
+      language:
+        description: SDK to verify
+        type: string
+        default: both
+      check_packages:
+        description: Also verify both SDK archives and source installs on Linux
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -74,3 +94,25 @@ jobs:
         env:
           SDK_LANGUAGE: ${{ inputs.language || 'both' }}
         run: uv run --no-project python -B sdk/contracts/check_inventory.py
+
+  packages:
+    name: Installed SDK archives and source installs
+    if: inputs.check_packages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          python-version: '3.12'
+          enable-cache: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - run: cargo build --locked --bin saucepan
+      - run: uv run --no-project python sdk/check_packages.py build --directory dist
+      - run: uv run --no-project python sdk/check_packages.py verify --directory dist --binary target/debug/saucepan --source-installs

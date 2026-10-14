@@ -9,10 +9,6 @@ on:
         description: Existing release tag matching Cargo.toml (for example v0.9.0)
         required: true
         type: string
-      check_keyring:
-        description: Also require native keyring checks on configured runners
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -42,22 +38,9 @@ jobs:
           RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
         run: python scripts/release.py metadata
 
-  checks:
-    needs: prepare
-    uses: ./.github/workflows/core-platforms.yml
-    with:
-      ref: ${{ needs.prepare.outputs.commit }}
-      check_keyring: ${{ inputs.check_keyring || false }}
-
-  sdk-checks:
-    needs: prepare
-    uses: ./.github/workflows/sdk-checks.yml
-    with:
-      ref: ${{ needs.prepare.outputs.commit }}
-
   sdk-packages:
-    name: Build and verify standalone SDK archives once
-    needs: [prepare, checks, sdk-checks]
+    name: Package standalone SDK archives once
+    needs: prepare
     runs-on: ubuntu-latest
     env:
       RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
@@ -67,7 +50,6 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.commit }}
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@stable
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           python-version: '3.12'
@@ -76,9 +58,7 @@ jobs:
         with:
           node-version: '22'
           package-manager-cache: false
-      - run: cargo build --locked --bin saucepan
       - run: uv run --no-project python sdk/check_packages.py build --directory dist
-      - run: uv run --no-project python sdk/check_packages.py verify --directory dist --binary target/debug/saucepan --source-installs
       - run: uv run --no-project python scripts/release.py sdk-manifest
       - uses: actions/upload-artifact@v7
         with:
@@ -93,7 +73,7 @@ jobs:
 
   build:
     name: Package ${{ matrix.target }}
-    needs: [prepare, checks, sdk-checks]
+    needs: prepare
     strategy:
       fail-fast: false
       matrix:
@@ -176,7 +156,7 @@ jobs:
 
   release:
     name: Publish complete release
-    needs: [prepare, checks, sdk-checks, sdk-packages, build, macos-universal]
+    needs: [prepare, sdk-packages, build, macos-universal]
     runs-on: ubuntu-latest
     permissions:
       contents: write
