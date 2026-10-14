@@ -72,7 +72,7 @@ the recent macOS native-keychain failure is not resolved by making it optional.
 
 `release.yml` runs on a pushed `v*` tag or manual dispatch with an **existing** tag.
 The tag must equal `v` followed by the version in that tag's `Cargo.toml`, such as
-`v0.1.0` or `v0.2.0-rc.1`. Both paths check out the tag, resolve it to a commit,
+`v0.9.0` or `v0.10.0-rc.1`. Both paths check out the tag, resolve it to a commit,
 and build and test that same commit. Manual dispatch does not package the latest
 default-branch source under an unrelated version. Prerelease tags produce
 GitHub prereleases, which Saucepan's `latest_stable` selector excludes.
