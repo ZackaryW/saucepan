@@ -43,9 +43,13 @@ fn child() {
             .unwrap();
         }
         "literal" => {
+            // macOS may report /private/var for a directory opened through /var.
+            // Check the resolved directory, while keeping argv checks literal.
             assert_eq!(
-                std::env::current_dir().unwrap(),
+                std::env::current_dir().unwrap().canonicalize().unwrap(),
                 std::path::PathBuf::from(std::env::var_os("SAUCEPAN_PROCESS_CWD").unwrap())
+                    .canonicalize()
+                    .unwrap()
             );
             assert_eq!(
                 std::env::args().next_back().unwrap(),
@@ -86,5 +90,11 @@ fn arguments_and_working_directory_are_literal() {
         .env("SAUCEPAN_PROCESS_CWD", &cwd)
         .arg("space ' quote $HOME ; & literal");
     let output = run(command, Duration::from_secs(10), 4096).unwrap();
-    assert!(output.status.success(), "{:?}", output);
+    assert!(
+        output.status.success(),
+        "child exited with {}\nstdout:\n{}\nstderr:\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
