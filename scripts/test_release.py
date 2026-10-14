@@ -6,6 +6,7 @@ import unittest
 import zipfile
 
 import release
+from test_sdk_release import sdk_assets
 
 
 class ReleasePackaging(unittest.TestCase):
@@ -19,6 +20,7 @@ class ReleasePackaging(unittest.TestCase):
             (self.binaries / name).write_bytes(f"fixture {name}".encode())
         self.tag = "v" + release.tomllib.loads(Path("Cargo.toml").read_text())["package"]["version"]
         self.dist = self.root / "dist"
+        self.commit = 'a' * 40
 
     def test_all_platform_packages_preserve_both_binaries_and_checksums(self):
         for target in release.TARGETS:
@@ -28,7 +30,9 @@ class ReleasePackaging(unittest.TestCase):
                 for name in (f"saucepan{suffix}", f"saucepan-shim{suffix}"):
                     self.assertEqual(archive.read(name), (self.binaries / name).read_bytes())
                     self.assertEqual(archive.getinfo(name).external_attr >> 16 & 0o777, 0o755)
-        release.checksums(self.tag, self.dist)
+        sdk_assets(self.dist, self.tag, self.commit)
+        release.checksums(self.tag, self.dist, self.commit)
+        self.assertEqual(len((self.dist / 'SHA256SUMS').read_text().splitlines()), 11)
         for line in (self.dist / "SHA256SUMS").read_text().splitlines():
             digest, name = line.split("  ")
             self.assertEqual(digest, hashlib.sha256((self.dist / name).read_bytes()).hexdigest())
@@ -42,7 +46,7 @@ class ReleasePackaging(unittest.TestCase):
     def test_incomplete_matrix_cannot_publish_checksums(self):
         release.package(self.tag, release.TARGETS[0], self.binaries, self.dist)
         with self.assertRaises(ValueError):
-            release.checksums(self.tag, self.dist)
+            release.checksums(self.tag, self.dist, self.commit)
         self.assertFalse((self.dist / "SHA256SUMS").exists())
 
     def test_existing_archive_is_not_overwritten(self):
@@ -54,6 +58,17 @@ class ReleasePackaging(unittest.TestCase):
         for tag in ("main", "v99999.0.0", "../v0.1.0", self.tag + "\nother=value"):
             with self.assertRaises(ValueError):
                 release.validate_tag(tag)
+
+    def test_extra_asset_or_directory_is_rejected(self):
+        for target in release.TARGETS:
+            release.package(self.tag, target, self.binaries, self.dist)
+        sdk_assets(self.dist, self.tag, self.commit)
+        extra=self.dist/'unexpected'
+        extra.mkdir()
+        with self.assertRaises(ValueError): release.checksums(self.tag,self.dist,self.commit)
+        extra.rmdir(); extra.write_text('unexpected')
+        with self.assertRaises(ValueError): release.checksums(self.tag,self.dist,self.commit)
+        self.assertFalse((self.dist/'SHA256SUMS').exists())
 
 
 if __name__ == "__main__":

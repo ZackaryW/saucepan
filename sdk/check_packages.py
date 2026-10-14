@@ -27,7 +27,7 @@ def npm(*args, cwd=TS):
 
 def build(destination):
     destination.mkdir(parents=True, exist_ok=True)
-    run(['uv', 'build', PYTHON, '--out-dir', destination])
+    run(['uv', 'build', PYTHON, '--no-create-gitignore', '--out-dir', destination])
     npm('ci', '--ignore-scripts')
     npm('pack', '--pack-destination', destination)
 

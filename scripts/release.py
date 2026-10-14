@@ -10,6 +10,7 @@ import stat
 import subprocess
 import tomllib
 import zipfile
+import sdk_release
 
 
 TARGETS = (
@@ -62,26 +63,32 @@ def package(tag, target, binary_dir, destination):
     return archive
 
 
-def checksums(tag, directory):
+def checksums(tag, directory, commit=None):
     validate_tag(tag)
-    expected = {asset_name(tag, target) for target in TARGETS}
-    actual = {p.name for p in directory.iterdir() if p.is_file()}
+    if commit is None:
+        commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+    binaries = {asset_name(tag, target) for target in TARGETS}
+    expected = binaries | sdk_release.verify_manifest(tag, commit, directory)
+    actual = {p.name for p in directory.iterdir()}
     if actual != expected:
         raise ValueError(f"release assets differ: missing={expected - actual}, extra={actual - expected}")
     lines = []
     for name in sorted(expected):
         path = directory / name
+        if path.is_symlink() or not path.is_file():
+            raise ValueError('release asset is not a regular file')
         suffix = ".exe" if "windows" in name else ""
-        with zipfile.ZipFile(path) as archive:
-            names = [f"saucepan{suffix}", f"saucepan-shim{suffix}", "LICENSE"]
-            if sorted(archive.namelist()) != sorted(names) or archive.testzip() is not None:
-                raise ValueError(f"invalid archive contents: {path}")
-            for entry in archive.infolist():
-                mode = entry.external_attr >> 16
-                if entry.file_size == 0 or not stat.S_ISREG(mode):
-                    raise ValueError(f"invalid archive member: {entry.filename}")
-                if entry.filename != "LICENSE" and mode & 0o111 != 0o111:
-                    raise ValueError(f"missing executable permissions: {entry.filename}")
+        if name in binaries:
+            with zipfile.ZipFile(path) as archive:
+                names = [f"saucepan{suffix}", f"saucepan-shim{suffix}", "LICENSE"]
+                if sorted(archive.namelist()) != sorted(names) or archive.testzip() is not None:
+                    raise ValueError(f"invalid archive contents: {path}")
+                for entry in archive.infolist():
+                    mode = entry.external_attr >> 16
+                    if entry.file_size == 0 or not stat.S_ISREG(mode):
+                        raise ValueError(f"invalid archive member: {entry.filename}")
+                    if entry.filename != "LICENSE" and mode & 0o111 != 0o111:
+                        raise ValueError(f"missing executable permissions: {entry.filename}")
         with path.open("rb") as reader:
             digest = hashlib.file_digest(reader, "sha256").hexdigest()
         lines.append(f"{digest}  {name}\n")
@@ -98,6 +105,8 @@ def main():
     build.add_argument("--destination", type=Path, default=Path("dist"))
     check = commands.add_parser("checksums")
     check.add_argument("--directory", type=Path, default=Path("dist"))
+    sdk = commands.add_parser('sdk-manifest')
+    sdk.add_argument('--directory', type=Path, default=Path('dist'))
     args = parser.parse_args()
     tag = os.environ["RELEASE_TAG"]
     validate_tag(tag)
@@ -108,7 +117,13 @@ def main():
     elif args.command == "package":
         print(package(tag, args.target, args.binary_dir, args.destination))
     else:
-        checksums(tag, args.directory)
+        commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+        if os.environ.get('RELEASE_COMMIT', commit) != commit:
+            raise ValueError('checkout differs from requested release commit')
+        if args.command == 'sdk-manifest':
+            sdk_release.write_manifest(tag, commit, args.directory)
+        else:
+            checksums(tag, args.directory, commit)
 
 
 if __name__ == "__main__":

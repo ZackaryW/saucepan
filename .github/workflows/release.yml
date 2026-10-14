@@ -49,9 +49,51 @@ jobs:
       ref: ${{ needs.prepare.outputs.commit }}
       check_keyring: ${{ inputs.check_keyring || false }}
 
+  sdk-checks:
+    needs: prepare
+    uses: ./.github/workflows/sdk-checks.yml
+    with:
+      ref: ${{ needs.prepare.outputs.commit }}
+
+  sdk-packages:
+    name: Build and verify standalone SDK archives once
+    needs: [prepare, checks, sdk-checks]
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      RELEASE_COMMIT: ${{ needs.prepare.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          python-version: '3.12'
+          enable-cache: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - run: cargo build --locked --bin saucepan
+      - run: uv run --no-project python sdk/check_packages.py build --directory dist
+      - run: uv run --no-project python sdk/check_packages.py verify --directory dist --binary target/debug/saucepan --source-installs
+      - run: uv run --no-project python scripts/release.py sdk-manifest
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-sdks
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+            dist/*.tgz
+            dist/sdk-manifest.json
+          if-no-files-found: error
+          compression-level: 0
+
   build:
     name: Package ${{ matrix.target }}
-    needs: [prepare, checks]
+    needs: [prepare, checks, sdk-checks]
     strategy:
       fail-fast: false
       matrix:
@@ -134,12 +176,13 @@ jobs:
 
   release:
     name: Publish complete release
-    needs: [prepare, checks, build, macos-universal]
+    needs: [prepare, checks, sdk-checks, sdk-packages, build, macos-universal]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     env:
       RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      RELEASE_COMMIT: ${{ needs.prepare.outputs.commit }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -163,6 +206,10 @@ jobs:
           prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}
           files: |
             dist/*.zip
+            dist/*.whl
+            dist/*.tar.gz
+            dist/*.tgz
+            dist/sdk-manifest.json
             dist/SHA256SUMS
           fail_on_unmatched_files: true
           overwrite_files: false

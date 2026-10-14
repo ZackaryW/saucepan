@@ -1,0 +1,76 @@
+name: SDK checks
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Native process platform to verify
+        type: choice
+        default: all
+        options: [all, windows, macos, linux]
+      language:
+        description: SDK to verify (both includes interoperability)
+        type: choice
+        default: both
+        options: [both, python, ts]
+  workflow_call:
+    inputs:
+      ref:
+        description: Exact release commit to verify
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: SDK contracts (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON('{"all":["windows-latest","macos-latest","ubuntu-latest"],"windows":["windows-latest"],"macos":["macos-latest"],"linux":["ubuntu-latest"]}')[inputs.platform || 'all'] }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          python-version: '3.12'
+          enable-cache: false
+      - uses: actions/setup-node@v7
+        if: inputs.language != 'python'
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Build one manager for this job's SDK checks
+        run: cargo build --locked --bin saucepan
+      - name: Python types and resource contracts
+        if: inputs.language != 'ts'
+        shell: bash
+        env:
+          SAUCEPAN_SDK_COVERAGE: target/sdk-python-coverage.json
+        run: |
+          uv run --locked --project sdk/python --group dev mypy sdk/python/src/saucepan_sdk sdk/python/examples
+          uv run --locked --project sdk/python --group dev python -B -m unittest discover -s sdk/python/tests
+      - name: TypeScript types and process contracts
+        if: inputs.language != 'python'
+        shell: bash
+        run: |
+          npm --prefix sdk/ts ci --ignore-scripts
+          npm --prefix sdk/ts test
+      - name: TypeScript resource contracts
+        if: inputs.language != 'python'
+        env:
+          SAUCEPAN_SDK_COVERAGE: target/sdk-ts-coverage.json
+        run: uv run --no-project python -B -m unittest discover -s sdk/contracts -p test_node_resources.py
+      - name: Cross-language consumer contracts
+        if: inputs.language != 'python' && inputs.language != 'ts'
+        run: uv run --locked --project sdk/python python -B -m unittest discover -s sdk/contracts -p test_consumers.py
+      - name: Check operation inventory coverage
+        env:
+          SDK_LANGUAGE: ${{ inputs.language || 'both' }}
+        run: uv run --no-project python -B sdk/contracts/check_inventory.py

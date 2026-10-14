@@ -62,7 +62,7 @@ jobs:
         run: git lfs version
       - run: cargo fmt --check
       - run: cargo clippy --locked --all-targets -- -D warnings
-      - run: python -B -m unittest discover -s scripts -p test_release.py
+      - run: python -B -m unittest discover -s scripts -p 'test_*release.py'
       - name: Ordinary tests without native key custody
         shell: bash
         run: cargo test --locked --all-targets -- --nocapture

@@ -23,8 +23,9 @@ their original checkpoints; they are not alternative current contracts.
 | Persistent intent, atomic preparation and group launch | [Registered groups](resource-groups.md) |
 | Explicit retention beyond updater process lifetime | [Output pins](output-pins.md) |
 | Rust application integration | [Scoped consumer](scoped-consumer.md) |
+| Python and TypeScript resource adapters, installation and consumer boundaries | [Language SDKs](../sdk/README.md) |
 | Managed install, update, rollback, shims and uninstall | [Application lifecycle](application-lifecycle.md) |
-| Platform builds, release ZIPs and publishing | [Releases](releases.md) |
+| Platform builds, SDK archives, selective checks and publishing | [Releases](releases.md) |
 | Utility boundaries and crate inclusion/defer decisions | [Composition utilities](composition-utilities.md#crate-reuse-decisions) |
 
 Store-backed CLI roots default to the user's home `.saucepan`; `--root` explicitly selects an
