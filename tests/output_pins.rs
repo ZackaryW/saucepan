@@ -171,23 +171,25 @@ fn app_witness_survives_claim_release_and_cleanup_has_its_own_permission() {
             .pin(pinned.pin.uuid)
             .is_err()
     );
-    let policies = policy_fixture::definitions(
-        &f.store,
-        vec![json!({"type":"access_policy","actions":["read","unpin"]})],
-    )
-    .unwrap();
-    f.store
-        .configure_application(
-            app.uuid,
-            saucepan::core::claim::session::ApplicationConfiguration {
-                expected_revision: f.store.application(app.uuid).unwrap().revision,
-                policy_refs: policies,
-                credential: None,
-            },
-            None,
+    for actions in [["pin", "unpin"], ["read", "unpin"]] {
+        let policies = policy_fixture::definitions(
+            &f.store,
+            vec![json!({"type":"access_policy","actions":actions})],
         )
         .unwrap();
-    assert!(session.pin_outputs(&request).is_err());
+        f.store
+            .configure_application(
+                app.uuid,
+                saucepan::core::claim::session::ApplicationConfiguration {
+                    expected_revision: f.store.application(app.uuid).unwrap().revision,
+                    policy_refs: policies,
+                    credential: None,
+                },
+                None,
+            )
+            .unwrap();
+        assert!(session.pin_outputs(&request).is_err());
+    }
     // Cleanup does not touch or require payload data.
     fs::remove_dir_all(&pinned.paths[&claim.claim.entry_uuid]).unwrap();
     assert_eq!(

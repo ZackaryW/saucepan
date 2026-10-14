@@ -45,6 +45,7 @@ impl Store {
                 p.owner == owner && p.request.registration_key == request.registration_key
             }) {
                 self.authorize_pin(&previous, Action::Pin)?;
+                self.authorize_pin(&previous, Action::Read)?;
                 ensure!(
                     previous.request == request && previous.state == PinState::Active,
                     Error::new(

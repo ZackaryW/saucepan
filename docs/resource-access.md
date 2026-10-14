@@ -1,5 +1,10 @@
 # Resource access
 
+For lifetime beyond an updater process, [explicit output pins](output-pins.md)
+retain exact output UUIDs until release. [Registered groups](resource-groups.md)
+add saved intent and atomic preparation; their ordinary read-only opening remains
+an invocation lease. Neither feature makes a bare path a lifetime handle.
+
 For original source/repository paths, temporary files and caller-owned copies, see
 [retrieval and acquisition composition](composition.md). This guide describes
 managed output access; a source-path string likewise carries no retained lease.

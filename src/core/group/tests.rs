@@ -126,6 +126,9 @@ fn publication_recovery_keeps_claims_checks_group_and_pin_in_one_transaction() {
 fn final_fences_reject_group_claim_and_credential_edits_without_resurrection() {
     for change in [
         "release",
+        "update",
+        "adoption",
+        "source_policy",
         "context",
         "replace",
         "remove",
@@ -146,6 +149,45 @@ fn final_fences_reject_group_claim_and_credential_edits_without_resurrection() {
             .unwrap();
         let replacement = group.definition.clone();
         session.store.before_claim_commit = Some(Arc::new(move || match change {
+            "update" => {
+                editor
+                    .update_claim(app, claim, &Default::default())
+                    .unwrap();
+            }
+            "adoption" => {
+                let refs = crate::policy_fixture::definitions(
+                    &editor,
+                    vec![json!({"type":"revision_policy","history":"latest","keep":2})],
+                )
+                .unwrap();
+                editor
+                    .adopt_claim_policies(
+                        app,
+                        claim,
+                        editor.application(app).unwrap().revision,
+                        refs,
+                    )
+                    .unwrap();
+            }
+            "source_policy" => {
+                let source = editor
+                    .source(
+                        editor.registry(app).unwrap().claims[&claim]
+                            .request
+                            .source_uuid,
+                    )
+                    .unwrap();
+                let refs = crate::policy_fixture::definitions(
+                    &editor,
+                    vec![
+                        json!({"type":"verification_policy","policy_target":"path","mode":"full"}),
+                    ],
+                )
+                .unwrap();
+                editor
+                    .adopt_source_policies(source.uuid, source.policy_revision, refs)
+                    .unwrap();
+            }
             "release" => editor.release_claim(app, claim).unwrap(),
             "context" => {
                 editor

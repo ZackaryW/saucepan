@@ -36,6 +36,15 @@ pub(crate) fn identity(group: &GroupRecord) -> Identity {
     }
 }
 
+fn member_error(error: anyhow::Error, names: impl IntoIterator<Item = String>) -> anyhow::Error {
+    let mut typed = Error::from_anyhow(&error);
+    typed.details.insert(
+        "members".into(),
+        names.into_iter().collect::<Vec<_>>().join(","),
+    );
+    error.context(typed)
+}
+
 impl Store {
     pub fn register_group(&self, definition: &GroupDefinition) -> Result<GroupRecord> {
         definition.validate()?;

@@ -4,8 +4,7 @@ The [repository README](../README.md) introduces the current Rust implementation
 The [main OpenSpec specs](../openspec/specs/README.md) define the synchronized
 contract before the active changes. The [composition guide](composition.md) and
 [policy guide](policy-resources.md) describe the implemented flat contract.
-`compose-retrieval-and-acquisition` must be synchronized/archived before
-`flatten-policy-resources`; neither is archived by this implementation.
+Active change artifacts describe additions awaiting specification synchronization.
 [Archived changes](../openspec/changes/archive/README.md) preserve decisions at
 their original checkpoints; they are not alternative current contracts.
 
@@ -21,6 +20,8 @@ their original checkpoints; they are not alternative current contracts.
 | Claim labels, exact scope and context matching | [Claim queries](claim-query.md) |
 | Basic checksums and optional native key custody | [Claim integrity](claim-integrity.md) |
 | Exact paths, native leases and child processes | [Resource access](resource-access.md) |
+| Persistent intent, atomic preparation and group launch | [Registered groups](resource-groups.md) |
+| Explicit retention beyond updater process lifetime | [Output pins](output-pins.md) |
 | Rust application integration | [Scoped consumer](scoped-consumer.md) |
 | Managed install, update, rollback, shims and uninstall | [Application lifecycle](application-lifecycle.md) |
 | Platform builds, release ZIPs and publishing | [Releases](releases.md) |

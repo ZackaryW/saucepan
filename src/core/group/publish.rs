@@ -33,6 +33,17 @@ impl Store {
         let mut stale = std::collections::BTreeSet::new();
         for (name, view) in &plan.views {
             let candidate = &candidates[&view.work];
+            ensure!(
+                view.required_files.iter().all(|path| candidate
+                    .output
+                    .files
+                    .get(path)
+                    .is_some_and(|entry| entry.digest.is_some())),
+                Error::new(
+                    ErrorCode::InvalidRequest,
+                    "covered group binary is absent from candidate manifest"
+                )
+            );
             self.metadata_path(&candidate.output)?;
             let work = &plan.works[view.work];
             if candidate.stale {

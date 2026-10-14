@@ -35,3 +35,35 @@ Complete immutable candidate outputs can be published individually, but claims, 
 `prepare_group_with_pin(uuid, expected_revision, options, pin_request)` adds an explicit durable pin to that same final transaction. `pin_group(uuid, expected_revision, pin_request)` pins an already prepared generation. A group pin request contains only `registration_key` and `policy_refs`; targets come from the exact selected generation. Register its `pin_policy` first. Older pins remain independent. The same key and original expected revision return the durable original receipt after a lost response, without another retrieval or `new_entry`; different inputs or a released key conflict. A post-journal error may already have committed: inspect the group revision or retry the same pin receipt before starting a new operation.
 
 These native operations are available on `Store` and `AppSession`. Neither ordinary preparation nor read-only opening creates durable retention. See [output pins](output-pins.md) for the switch-to-B/release-A lifetime protocol.
+
+## CLI flow
+
+Initialize a fresh store, register sources/policies, and save one of the definitions above with the returned UUIDs. The CLI defaults to the user-home `.saucepan`; use `--root` for isolated fixtures. App ownership is opt-in through `--as-app APP_UUID`, with `--credential-file` only when that app requires it.
+
+```text
+saucepan register-group group.json
+saucepan list-groups --key zush/project-a
+saucepan show-group GROUP_UUID
+saucepan prepare-group GROUP_UUID --expected-revision 1
+saucepan run-registered-group GROUP_UUID -- PROGRAM ARGUMENTS
+saucepan prepare-run-group GROUP_UUID -- PROGRAM ARGUMENTS
+saucepan replace-group GROUP_UUID replacement.json --expected-revision N
+saucepan remove-group GROUP_UUID --expected-revision N
+```
+
+Preparation returns `group`, `resources`, optional `pin`, and a `stale` member-name set. It releases transient native guards on CLI exit; use a run command or an explicit pin for subsequent use. Both launch commands set `SAUCEPAN_RESOURCE_GROUP_FILE`, preserve literal arguments and child exit status, and use the same guarded launch path as `run-group`. The descriptor is valid for that launch lifetime. An app-owned command needs its app flags on every invocation; failure never falls back to local administration.
+
+For durable retention, save this group pin request after registering its policy:
+
+```json
+{"registration_key":"power-eagle/session-42/plugin-set/a","policy_refs":["33333333-3333-4333-8333-333333333333"]}
+```
+
+```text
+saucepan prepare-group GROUP_UUID --expected-revision N --pin pin.json
+saucepan pin-group GROUP_UUID --expected-revision N --pin another-pin.json
+```
+
+The first operation prepares and pins in one transaction. The second pins the existing generation. `prepare-run-group` also accepts `--pin` with an explicit expected revision. Change the pin key for a new generation or independent consumer; repeat the original key/revision to reconcile a lost response. The JSON never accepts caller-supplied output overrides on a group pin.
+
+The executable fixtures are `cargo test --test resource_group_cli` and `cargo test --test resource_groups`. They build fresh local/app definitions with real UUIDs, exercise a command/hooks/service-shaped lifetime and pin receipts, and preserve historical `mock/`. Detached service supervision, activation rollback, and runtimes that close inherited handles remain consumer responsibilities; persistent pins are available when an in-process host cannot retain a launcher guard.

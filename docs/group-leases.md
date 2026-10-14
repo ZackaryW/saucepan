@@ -1,6 +1,6 @@
 # Group leases
 
-A group retains already prepared outputs for one consumer. It does not retrieve,
+An inline group retains already prepared outputs for one consumer. It does not retrieve,
 update, recover, register an application or create claims. Prepare resources first.
 
 An output-only request needs no application registration or credentials:

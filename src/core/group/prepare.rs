@@ -169,14 +169,24 @@ impl Store {
                 *freshness = Some(Freshness::Always {});
             }
             let execution = self.group_execution(first);
-            let mut retrieved = execution.retrieve_authorized(
-                &request,
-                &RetrieveOptions {
-                    test_now: options.test_now,
-                    test_github_api: options.test_github_api.clone(),
-                },
-                first.authorization.clone(),
-            )?;
+            let mut retrieved = execution
+                .retrieve_authorized(
+                    &request,
+                    &RetrieveOptions {
+                        test_now: options.test_now,
+                        test_github_api: options.test_github_api.clone(),
+                    },
+                    first.authorization.clone(),
+                )
+                .map_err(|e| {
+                    member_error(
+                        e,
+                        plan.views
+                            .iter()
+                            .filter(|(_, v)| indexes.contains(&v.work))
+                            .map(|(name, _)| name.clone()),
+                    )
+                })?;
             for index in indexes {
                 let work = &mut plan.works[*index];
                 if retrieved.descriptor().stale && work.old_guard.is_some() {
@@ -193,12 +203,22 @@ impl Store {
                 }
                 let execution = self.group_execution(work);
                 retrieved.authorization = work.authorization.clone();
-                let result = execution.prepare_acquisition_candidate(
-                    &retrieved,
-                    &work.acquisition,
-                    work.key.clone(),
-                    work.previous.as_ref(),
-                )?;
+                let result = execution
+                    .prepare_acquisition_candidate(
+                        &retrieved,
+                        &work.acquisition,
+                        work.key.clone(),
+                        work.previous.as_ref(),
+                    )
+                    .map_err(|e| {
+                        member_error(
+                            e,
+                            plan.views
+                                .iter()
+                                .filter(|(_, v)| v.work == *index)
+                                .map(|(name, _)| name.clone()),
+                        )
+                    })?;
                 candidates.insert(
                     *index,
                     Candidate {

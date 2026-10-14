@@ -62,14 +62,25 @@ Acquisition returns `entry`, `directory`, `reused`, `update_checked`, `stale`, a
 Use `run-group group.json -- PROGRAM` to retain several named prepared outputs for
 one child, or `Store::lease_group` / `AppSession::lease_group` for native callers.
 App identity and group policy boundaries are optional; claim targets require an
-app context. Groups do not fetch or update resources. See [group leases](docs/group-leases.md)
+app context. Inline group leases do not fetch or update resources. See [group leases](docs/group-leases.md)
 for payloads, flat policy references and the runnable consumer examples.
 
-The [Power Eagle and Zush integration assessment](docs/consumer-integration-assessment.md)
-separates current capabilities, proposed group orchestration and consumer-owned
-catalog, activation and lifetime work.
+For saved intent, use `register-group`, `prepare-group`, and `prepare-run-group`.
+[Registered groups](docs/resource-groups.md) prepare compatible members together
+and publish claims, successful checks, and a selected generation atomically.
+`run-registered-group` opens that generation without fetching or repairing it.
 
-`models/{source,retrieval,index,store,policy,claim}` defines the contract, matching `core` modules own behavior, `cli` adapts commands, and `utils` contains domain-independent mechanics. `saucepan-shim` is a separate binary that reads its sibling `.shim.json` app identifier and the application's committed binding.
+[Durable pins](docs/output-pins.md) retain exact output UUIDs after the updater
+exits: pin A, prepare and pin B, switch consumers, then explicitly unpin A.
+`prepare-group --expected-revision N --pin pin.json` includes the pin in the
+generation transaction. Group records live in `groups/<uuid>/index.json` and pin
+receipts in `pins/<uuid>.json`, under the same verified catalog. Ordinary claims
+and group registration do not create pins.
+
+The [Power Eagle and Zush integration assessment](docs/consumer-integration-assessment.md)
+separates these capabilities from consumer-owned catalog, activation and lifetime wiring.
+
+`models/{source,retrieval,index,store,policy,claim,lease,group,pin}` defines the contract, matching `core` modules own behavior, `cli` adapts commands, and `utils` contains domain-independent mechanics. `saucepan-shim` is a separate binary that reads its sibling `.shim.json` app identifier and the application's committed binding.
 
 Portable helpers require caller-owned stable roots. Atomic file replacement does not imply a multi-file transaction or power-loss directory durability; native locks coordinate cooperating callers. Path validation rejects unsafe/ambiguous names; it does not isolate hostile processes running as the same user.
 
@@ -101,7 +112,7 @@ Register the release filter above as a `github_release_asset_filter` record befo
 
 Managed executables declare `selection.bin`, a matching `selection.platform`, and a registered `useable_app_policy` UUID in `policy_refs`. First ensure or acquire the executable as a claim owned by the app in an allowed scope. Save a probe such as `{"args":["--version"],"stdout_contains":"saucepan ","timeout_seconds":10}`. Run `activate APP_UUID ENTRY_UUID saucepan.exe probe.json`, then `install-shim APP_UUID saucepan.exe PATH_TO_BUILT_SHIM --saucepan`. Activation validates and probes before atomically switching the binding. Downloading alone never switches it. Activating a retained older entry accessible through an authorized claim performs binding-only rollback; use managed `rollback` for the coordinated claim/binding transition below. Routine updates leave the stable shim untouched; launcher replacement is a separate maintenance operation.
 
-Active useable_app bindings and native execution leases can exceed the retention count. The dedicated shim inherits a lifetime handle into its target: Windows checks sharing conflicts, Unix checks the inherited file lock. Launcher death does not make a still-running target reclaimable. Targets must preserve the inherited lifetime handle; intentionally closing inherited handles or daemonizing outside this lifetime contract is unsupported. Windows console interruption reaches the target's console group; Unix replaces the shim with the target, preserving normal signals. Supported execution evidence is recorded separately for each OS.
+Active useable_app bindings, native execution leases and explicit durable pins can exceed the retention count. The dedicated shim inherits a lifetime handle into its target: Windows checks sharing conflicts, Unix checks the inherited file lock. Launcher death does not make a still-running target reclaimable. Targets must preserve the inherited lifetime handle; intentionally closing inherited handles or daemonizing outside this lifetime contract is unsupported. Windows console interruption reaches the target's console group; Unix replaces the shim with the target, preserving normal signals. Supported execution evidence is recorded separately for each OS.
 
 Use `deactivate APP_UUID` to clear an application's active binding. Claims, cached outputs, installed shims and running processes remain intact. New shim launches fail until reactivation; subsequent `reclaim` follows retention and remaining live/active protection. Repeating deactivation succeeds as a no-op. See [resource access](docs/resource-access.md) for concurrency and result details.
 

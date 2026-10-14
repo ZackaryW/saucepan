@@ -7,6 +7,7 @@ mod composition;
 mod credentials;
 mod group;
 mod policies;
+mod registered_groups;
 mod root;
 mod source_query;
 
@@ -56,6 +57,8 @@ struct Args {
 enum Commands {
     #[command(flatten)]
     Policies(policies::PolicyCommand),
+    #[command(flatten)]
+    Groups(registered_groups::GroupCommand),
     #[command(flatten)]
     Composition(composition::CompositionCommand),
     /// Register by explicit key using a JSON application registration.
@@ -344,6 +347,7 @@ fn run_store(args: Args) -> Result<()> {
                 | Commands::Pin { .. }
                 | Commands::Pins { .. }
                 | Commands::Unpin { .. }
+                | Commands::Groups(_)
         ) || args.credential_file.is_none()
             || args.as_app.is_some(),
         crate::error::Error::new(
@@ -392,6 +396,7 @@ fn run_store(args: Args) -> Result<()> {
                     .into_store();
             }
             match command {
+                Commands::Groups(command) => registered_groups::execute(&store, command, &options)?,
                 Commands::Policies(command) => {
                     policies::run(&store, command, args.credential_file.as_deref())?
                 }

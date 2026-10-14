@@ -39,6 +39,7 @@ pub(super) struct Work {
 pub(super) struct View {
     pub work: usize,
     pub relative: Option<String>,
+    pub required_files: Vec<String>,
 }
 pub(super) struct Plan {
     pub group: GroupRecord,
@@ -78,7 +79,9 @@ impl Store {
                 mut claim,
                 mut relative,
                 fixed,
-            } = self.group_member_request(&group, member)?;
+            } = self
+                .group_member_request(&group, member)
+                .map_err(|e| member_error(e, [member.name.clone()]))?;
             let mut shared = None;
             for (index, work) in works.iter().enumerate() {
                 let same_claim = claim
@@ -94,10 +97,20 @@ impl Store {
                     && request.source_uuid == work.request.source_uuid
                     && request.selector == work.request.selector
                     && left == right;
-                let covered = matching::projection(
+                let mut covered = matching::projection(
                     work.request.selection.folder.as_deref(),
                     request.selection.folder.as_deref(),
                 );
+                if request.selection.format != crate::models::store::Format::Natural
+                    || !matches!(
+                        self.source(request.source_uuid)?.source,
+                        crate::models::source::Source::Local { .. }
+                            | crate::models::source::Source::Git { .. }
+                            | crate::models::source::Source::GithubRepo { .. }
+                    )
+                {
+                    covered = None;
+                }
                 if !matches!(member.target, Target::Output { .. })
                     && (same_claim
                         || (same_family
@@ -105,12 +118,17 @@ impl Store {
                                 || covered.is_some())
                             && matches!(member.target, Target::Acquire(_))))
                 {
+                    let compatible = request.policies == work.request.policies
+                        && request.adopted.as_ref().map(|a| &a.behavior)
+                            == work.request.adopted.as_ref().map(|a| &a.behavior)
+                        && claim.as_ref().map(|c| &c.context)
+                            == work.claim.as_ref().map(|c| &c.context);
+                    // Unclaimed intents with different behavior remain independent.
+                    if !compatible && claim.is_none() {
+                        continue;
+                    }
                     ensure!(
-                        request.policies == work.request.policies
-                            && request.adopted.as_ref().map(|a| &a.behavior)
-                                == work.request.adopted.as_ref().map(|a| &a.behavior)
-                            && claim.as_ref().map(|c| &c.context)
-                                == work.claim.as_ref().map(|c| &c.context),
+                        compatible,
                         Error::new(
                             ErrorCode::ClaimOverlap,
                             "overlapping group intents have different context or policies"
@@ -301,6 +319,15 @@ impl Store {
                 member.name.clone(),
                 View {
                     work: index,
+                    required_files: match &member.target {
+                        Target::Acquire(input) => input
+                            .selection
+                            .bin
+                            .iter()
+                            .map(|bin| join_relative(relative.as_deref(), Some(bin)).unwrap())
+                            .collect(),
+                        _ => Vec::new(),
+                    },
                     relative: join_relative(relative.as_deref(), member.relative.as_deref()),
                 },
             );

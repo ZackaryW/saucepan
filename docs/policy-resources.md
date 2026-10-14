@@ -32,6 +32,7 @@ identical retries, but changing a definition requires a new UUID and explicit ad
 | `github_release_asset_filter`, `selection_policy` | Release asset selection |
 | `identical_pull_policy`, `update_policy`, `revision_policy` | Copied output behavior |
 | `reclaim_policy`, `useable_app_policy` | Recovery and active-binding protection |
+| `pin_policy` | Explicit durable output retention until release; never inherited by acquisition, app/source defaults or group definitions |
 | `policy_constraints` | Registered permitted choices and bounds |
 
 For new operations, behavior precedence is explicit request, application default,

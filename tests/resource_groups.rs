@@ -111,12 +111,18 @@ fn models_and_policy_roles_reject_unusable_persistent_intents() {
         })
         .collect();
     assert!(store.register_group(&too_many).is_err());
-    for block in include_str!("../docs/resource-groups.md")
+    let blocks: Vec<_> = include_str!("../docs/resource-groups.md")
         .split("```json\n")
         .skip(1)
-    {
+        .collect();
+    assert_eq!(blocks.len(), 3);
+    for block in &blocks[..2] {
         serde_json::from_str::<GroupDefinition>(block.split("```").next().unwrap()).unwrap();
     }
+    serde_json::from_str::<saucepan::models::pin::GroupPinRequest>(
+        blocks[2].split("```").next().unwrap(),
+    )
+    .unwrap();
 }
 
 #[test]
@@ -498,5 +504,119 @@ fn compatible_git_members_select_one_commit_while_manual_members_keep_their_revi
     assert_eq!(
         stale.stale,
         ["command".to_owned(), "hooks".to_owned()].into()
+    );
+}
+
+#[test]
+fn local_overlapping_members_keep_distinct_update_policies() {
+    let (tmp, store, mut definition) = fixture();
+    let mut updating = definition.members[0].clone();
+    updating.name = "updating".into();
+    let saucepan::models::group::Target::Acquire(input) = &mut updating.target else {
+        unreachable!()
+    };
+    input.policy_refs = policy_fixture::definitions(
+        &store,
+        vec![json!({"type":"update_policy","mode":"always"})],
+    )
+    .unwrap();
+    definition.members.push(updating);
+    let group = store.register_group(&definition).unwrap();
+    let first = store
+        .prepare_group(group.uuid, None, &Default::default())
+        .unwrap();
+    fs::write(tmp.path().join("not-yet-created"), "changed").unwrap();
+    let second = store
+        .prepare_group(group.uuid, None, &Default::default())
+        .unwrap();
+    assert_eq!(
+        first.lease.member("command").unwrap().output_uuid,
+        second.lease.member("command").unwrap().output_uuid
+    );
+    assert_ne!(
+        first.lease.member("updating").unwrap().output_uuid,
+        second.lease.member("updating").unwrap().output_uuid
+    );
+}
+
+#[test]
+fn covered_member_binary_requirements_are_checked_before_claim_publication() {
+    let (tmp, store, _) = fixture();
+    let input = tmp.path().join("tree");
+    fs::create_dir_all(input.join("child")).unwrap();
+    fs::write(input.join("run"), "binary").unwrap();
+    fs::write(input.join("child/file"), "data").unwrap();
+    let source = store
+        .register_source(Source::Local { path: input })
+        .unwrap();
+    let app = store.register_app("binary-consumer".into()).unwrap();
+    let session = store.session(app.uuid, None).unwrap();
+    let definition = serde_json::from_value(json!({"registration_key":"binary", "members":[
+        {"name":"parent","target":{"type":"acquire","source_uuid":source.uuid,"selector":{"type":"local"},"selection":{"bin":["run"]},"claim":{"scope":"project"}}},
+        {"name":"child","target":{"type":"acquire","source_uuid":source.uuid,"selector":{"type":"local"},"selection":{"folder":"child","bin":["run"]},"claim":{"scope":"project"}}}
+    ]})).unwrap();
+    let group = session.register_group(&definition).unwrap();
+    assert!(
+        session
+            .prepare_group(group.uuid, None, &Default::default())
+            .is_err()
+    );
+    assert!(store.claims(app.uuid).unwrap().is_empty());
+    assert!(session.group(group.uuid).unwrap().selected.is_none());
+}
+
+#[test]
+fn group_pin_retry_rechecks_every_scope_sharing_one_output() {
+    let (_tmp, store, mut definition) = fixture();
+    let app = store.register_app("scoped-consumer".into()).unwrap();
+    let session = store.session(app.uuid, None).unwrap();
+    let saucepan::models::group::Target::Acquire(input) = &mut definition.members[0].target else {
+        unreachable!()
+    };
+    input.claim = Some(serde_json::from_value(json!({"scope":"one"})).unwrap());
+    let mut other = definition.members[0].clone();
+    other.name = "other".into();
+    let saucepan::models::group::Target::Acquire(input) = &mut other.target else {
+        unreachable!()
+    };
+    input.claim = Some(serde_json::from_value(json!({"scope":"two"})).unwrap());
+    definition.members.push(other);
+    let group = session.register_group(&definition).unwrap();
+    let prepared = session
+        .prepare_group(group.uuid, None, &Default::default())
+        .unwrap();
+    let request = saucepan::models::pin::GroupPinRequest {
+        registration_key: "receipt".to_owned().try_into().unwrap(),
+        policy_refs: policy_fixture::definitions(
+            &store,
+            vec![json!({"type":"pin_policy","retention":"until_released"})],
+        )
+        .unwrap(),
+    };
+    let pin = session
+        .pin_group(group.uuid, prepared.group.revision, &request)
+        .unwrap();
+    assert_eq!(pin.request.outputs.len(), 1);
+    let retained_scope = pin.witnesses[0].scope.as_ref().unwrap().as_str();
+    let policies = policy_fixture::definitions(
+        &store,
+        vec![json!({"type":"access_policy","scopes":[retained_scope]})],
+    )
+    .unwrap();
+    store
+        .configure_application(
+            app.uuid,
+            saucepan::core::claim::session::ApplicationConfiguration {
+                expected_revision: store.application(app.uuid).unwrap().revision,
+                policy_refs: policies,
+                credential: None,
+            },
+            None,
+        )
+        .unwrap();
+    assert!(
+        session
+            .pin_group(group.uuid, prepared.group.revision, &request)
+            .is_err()
     );
 }

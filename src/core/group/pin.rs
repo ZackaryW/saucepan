@@ -77,6 +77,32 @@ impl Store {
             );
             self.authorize_pin(pin, Action::Pin)?;
             self.authorize_pin(pin, Action::Read)?;
+            // Deduplicated output witnesses cannot represent every member scope.
+            // Recheck the complete receipt even when no live claim is needed.
+            let group = &pin.group.as_ref().unwrap().group;
+            let catalog = persistence::load(&self.metadata, &self.metadata.snapshot()?)?;
+            let boundary = GroupBoundary::evaluate(&catalog, &group.definition.policy_refs)?;
+            for (name, member) in &group.selected.as_ref().unwrap().members {
+                let source = group
+                    .witnesses
+                    .get(name)
+                    .context(Error::new(
+                        ErrorCode::IntegrityError,
+                        "pin receipt lacks member witness",
+                    ))?
+                    .source_uuid;
+                for action in [Action::Pin, Action::Read] {
+                    boundary.authorize_action(action, source, member.scope.as_ref())?;
+                    if let Some(app) = pin.owner {
+                        self.authorize_resource(
+                            &self.registry(app)?,
+                            action,
+                            Some(source),
+                            member.scope.as_ref(),
+                        )?;
+                    }
+                }
+            }
         }
         Ok(receipt)
     }
