@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "saucepan-sdk"
+version = "0.1.0"
+description = "Typed subprocess access to the Saucepan resource manager"
+requires-python = ">=3.12"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+
+[dependency-groups]
+dev = ["build>=1.2,<2", "mypy>=1.15,<2"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/saucepan_sdk"]
+
+[tool.mypy]
+strict = true
+files = ["src/saucepan_sdk"]

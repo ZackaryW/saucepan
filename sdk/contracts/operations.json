@@ -1,0 +1,755 @@
+[
+  {
+    "command": "init",
+    "python": "init",
+    "typescript": "init",
+    "argv": "[--integrity MODE]",
+    "request": "-",
+    "response": "InitResult",
+    "identity": "local",
+    "mode": "json",
+    "mutates": true,
+    "shape": "object",
+    "required": [
+      "root",
+      "integrity"
+    ],
+    "test": "contracts/fixtures/resource_flow.py#init"
+  },
+  {
+    "command": "register-application",
+    "python": "register_application",
+    "typescript": "registerApplication",
+    "argv": "FILE [--credential-out PATH]",
+    "request": "ApplicationRegistration",
+    "response": "Application",
+    "identity": "local",
+    "mode": "json",
+    "mutates": true,
+    "shape": "object",
+    "required": [
+      "uuid",
+      "revision"
+    ],
+    "test": "contracts/fixtures/resource_flow.py#register-application"
+  },
+  {
+    "command": "configure-application",
+    "python": "configure_application",
+    "typescript": "configureApplication",
+    "argv": "APP FILE [--credential-out PATH]",
+    "request": "ApplicationConfiguration",
+    "response": "Application",
+    "identity": "local",
+    "mode": "json",
+    "mutates": true,
+    "shape": "object",
+    "required": [
+      "uuid",
+      "revision"
+    ],
+    "test": "contracts/fixtures/resource_flow.py#configure-application"
+  },
+  {
+    "command": "register-source",
+    "python": "register_source",
+    "typescript": "registerSource",
+    "argv": "FILE",
+    "request": "Source",
+    "response": "SourceRecord",
+    "identity": "local",
+    "mode": "json",
+    "mutates": true,
+    "shape": "object",
+    "required": [
+      "uuid",
+      "source"
+    ],
+    "test": "contracts/fixtures/resource_flow.py#register-source"
+  },
+  {
+    "command": "inspect",
+    "python": "inspect",
+    "typescript": "inspect",
+    "argv": "UUID",
+    "request": "-",
+    "response": "Record",
+    "identity": "local",
+    "mode": "json",
+    "mutates": false,
+    "shape": "object",
+    "required": [
+      "type"
+    ],
+    "test": "contracts/fixtures/resource_flow.py#inspect"
+  },
+  {
+    "command": "query-sources",
+    "python": "query_sources",
+    "typescript": "querySources",
+    "argv": "[FILE]",
+    "request": "SourceQuery",
+    "response": "SourceQueryResult",
+    "identity": "optional",
+    "mode": "json",
+    "mutates": false,
+    "shape": "object",
+    "required": [
+      "generation",
+      "sources"
+    ],
+    "test": "contracts/fixtures/resource_flow.py#query-sources"
+  },
+  {
+    "command": "query-claims",
+    "python": "query_claims",
+    "typescript": "queryClaims",
+    "argv": "FILE",
+    "request": "ClaimQuery",
+    "response": "QueryResult",
+    "identity": "payload",
+    "mode": "json",
+    "mutates": false,
+    "shape": "object",
+    "required": [
+      "app",
+      "revision",
+      "claims"
+    ],
+    "test": "contracts/fixtures/resource_flow.py#query-claims"
+  },
+  {
+    "command": "discover-claims",
+    "python": "discover_claims",
+    "typescript": "discoverClaims",
+    "argv": "FILE",
+    "request": "DiscoveryQuery",
+    "response": "QueryResult[]",
+    "identity": "optional",
+    "mode": "json",
+    "mutates": false,
+    "shape": "array",
+    "required": [],
+    "test": "contracts/fixtures/resource_flow.py#discover-claims"
+  },
+  {
+    "command": "claims",
+    "python": "claims",
+    "typescript": "claims",
+    "argv": "APP",
+    "request": "-",
+    "response": "ClaimView[]",
+    "identity": "argument",
+    "mode": "json",
+    "mutates": false,
+    "shape": "array",
+    "required": [],
+    "test": "contracts/fixtures/resource_flow.py#claims"
+  },
+  {
+    "command": "set-source-visibility",
+    "python": "set_source_visibility",
+    "typescript": "setSourceVisibility",
+    "argv": "SOURCE VISIBILITY",
+    "request": "-",
+    "response": "SourceRecord",
+    "identity": "local",
+    "mode": "json",
+    "mutates": true,
+    "shape": "object",
+    "required": [
+      "uuid"
+    ],
+    "test": "contracts/fixtures/resource_flow.py#set-source-visibility"
+  },
+  {
+    "command": "register-policies",
+    "python": "register_policies",
+    "typescript": "registerPolicies",
+    "argv": "FILE",
+    "request": "Policy[]",
+    "response": "Policy[]",
+    "identity": "local",
+    "mode": "json",
+    "mutates": true,
+    "shape": "array",
+    "required": [],
+    "test": "contracts/fixtures/resource_flow.py#register-policies"
+  },
+  {
+    "command": "policy",
+    "python": "policy",
+    "typescript": "policy",
+    "argv": "UUID",
+    "request": "-",
+    "response": "Policy",
+    "identity": "optional",
+    "mode": "json",
+    "mutates": false,
+    "shape": "object",
+    "required": [
+      "uuid",
+      "type"
+    ],
+    "test": "contracts/fixtures/resource_flow.py#policy"
+  },
+  {
+    "command": "adopt-app-policies",
+    "python": "adopt_app_policies",
+    "typescript": "adoptAppPolicies",
+    "argv": "APP --expected-revision N [--policy UUID]...",
+    "request": "-",
+    "response": "ApplicationAdoption",
+    "identity": "local",
+    "mode": "json",
+    "mutates": true,
+    "shape": "object",
+    "required": [
+      "app",
+      "revision",
+      "policy_refs"
+    ],
+    "test": "contracts/fixtures/resource_flow.py#adopt-app-policies"
+  },
+  {
+    "command": "adopt-source-policies",
+    "python": "adopt_source_policies",
+    "typescript": "adoptSourcePolicies",
+    "argv": "SOURCE --expected-revision N [--policy UUID]...",
+    "request": "-",
+    "response": "SourceRecord",
+    "identity": "local",
+    "mode": "json",
+    "mutates": true,
+    "shape": "object",
+    "required": [
+      "uuid",
+      "policy_revision",
+      "policy_refs"
+    ],
+    "test": "contracts/fixtures/resource_flow.py#adopt-source-policies"
+  },
+  {
+    "command": "adopt-claim-policies",
+    "python": "adopt_claim_policies",
+    "typescript": "adoptClaimPolicies",
+    "argv": "APP CLAIM --expected-revision N [--policy UUID]...",
+    "request": "-",
+    "response": "ClaimAdoption",
+    "identity": "argument",
+    "mode": "json",
+    "mutates": true,
+    "shape": "object",
+    "required": [
+      "app",
+      "revision",
+      "claim"
+    ],
+    "test": "contracts/fixtures/resource_flow.py#adopt-claim-policies"
+  },
+  {
+    "command": "acquire",
+    "python": "acquire",
+    "typescript": "acquire",
+    "argv": "FILE [--app APP --scope SCOPE --context FILE]",
+    "request": "AcquireRequest",
+    "response": "Acquired or Claimed",
+    "identity": "optional",
+    "mode": "json",
+    "mutates": true,
+    "shape": "object",
+    "required": [],
+    "test": "contracts/fixtures/resource_flow.py#acquire"
+  },
+  {
+    "command": "ensure-claim",
+    "python": "ensure_claim",
+    "typescript": "ensureClaim",
+    "argv": "APP FILE",
+    "request": "EnsureRequest",
+    "response": "Claimed",
+    "identity": "argument",
+    "mode": "json",
+    "mutates": true,
+    "shape": "object",
+    "required": [
+      "claim",
+      "view",
+      "acquired"
+    ],
+    "test": "contracts/fixtures/resource_flow.py#ensure-claim"
+  },
+  {
+    "command": "update-claim",
+    "python": "update_claim",
+    "typescript": "updateClaim",
+    "argv": "APP CLAIM",
+    "request": "-",
+    "response": "Claimed",
+    "identity": "argument",
+    "mode": "json",
+    "mutates": true,
+    "shape": "object",
+    "required": [
+      "claim",
+      "view",
+      "acquired"
+    ],
+    "test": "contracts/fixtures/resource_flow.py#update-claim"
+  },
+  {
+    "command": "recover-claim",
+    "python": "recover_claim",
+    "typescript": "recoverClaim",
+    "argv": "APP CLAIM",
+    "request": "-",
+    "response": "Claimed",
+    "identity": "argument",
+    "mode": "json",
+    "mutates": true,
+    "shape": "object",
+    "required": [
+      "claim",
+      "view",
+      "acquired"
+    ],
+    "test": "contracts/fixtures/resource_flow.py#recover-claim"
+  },
+  {
+    "command": "release-claim",
+    "python": "release_claim",
+    "typescript": "releaseClaim",
+    "argv": "APP CLAIM",
+    "request": "-",
+    "response": "ReleaseResult",
+    "identity": "argument",
+    "mode": "json",
+    "mutates": true,
+    "shape": "object",
+    "required": [
+      "released"
+    ],
+    "test": "contracts/fixtures/resource_flow.py#release-claim"
+  },
+  {
+    "command": "set-claim-context",
+    "python": "set_claim_context",
+    "typescript": "setClaimContext",
+    "argv": "APP CLAIM FILE --expected-revision N",
+    "request": "ClaimContext",
+    "response": "Claim",
+    "identity": "argument",
+    "mode": "json",
+    "mutates": true,
+    "shape": "object",
+    "required": [
+      "uuid",
+      "context"
+    ],
+    "test": "contracts/fixtures/resource_flow.py#set-claim-context"
+  },
+  {
+    "command": "retrieve",
+    "python": "retrieve",
+    "typescript": "retrieve",
+    "argv": "FILE [--scope SCOPE]",
+    "request": "Retrieval",
+    "response": "RetrievalReceipt",
+    "identity": "optional",
+    "mode": "json",
+    "mutates": true,
+    "shape": "object",
+    "required": [
+      "request",
+      "descriptor"
+    ],
+    "test": "contracts/fixtures/resource_flow.py#retrieve"
+  },
+  {
+    "command": "acquire-retrieved",
+    "python": "acquire_retrieved",
+    "typescript": "acquireRetrieved",
+    "argv": "FILE [--scope SCOPE]",
+    "request": "AcquireRetrievedRequest",
+    "response": "AcquiredDescriptor",
+    "identity": "optional",
+    "mode": "json",
+    "mutates": true,
+    "shape": "object",
+    "required": [
+      "ownership",
+      "path"
+    ],
+    "test": "contracts/fixtures/resource_flow.py#acquire-retrieved"
+  },
+  {
+    "command": "source-path",
+    "python": "source_path",
+    "typescript": "sourcePath",
+    "argv": "RETRIEVAL [--scope SCOPE]",
+    "request": "-",
+    "response": "SourcePath",
+    "identity": "optional",
+    "mode": "json",
+    "mutates": false,
+    "shape": "object",
+    "required": [
+      "path"
+    ],
+    "test": "contracts/fixtures/resource_flow.py#source-path"
+  },
+  {
+    "command": "path",
+    "python": "path",
+    "typescript": "path",
+    "argv": "UUID [--verification MODE] [--policy UUID]...",
+    "request": "-",
+    "response": "ResolvedResource",
+    "identity": "optional",
+    "mode": "json",
+    "mutates": false,
+    "shape": "object",
+    "required": [
+      "entry_uuid",
+      "directory",
+      "verification"
+    ],
+    "test": "contracts/fixtures/resource_flow.py#path"
+  },
+  {
+    "command": "verify",
+    "python": "verify",
+    "typescript": "verify",
+    "argv": "UUID",
+    "request": "-",
+    "response": "ResolvedResource",
+    "identity": "optional",
+    "mode": "json",
+    "mutates": false,
+    "shape": "object",
+    "required": [
+      "entry_uuid",
+      "directory",
+      "verification"
+    ],
+    "test": "contracts/fixtures/resource_flow.py#verify"
+  },
+  {
+    "command": "reclaim",
+    "python": "reclaim",
+    "typescript": "reclaim",
+    "argv": "",
+    "request": "-",
+    "response": "ReclaimReport",
+    "identity": "local",
+    "mode": "json",
+    "mutates": true,
+    "shape": "object",
+    "required": [
+      "reclaimed",
+      "deferred",
+      "pending"
+    ],
+    "test": "contracts/fixtures/resource_flow.py#reclaim"
+  },
+  {
+    "command": "purge-retrieval",
+    "python": "purge_retrieval",
+    "typescript": "purgeRetrieval",
+    "argv": "RETRIEVAL",
+    "request": "-",
+    "response": "PurgeResult",
+    "identity": "local",
+    "mode": "json",
+    "mutates": true,
+    "shape": "object",
+    "required": [
+      "purged"
+    ],
+    "test": "contracts/fixtures/resource_flow.py#purge-retrieval"
+  },
+  {
+    "command": "register-group",
+    "python": "register_group",
+    "typescript": "registerGroup",
+    "argv": "FILE",
+    "request": "GroupDefinition",
+    "response": "GroupRecord",
+    "identity": "optional",
+    "mode": "json",
+    "mutates": true,
+    "shape": "object",
+    "required": [
+      "uuid",
+      "revision",
+      "definition"
+    ],
+    "test": "contracts/fixtures/resource_flow.py#register-group"
+  },
+  {
+    "command": "show-group",
+    "python": "show_group",
+    "typescript": "showGroup",
+    "argv": "UUID",
+    "request": "-",
+    "response": "GroupRecord",
+    "identity": "optional",
+    "mode": "json",
+    "mutates": false,
+    "shape": "object",
+    "required": [
+      "uuid",
+      "revision",
+      "definition"
+    ],
+    "test": "contracts/fixtures/resource_flow.py#show-group"
+  },
+  {
+    "command": "list-groups",
+    "python": "list_groups",
+    "typescript": "listGroups",
+    "argv": "[--key KEY]",
+    "request": "-",
+    "response": "GroupRecord[]",
+    "identity": "optional",
+    "mode": "json",
+    "mutates": false,
+    "shape": "array",
+    "required": [],
+    "test": "contracts/fixtures/resource_flow.py#list-groups"
+  },
+  {
+    "command": "replace-group",
+    "python": "replace_group",
+    "typescript": "replaceGroup",
+    "argv": "UUID FILE --expected-revision N",
+    "request": "GroupDefinition",
+    "response": "GroupRecord",
+    "identity": "optional",
+    "mode": "json",
+    "mutates": true,
+    "shape": "object",
+    "required": [
+      "uuid",
+      "revision",
+      "definition"
+    ],
+    "test": "contracts/fixtures/resource_flow.py#replace-group"
+  },
+  {
+    "command": "remove-group",
+    "python": "remove_group",
+    "typescript": "removeGroup",
+    "argv": "UUID --expected-revision N",
+    "request": "-",
+    "response": "RemoveResult",
+    "identity": "optional",
+    "mode": "json",
+    "mutates": true,
+    "shape": "object",
+    "required": [
+      "removed"
+    ],
+    "test": "contracts/fixtures/resource_flow.py#remove-group"
+  },
+  {
+    "command": "prepare-group",
+    "python": "prepare_group",
+    "typescript": "prepareGroup",
+    "argv": "UUID [--expected-revision N --pin FILE]",
+    "request": "GroupPinRequest",
+    "response": "PreparedGroup",
+    "identity": "optional",
+    "mode": "json",
+    "mutates": true,
+    "shape": "object",
+    "required": [
+      "group",
+      "pin",
+      "resources",
+      "stale"
+    ],
+    "test": "contracts/fixtures/resource_flow.py#prepare-group"
+  },
+  {
+    "command": "pin-outputs",
+    "python": "pin_outputs",
+    "typescript": "pinOutputs",
+    "argv": "FILE",
+    "request": "PinRequest",
+    "response": "PinnedOutputs",
+    "identity": "optional",
+    "mode": "json",
+    "mutates": true,
+    "shape": "object",
+    "required": [
+      "pin",
+      "paths"
+    ],
+    "test": "contracts/fixtures/resource_flow.py#pin-outputs"
+  },
+  {
+    "command": "pin-group",
+    "python": "pin_group",
+    "typescript": "pinGroup",
+    "argv": "UUID --expected-revision N --pin FILE",
+    "request": "GroupPinRequest",
+    "response": "PinRecord",
+    "identity": "optional",
+    "mode": "json",
+    "mutates": true,
+    "shape": "object",
+    "required": [
+      "uuid",
+      "state"
+    ],
+    "test": "contracts/fixtures/resource_flow.py#pin-group"
+  },
+  {
+    "command": "pin",
+    "python": "pin",
+    "typescript": "pin",
+    "argv": "UUID",
+    "request": "-",
+    "response": "PinInspection",
+    "identity": "optional",
+    "mode": "json",
+    "mutates": false,
+    "shape": "object",
+    "required": [
+      "uuid",
+      "state",
+      "outputs"
+    ],
+    "test": "contracts/fixtures/resource_flow.py#pin"
+  },
+  {
+    "command": "pins",
+    "python": "pins",
+    "typescript": "pins",
+    "argv": "[--key KEY]",
+    "request": "-",
+    "response": "PinInspection[]",
+    "identity": "optional",
+    "mode": "json",
+    "mutates": false,
+    "shape": "array",
+    "required": [],
+    "test": "contracts/fixtures/resource_flow.py#pins"
+  },
+  {
+    "command": "unpin",
+    "python": "unpin",
+    "typescript": "unpin",
+    "argv": "UUID",
+    "request": "-",
+    "response": "PinRecord",
+    "identity": "optional",
+    "mode": "json",
+    "mutates": true,
+    "shape": "object",
+    "required": [
+      "uuid",
+      "state"
+    ],
+    "test": "contracts/fixtures/resource_flow.py#unpin"
+  },
+  {
+    "command": "run",
+    "python": "run",
+    "typescript": "run",
+    "argv": "UUID [--verification MODE] [--policy UUID]... -- COMMAND...",
+    "request": "-",
+    "response": "RunResult",
+    "identity": "optional",
+    "mode": "run",
+    "mutates": false,
+    "shape": "run",
+    "required": [],
+    "test": "contracts/fixtures/resource_flow.py#run"
+  },
+  {
+    "command": "run-claim",
+    "python": "run_claim",
+    "typescript": "runClaim",
+    "argv": "APP CLAIM [--relative PATH] [--verification MODE] [--policy UUID]... -- COMMAND...",
+    "request": "-",
+    "response": "RunResult",
+    "identity": "argument",
+    "mode": "run",
+    "mutates": false,
+    "shape": "run",
+    "required": [],
+    "test": "contracts/fixtures/resource_flow.py#run-claim"
+  },
+  {
+    "command": "run-group",
+    "python": "run_group",
+    "typescript": "runGroup",
+    "argv": "FILE -- COMMAND...",
+    "request": "GroupRequest",
+    "response": "RunResult",
+    "identity": "optional",
+    "mode": "run",
+    "mutates": false,
+    "shape": "run",
+    "required": [],
+    "test": "contracts/fixtures/resource_flow.py#run-group"
+  },
+  {
+    "command": "run-registered-group",
+    "python": "run_registered_group",
+    "typescript": "runRegisteredGroup",
+    "argv": "UUID -- COMMAND...",
+    "request": "-",
+    "response": "RunResult",
+    "identity": "optional",
+    "mode": "run",
+    "mutates": false,
+    "shape": "run",
+    "required": [],
+    "test": "contracts/fixtures/resource_flow.py#run-registered-group"
+  },
+  {
+    "command": "prepare-run-group",
+    "python": "prepare_run_group",
+    "typescript": "prepareRunGroup",
+    "argv": "UUID [--expected-revision N --pin FILE] -- COMMAND...",
+    "request": "GroupPinRequest",
+    "response": "RunResult",
+    "identity": "optional",
+    "mode": "run",
+    "mutates": true,
+    "shape": "run",
+    "required": [],
+    "test": "contracts/fixtures/resource_flow.py#prepare-run-group"
+  },
+  {
+    "command": "run-retrieved",
+    "python": "run_retrieved",
+    "typescript": "runRetrieved",
+    "argv": "FILE [--scope SCOPE] -- COMMAND...",
+    "request": "Retrieval",
+    "response": "RunResult",
+    "identity": "optional",
+    "mode": "run",
+    "mutates": true,
+    "shape": "run",
+    "required": [],
+    "test": "contracts/fixtures/resource_flow.py#run-retrieved"
+  },
+  {
+    "command": "run-acquired",
+    "python": "run_acquired",
+    "typescript": "runAcquired",
+    "argv": "FILE [--scope SCOPE] -- COMMAND...",
+    "request": "CompositionRequest",
+    "response": "RunResult",
+    "identity": "optional",
+    "mode": "run",
+    "mutates": true,
+    "shape": "run",
+    "required": [],
+    "test": "contracts/fixtures/resource_flow.py#run-acquired"
+  }
+]
