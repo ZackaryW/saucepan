@@ -15,3 +15,30 @@ JSON calls default to 120,000 milliseconds and 16 MiB per stream/input (1 MiB gr
 Run options have no default timeout, inherit streams by default, and optionally capture byte arrays. `AbortSignal`/explicit deadlines reap the SDK-owned process without asserting descendants stopped. Child output is never decoded as domain JSON. Paths alone do not retain outputs and pins require explicit unpin.
 
 Runtime dependencies are Node built-ins; TypeScript and @types/node are development dependencies and node:test supplies verification. Zod and Execa are excluded because bounded wire/process handling is sufficient and Rust remains the semantic authority. No binary installer or registry publishing hook is present.
+
+## Resource workflow
+
+```ts
+const client = new Client({ executable: '/path/to/saucepan', root: '/disposable/store' });
+await client.init();
+const source = await client.registerSource({type: 'git', origin: '/path/to/local/repo'});
+const app = await client.registerApplication({registration_key: 'my-tool', name: 'My tool'});
+const bound = client.forApp(app.uuid);
+const selected = await bound.ensureClaim(app.uuid, {
+  source_uuid: source.uuid, selector: {type: 'ref', reference: 'HEAD'},
+  scope: 'project-a', selection: {folder: 'skills'},
+});
+const views = await bound.queryClaims({app: app.uuid, scope: 'project-a', where: []});
+// Read-only lookup preserves selection. Explicit update affects this claim.
+const updated = await bound.updateClaim(app.uuid, selected.claim.uuid);
+```
+
+Method/options names are camelCase; Rust payload/result fields remain snake_case. Import request/response types from `saucepan-sdk/models/claim`, `/group`, `/pin`, `/source`, `/policy` or `/composition`. `querySources()` needs no app or JSON file and sees explicitly public sources. Unbound `acquire` provides trusted local acquisition; bound acquisition requires an explicit scope.
+
+`retrieve` returns `{request, descriptor}` for original material, `sourcePath` performs read-only lookup and `acquireRetrieved` returns copied results. Supply explicit portable `policies` and caller-owned destinations for root-free no-store operations. Temporary results use `runRetrieved`/`runAcquired` to retain native lifetimes.
+
+`registerGroup` stores intent and `prepareGroup` materializes it. To retain paths after the updater exits, explicitly pass `pin` and `expectedRevision` with a registered pin policy; inspect with `pin`/`pins` and release with `unpin`. Ordinary preparation and object disposal do not change pin ownership. Run options such as `{capture:true, signal}` accompany other options directly, and captured bytes are Uint8Array values.
+
+Trusted administration may supply a caller-owned `credentialFile` to the constructor when configuring protected apps; this does not select app identity. App sessions use `forApp(uuid, {credentialFile})`. No credential bytes are read by this package.
+
+Run `npm test` for transport and real-binary lifetime checks. Shared resource parity tests run from the repository root with `uv run --no-project python -m unittest discover -s sdk/contracts -p test_node_resources.py`. Set `SAUCEPAN_TEST_BINARY` explicitly or build the default debug binary first. Tests use isolated stores, local Git and the current wire contract, never real consumer projects.
