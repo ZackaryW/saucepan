@@ -233,6 +233,20 @@ enum Commands {
         #[arg(last = true, required = true, num_args = 1..)]
         command: Vec<std::ffi::OsString>,
     },
+    /// Retain existing outputs until an explicit unpin, using a registered pin_policy.
+    PinOutputs {
+        file: PathBuf,
+    },
+    Pin {
+        uuid: uuid::Uuid,
+    },
+    Pins {
+        #[arg(long)]
+        key: Option<String>,
+    },
+    Unpin {
+        uuid: uuid::Uuid,
+    },
     Reclaim,
     Reacquire {
         uuid: uuid::Uuid,
@@ -323,12 +337,18 @@ fn run_store(args: Args) -> Result<()> {
         )
     );
     anyhow::ensure!(
-        !matches!(args.command, Commands::RunGroup { .. })
-            || args.credential_file.is_none()
+        !matches!(
+            args.command,
+            Commands::RunGroup { .. }
+                | Commands::PinOutputs { .. }
+                | Commands::Pin { .. }
+                | Commands::Pins { .. }
+                | Commands::Unpin { .. }
+        ) || args.credential_file.is_none()
             || args.as_app.is_some(),
         crate::error::Error::new(
             crate::error::ErrorCode::InvalidRequest,
-            "run-group credential-file requires as-app"
+            "credential-file requires as-app for this command"
         )
     );
     let explicit_root = args.root.is_some();
@@ -687,6 +707,12 @@ fn run_store(args: Args) -> Result<()> {
                         &command,
                     )?);
                 }
+                Commands::PinOutputs { file } => {
+                    serde_json::to_value(store.pin_outputs(&group::read(&file)?)?)?
+                }
+                Commands::Pin { uuid } => serde_json::to_value(store.pin(uuid)?)?,
+                Commands::Pins { key } => serde_json::to_value(store.pins(key.as_deref())?)?,
+                Commands::Unpin { uuid } => serde_json::to_value(store.unpin(uuid)?)?,
                 Commands::Reclaim => serde_json::to_value(store.reclaim()?)?,
                 Commands::Reacquire { uuid } => {
                     serde_json::to_value(store.reacquire(uuid, &options)?)?

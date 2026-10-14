@@ -183,6 +183,7 @@ pub enum Kind {
     Policy,
     Registry,
     Claim,
+    Pin,
     Operation,
     Transaction,
 }

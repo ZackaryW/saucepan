@@ -22,6 +22,13 @@ impl Store {
         self.reclaim_locked()
     }
     pub(crate) fn reclaim_locked(&self) -> Result<ReclaimReport> {
+        // Verify the complete pin catalog before any deletion. Corruption fails closed.
+        let pinned: BTreeSet<_> = self
+            .pin_records_locked()?
+            .into_iter()
+            .filter(|p| p.state == crate::models::pin::PinState::Active)
+            .flat_map(|p| p.request.outputs)
+            .collect();
         // Bookkeeping cleanup is independent of whether payloads are evictable.
         self.sweep_closed_markers_locked()?;
         let records = self.records()?;
@@ -84,6 +91,12 @@ impl Store {
                     report
                         .deferred
                         .insert(entry.uuid, "active useable_app binding".into());
+                    continue;
+                }
+                if pinned.contains(&entry.uuid) {
+                    report
+                        .deferred
+                        .insert(entry.uuid, "durable output pin".into());
                     continue;
                 }
                 if pending_candidates.contains(&entry.uuid) {

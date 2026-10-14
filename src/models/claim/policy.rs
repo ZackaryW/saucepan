@@ -14,6 +14,8 @@ pub enum Action {
     Read,
     Acquire,
     Lease,
+    Pin,
+    Unpin,
     Update,
     Recover,
     Release,

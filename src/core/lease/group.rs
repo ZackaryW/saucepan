@@ -51,8 +51,17 @@ impl Store {
         request: &GroupRequest,
         portable: &PolicyCatalog,
     ) -> Result<GroupLease> {
+        self.lease_group_action(request, portable, Action::Lease, Instant::now())
+    }
+
+    pub(crate) fn lease_group_action(
+        &self,
+        request: &GroupRequest,
+        portable: &PolicyCatalog,
+        action: Action,
+        started: Instant,
+    ) -> Result<GroupLease> {
         request.validate()?;
-        let started = Instant::now();
         let remaining = || Duration::from_secs(30).saturating_sub(started.elapsed());
         let (mut leases, mut descriptor, outputs, modes, fences) = {
             let _coordination = self.lock_with_timeout(remaining())?;
@@ -91,7 +100,7 @@ impl Store {
             for member in &request.members {
                 let (id, claim_id, scope) = match member.target {
                     GroupTarget::Output { uuid } => {
-                        self.authorize_output(uuid, Action::Lease)?;
+                        self.authorize_output(uuid, action)?;
                         (uuid, None, None)
                     }
                     GroupTarget::Claim { uuid } => {
@@ -104,7 +113,7 @@ impl Store {
                         let claim = registry.claims.get(&uuid).with_context(|| {
                             Error::new(ErrorCode::UnknownClaim, "claim missing from application")
                         })?;
-                        self.authorize_claim(registry, claim, Action::Lease)?;
+                        self.authorize_claim(registry, claim, action)?;
                         (claim.entry_uuid, Some(uuid), Some(&claim.scope))
                     }
                 };

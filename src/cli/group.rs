@@ -7,7 +7,7 @@ use anyhow::{Result, ensure};
 use serde::de::DeserializeOwned;
 use std::{ffi::OsString, fs::File, io::Read, path::Path, process::Command};
 
-fn read<T: DeserializeOwned>(path: &Path) -> Result<T> {
+pub(super) fn read<T: DeserializeOwned>(path: &Path) -> Result<T> {
     let mut bytes = Vec::new();
     File::open(path)?
         .take(GroupRequest::MAX_JSON_BYTES + 1)

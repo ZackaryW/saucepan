@@ -38,7 +38,14 @@ pub enum PolicyDefinition {
     RevisionPolicy(RevisionPolicy),
     ReclaimPolicy { strategy: ReclaimStrategy },
     UseableAppPolicy {},
+    PinPolicy { retention: PinRetention },
     PolicyConstraints(Constraints),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PinRetention {
+    UntilReleased,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -118,7 +125,10 @@ impl PolicyDefinition {
     pub fn axis(&self) -> Option<Axis> {
         use PolicyDefinition::*;
         Some(match self {
-            AccessPolicy(_) | PolicyConstraints(_) | GithubReleaseAssetFilter(_) => return None,
+            AccessPolicy(_)
+            | PolicyConstraints(_)
+            | GithubReleaseAssetFilter(_)
+            | PinPolicy { .. } => return None,
             SourceVisibilityPolicy { .. } => Axis::SourceVisibility,
             ClaimVisibilityPolicy { .. } => Axis::ClaimVisibility,
             CachePolicy { .. } => Axis::Cache,

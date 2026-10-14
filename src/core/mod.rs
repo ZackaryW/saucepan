@@ -6,6 +6,7 @@ pub mod index;
 pub mod launch;
 pub mod lease;
 pub mod lifecycle;
+pub mod pin;
 pub mod policy;
 pub mod query;
 pub mod retrieval;

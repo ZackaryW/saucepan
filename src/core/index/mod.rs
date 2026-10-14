@@ -23,6 +23,7 @@ use uuid::Uuid;
 pub(crate) struct Journal {
     pub records: Vec<Record>,
     pub registries: Vec<RegistryState>,
+    pub pins: Vec<crate::models::pin::PinRecord>,
     pub stage: Option<(String, Uuid)>,
     #[serde(default)]
     pub retrieval_stage: Option<(String, Uuid)>,
@@ -348,6 +349,9 @@ impl Store {
         let snapshot = self.metadata.snapshot()?;
         let mut writes = Vec::new();
         let mut deletes = Vec::new();
+        for pin in &journal.pins {
+            writes.push((crate::core::pin::identity(pin), serde_json::to_value(pin)?));
+        }
         for record in &journal.records {
             writes.push((record_identity(record), serde_json::to_value(record)?));
             if let Record::Application(app) = record {
