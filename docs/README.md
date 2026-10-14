@@ -45,8 +45,9 @@ earlier layouts are not migrated and old-reader compatibility is not promised.
 
 ## Verification evidence
 
-[Flat-policy verification](policy-verification.md) records the current Windows
-checks and the combined two-scope Git consumer fixture. Run:
+[Group/pin verification](resource-group-verification.md) records current Windows
+checks and the retained consumer fixtures. [Flat-policy verification](policy-verification.md)
+preserves the earlier two-scope Git consumer evidence. Run:
 
 ```powershell
 cargo test --locked --test policy_acceptance

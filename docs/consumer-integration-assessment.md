@@ -83,7 +83,7 @@ when the consumer can reliably decide when retention should end.
 [Output pins](output-pins.md) and [registered groups](resource-groups.md) document
 current payloads. The isolated Rust/CLI fixtures cover updater exit, delayed reads,
 independent pins, A/B revisions, claim movement, shared Git commits, partial failure,
-reclaim during use, and metadata-journal recovery. The final verification report
+reclaim during use, and metadata-journal recovery. The [verification report](resource-group-verification.md)
 records exact local checks separately from actual application integration.
 
 Neither app is a drop-in integration yet. Validate real packaged ESM imports,
