@@ -71,16 +71,18 @@ Earlier runs exposed incomplete claim/retrieval test builders after strict
 evidence validation; those builders were corrected before the successful full
 run. The final suite log is `%TEMP%/saucepan-flat-complete-suite.log`.
 
-All 29 implementation tasks in `flatten-policy-resources` are complete. Active
-OpenSpec change artifacts remain outside implementation commits.
+All 29 implementation tasks in `flatten-policy-resources` were completed. The
+composition and flat-policy changes were subsequently synchronized and archived
+on 2026-10-13, in that dependency order.
 
-No hosted workflows, native OS keyring smoke tests, Linux/macOS execution, MSRV
-execution, historical mock migration, push, sync or archive were performed.
+At that verification checkpoint, no hosted workflows, native OS keyring smoke
+tests, Linux/macOS execution, MSRV execution, historical mock migration, push,
+sync or archive were performed.
 Injected custody verifies protected behavior without asserting OS keyring setup.
 Crate inclusion and deferral reasons remain in
 [composition utilities](composition-utilities.md#crate-reuse-decisions).
 
-The changes remain active. Synchronize/archive `compose-retrieval-and-acquisition`
-first, then `flatten-policy-resources`; reversing that order could restore the
-predecessor's nested input descriptions. Historical verification reports retain
-their dated evidence and are explicitly marked as earlier contracts.
+This report retains the flat-policy checkpoint's dated evidence. See
+[group-lease verification](group-lease-verification.md) for the subsequent grouped
+consumer extension. Historical verification reports retain their dated evidence
+and are explicitly marked as earlier contracts.

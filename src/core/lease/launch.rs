@@ -5,7 +5,7 @@ use crate::{
     error::{Error, ErrorCode},
 };
 use anyhow::{Result, ensure};
-use std::{fs, process::Command, rc::Rc};
+use std::{fs::OpenOptions, io::Write, process::Command, rc::Rc};
 
 pub(crate) fn launch_group(mut command: Command, mut group: GroupLease) -> Result<i32> {
     consumer::sweep_temporary_consumers()?;
@@ -16,7 +16,11 @@ pub(crate) fn launch_group(mut command: Command, mut group: GroupLease) -> Resul
         bytes.len() <= 16 * 1024 * 1024,
         Error::new(ErrorCode::InvalidRequest, "group descriptor exceeds 16 MiB")
     );
-    fs::write(&path, bytes)?;
+    OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)?
+        .write_all(&bytes)?;
     let _temporary = consumer::temporary_marker(&mut Some(Rc::new(temporary)))?;
     for lease in group.leases.values_mut() {
         lease.inherit()?;

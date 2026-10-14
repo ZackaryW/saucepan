@@ -165,6 +165,16 @@ mod tests {
             assert!(serde_json::from_value::<GroupRequest>(json!({"members":members})).is_err());
         }
         let mut duplicate = valid.clone();
+        let mut maximum = valid.clone();
+        maximum.members = (0..GroupRequest::MAX_MEMBERS)
+            .map(|i| GroupMember {
+                name: format!("member{i}"),
+                target: GroupTarget::Output { uuid: Uuid::nil() },
+                relative: None,
+            })
+            .collect();
+        assert!(maximum.validate().is_ok());
+        serde_json::from_value::<GroupRequest>(serde_json::to_value(maximum).unwrap()).unwrap();
         duplicate.members.push(valid.members[0].clone());
         assert!(duplicate.validate().is_err());
         duplicate.members[1].name = "command_1".into();

@@ -418,6 +418,20 @@ fn reversed_groups_and_reclaim_progress_while_another_group_scans() {
 
 #[test]
 fn partial_marker_inheritance_and_spawn_failure_release_all_outputs() {
+    // Inheritable handles belong only in dedicated processes, including fixtures.
+    // Parallel test-runner spawns must never inherit the temporary test markers.
+    if std::env::var_os("SAUCEPAN_GROUP_MARKER_FIXTURE").is_none() {
+        let result = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "core::lease::group::tests::partial_marker_inheritance_and_spawn_failure_release_all_outputs", "--nocapture"])
+            .env("SAUCEPAN_GROUP_MARKER_FIXTURE", "1").output().unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(String::from_utf8_lossy(&result.stdout).contains("1 passed"));
+        return;
+    }
     for partial in [false, true] {
         let (tmp, store, request, first) = fixture();
         let preparation = store.lease(first, VerificationMode::Metadata).unwrap();
@@ -439,4 +453,33 @@ fn partial_marker_inheritance_and_spawn_failure_release_all_outputs() {
         assert!(!store.has_live_execution(first).unwrap());
         assert!(!store.has_live_execution(second).unwrap());
     }
+}
+
+#[test]
+fn later_output_verification_failure_rolls_back_earlier_verified_output() {
+    let (tmp, mut store, request, first) = fixture();
+    let preparation = store.lease(first, VerificationMode::Metadata).unwrap();
+    fs::write(tmp.path().join("input/hooks/script"), "second").unwrap();
+    let second = store.acquire(&request).unwrap().entry.uuid;
+    let last = first.max(second);
+    fs::write(store.path(last).unwrap().join("hooks/script"), "corrupt").unwrap();
+    let mut request = group(first);
+    request.members[1].target = GroupTarget::Output { uuid: second };
+    let leaf = full();
+    request.policy_refs = vec![leaf.uuid].try_into().unwrap();
+    let opens = Arc::new(AtomicUsize::new(0));
+    let seen = opens.clone();
+    store.access_observer = Some(Arc::new(move |event| {
+        if matches!(event, IoEvent::Open) {
+            seen.fetch_add(1, Ordering::SeqCst);
+        }
+    }));
+    assert!(
+        store
+            .lease_group(&request, &PolicyCatalog::new([leaf]).unwrap())
+            .is_err()
+    );
+    assert_eq!(opens.load(Ordering::SeqCst), 2);
+    drop(preparation);
+    assert!(available(&store, first) && available(&store, second));
 }
