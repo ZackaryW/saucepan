@@ -573,6 +573,7 @@ pub fn record_path(identity: Identity) -> Result<String> {
         (Kind::Source, None, Some(id)) => Ok(format!("source/{id}.json")),
         (Kind::Policy, None, Some(id)) => Ok(format!("policies/{id}.json")),
         (Kind::Pin, _, Some(id)) => Ok(format!("pins/{id}.json")),
+        (Kind::Group, _, Some(id)) => Ok(format!("groups/{id}/index.json")),
         (Kind::Registry, Some(app), None) => Ok(format!("claims/{app}/index.json")),
         (Kind::Claim, Some(app), Some(id)) => Ok(format!("claims/{app}/{id}.json")),
         (Kind::Operation, _, Some(id)) => Ok(format!(".staging/lifecycle/{id}/index.json")),

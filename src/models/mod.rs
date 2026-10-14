@@ -1,4 +1,5 @@
 pub mod claim;
+pub mod group;
 pub mod index;
 pub mod lease;
 pub mod pin;

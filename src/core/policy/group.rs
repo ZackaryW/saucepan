@@ -51,7 +51,15 @@ impl GroupBoundary {
         Ok(result)
     }
     pub fn authorize(&self, source: Uuid, scope: Option<&Scope>) -> Result<()> {
-        resolve::authorize(&self.plan, Action::Lease, Some(source), scope)
+        self.authorize_action(Action::Lease, source, scope)
+    }
+    pub(crate) fn authorize_action(
+        &self,
+        action: Action,
+        source: Uuid,
+        scope: Option<&Scope>,
+    ) -> Result<()> {
+        resolve::authorize(&self.plan, action, Some(source), scope)
     }
     pub fn verification(&self, member: VerificationMode) -> VerificationMode {
         strongest(member, self.floor.unwrap_or(VerificationMode::Metadata))

@@ -24,6 +24,8 @@ pub(crate) struct Journal {
     pub records: Vec<Record>,
     pub registries: Vec<RegistryState>,
     pub pins: Vec<crate::models::pin::PinRecord>,
+    pub groups: Vec<crate::models::group::GroupRecord>,
+    pub remove_groups: Vec<Identity>,
     pub stage: Option<(String, Uuid)>,
     #[serde(default)]
     pub retrieval_stage: Option<(String, Uuid)>,
@@ -352,6 +354,13 @@ impl Store {
         for pin in &journal.pins {
             writes.push((crate::core::pin::identity(pin), serde_json::to_value(pin)?));
         }
+        for group in &journal.groups {
+            writes.push((
+                crate::core::group::identity(group),
+                serde_json::to_value(group)?,
+            ));
+        }
+        deletes.extend(journal.remove_groups.iter().copied());
         for record in &journal.records {
             writes.push((record_identity(record), serde_json::to_value(record)?));
             if let Record::Application(app) = record {
@@ -393,6 +402,14 @@ impl Store {
                 "application is not ready for retirement"
             );
             deletes.extend(RegistryState::retire(&snapshot, app)?);
+            deletes.extend(
+                snapshot
+                    .catalog
+                    .records
+                    .values()
+                    .filter(|r| r.identity.kind == Kind::Group && r.identity.owner == Some(app))
+                    .map(|r| r.identity),
+            );
             deletes.push(identity);
         }
         let content = journal

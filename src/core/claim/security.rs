@@ -184,6 +184,7 @@ pub enum Kind {
     Registry,
     Claim,
     Pin,
+    Group,
     Operation,
     Transaction,
 }
