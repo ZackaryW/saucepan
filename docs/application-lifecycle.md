@@ -7,6 +7,54 @@ CLI commands use the user-home `.saucepan` store by default. Examples below use
 application apply its registered policies; supply `--credential-file FILE` when
 that app requires proof. Global reconciliation is trusted local maintenance.
 
+## First setup with a profile
+
+Obtain and extract the [release ZIP for your platform](releases.md). Keep the
+manager and matching `saucepan-shim` together. SDK installation does not download
+these binaries. The following PowerShell example assumes a Windows x64 release
+extracted into the current directory; change the asset pattern and executable
+names for another platform. `ROOT` below is an explicit isolated destination;
+omit `--root ROOT` to use your home `.saucepan` store.
+
+```powershell
+$manager = (Resolve-Path ./saucepan.exe).Path
+$shim = (Resolve-Path ./saucepan-shim.exe).Path
+& $manager --root ROOT init
+$profile = & $manager profile explicit-update --for-install | ConvertFrom-Json
+$filterId = [guid]::NewGuid().ToString()
+$filter = @{uuid=$filterId; type='github_release_asset_filter'; asset_patterns=@('saucepan-*-x86_64-pc-windows-msvc.zip')}
+@($profile.catalog) + @($filter) | ConvertTo-Json -Depth 30 | Set-Content -Encoding utf8 setup-policies.json
+& $manager --root ROOT register-policies setup-policies.json
+@{type='github_release'; repo='ZackaryW/saucepan'} | ConvertTo-Json | Set-Content -Encoding utf8 source.json
+$source = & $manager --root ROOT register-source source.json | ConvertFrom-Json
+$request = @{
+  source_uuid=$source.uuid; selector=@{type='latest_stable'}
+  selection=@{format='zip'; bin=@('saucepan.exe'); filter_refs=@($filterId)}
+  policy_refs=@($profile.combined_policy_refs)
+}
+$request | ConvertTo-Json -Depth 30 | Set-Content -Encoding utf8 bootstrap.json
+$operation = [guid]::NewGuid().ToString()
+& $manager --root ROOT bootstrap bootstrap.json $shim --operation $operation
+```
+
+Check the returned operation's `status`; only `complete` means setup finished.
+Retain its app/claim identifiers and original request/operation ID for inspection
+and retry. The profile adds ordinary usable-app protection, while bootstrap
+supplies Saucepan's fixed self scope and version probe. Policy/source registration
+and cached material may survive a failed installation; they are not proof of a
+live app. The temporary profile cannot install a stable executable.
+
+Add the resulting root's `bin` directory to PATH using your shell/system settings,
+then open a new shell and run `saucepan --version`. For an isolated root you can
+instead invoke `ROOT/bin/saucepan.exe` directly. Saucepan does not edit PATH or
+shell configuration. Use the returned identifiers with `self-update APP_UUID
+CLAIM_UUID`; downloading a release alone does not activate it. Generic managed
+apps use the same expanded refs with the explicit `install` command below, their
+own source, scope and probe. Resource-only consumers can use a profile without
+registering an application or installing an executable.
+
+## Lifecycle and recovery
+
 Application metadata includes readiness/removing state, a monotonic mutation
 revision and an owned-shim list. Only the current store integrity contract is
 supported; earlier layouts are rejected without migration. Removing applications reject claims,

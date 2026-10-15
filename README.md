@@ -94,6 +94,7 @@ Basic checksums detect inconsistency. Optional keyring mode uses HMAC with nativ
 The manager can install and update applications, including Saucepan itself. A stable shim launches the application's committed binding. Candidate validation precedes activation; downloading an output alone does not switch the running selection.
 
 - [Application lifecycle](docs/application-lifecycle.md): install, update, rollback, shims, uninstall and recovery.
+- [First managed setup](docs/application-lifecycle.md#first-setup-with-a-profile): release manager/shim prerequisites, explicit profile registration, bootstrap and PATH instructions.
 - [Release builds](docs/releases.md): platform ZIPs, SDK archives, checksums and selective manual CI.
 
 ## Development

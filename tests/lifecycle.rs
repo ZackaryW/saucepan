@@ -119,12 +119,16 @@ fn setup() -> (tempfile::TempDir, native_root::NativeStore, Installation) {
         policy_refs: Default::default(),
     };
     request.selection.bin = vec![name];
-    policy_fixture::replace(
-        &store,
-        &mut request.policy_refs,
-        serde_json::json!({"type":"useable_app_policy"}),
+    let profile = saucepan::core::policy::profile::expand(
+        &saucepan::models::policy::profile::ProfileRequest {
+            name: saucepan::models::policy::profile::ProfileName::ExplicitUpdate,
+            for_install: true,
+            ..Default::default()
+        },
     )
     .unwrap();
+    store.register_policies(&profile.catalog).unwrap();
+    request.policy_refs = profile.combined_policy_refs;
     policy_fixture::replace(
         &store,
         &mut request.policy_refs,
@@ -156,6 +160,40 @@ fn setup() -> (tempfile::TempDir, native_root::NativeStore, Installation) {
 }
 fn shim() -> PathBuf {
     env!("CARGO_BIN_EXE_saucepan-shim").into()
+}
+
+#[test]
+fn managed_profile_preflight_rejects_temporary_and_no_store_before_receipt() {
+    for mode in ["temporary", "no_store"] {
+        let (_tmp, store, mut input) = setup();
+        policy_fixture::replace(
+            &store,
+            &mut input.request.policy_refs,
+            serde_json::json!({"type":"cache_policy","mode":mode}),
+        )
+        .unwrap();
+        let operation = uuid::Uuid::new_v4();
+        let error = store
+            .install_application(&input, &shim(), &Default::default(), Some(operation))
+            .unwrap_err();
+        assert_eq!(
+            saucepan::error::Error::from_anyhow(&error).code,
+            saucepan::error::ErrorCode::PolicyConflict
+        );
+        assert!(
+            !store
+                .root()
+                .join(".staging/lifecycle")
+                .join(operation.to_string())
+                .exists()
+        );
+        assert!(
+            std::fs::read_dir(store.root().join("store"))
+                .unwrap()
+                .next()
+                .is_none()
+        );
+    }
 }
 
 #[test]

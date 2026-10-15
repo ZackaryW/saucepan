@@ -73,10 +73,8 @@ server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Fixture)
 base = f"http://127.0.0.1:{server.server_port}"
 threading.Thread(target=server.serve_forever, daemon=True).start()
 events = []
-def call(*args, executable=exe_b, code=0, raw=False, force=False):
+def call(*args, executable=exe_b, code=0, raw=False):
     command = [str(executable), "--root", str(ROOT), "--test-github-api", base, "--test-now", "100"]
-    if force:
-        command.append("--force-refresh")
     result = subprocess.run(command + list(map(str, args)), cwd=REPO, capture_output=True, text=True, timeout=90)
     assert result.returncode == code, (args, result.returncode, result.stdout, result.stderr)
     if raw:
@@ -101,9 +99,16 @@ try:
     initialized = call("init")
     assert initialized["integrity"] == "basic"
     source = call("register-source", save("source.json", {"type": "github_release", "repo": "fixture/lifecycle"}))["uuid"]
+    revision = {"uuid": str(uuid.uuid4()), "type": "revision_policy", "history": "latest", "keep": 2}
+    profile = call("profile", "explicit-update", "--for-install", "--catalog", save("custom.json", [revision]),
+                   "--acquisition-policy", revision["uuid"])
+    assert profile == call("profile", "explicit-update", "--for-install", "--catalog", RUN / "custom.json",
+                           "--acquisition-policy", revision["uuid"])
+    asset_filter = {"uuid": str(uuid.uuid4()), "type": "github_release_asset_filter", "asset_patterns": ["saucepan.zip"]}
+    call("register-policies", save("policies.json", profile["catalog"] + [asset_filter]))
     request = {"source_uuid": source, "selector": {"type": "latest_stable"},
-               "selection": {"format": "zip", "bin": [NAME], "filters": [{"asset_patterns": ["saucepan.zip"]}]},
-               "policies": {"eviction": {"strategy": "latest", "keep": 2}, "protection": {"type": "useable_app"}}}
+               "selection": {"format": "zip", "bin": [NAME], "filter_refs": [asset_filter["uuid"]]},
+               "policy_refs": profile["combined_policy_refs"]}
     request_path = save("request.json", request)
     probe = save("probe.json", {"args": ["--version"], "stdout_contains": "saucepan ", "timeout_seconds": 10})
     boot = call("bootstrap", request_path, shim_a, "--operation", uuid.uuid4())
@@ -126,7 +131,7 @@ try:
     wait_file(ready, running)
     assert ready.read_text() == "lifecycle-a"
     state["version"] = 2
-    update = call("self-update", app, claim, executable=launcher, force=True)
+    update = call("self-update", app, claim, executable=launcher)
     b = update["candidate"]
     assert b != a and update["status"] == "complete"
     assert digest(ROOT / "store" / b / NAME) == digest(exe_b)
@@ -134,7 +139,7 @@ try:
 
     previous = inspect(app)
     state["version"] = 3
-    failed = call("self-update", app, claim, executable=launcher, force=True, code=2)
+    failed = call("self-update", app, claim, executable=launcher, code=2)
     assert failed["status"] == "failed" and inspect(app) == previous
     rollback = call("rollback", app, claim, a, probe)
     current_claims = {view["claim"]["uuid"]: view["claim"] for view in call("claims", app)}
@@ -186,7 +191,7 @@ try:
     # Exercise generic installation through the same coordinator.
     local = call("register-source", save("local.json", {"type": "local", "path": str(exe_b)}))["uuid"]
     generic_request = save("generic.json", {"source_uuid": local, "selector": {"type": "local"},
-        "selection": {"bin": [NAME]}, "policies": {"protection": {"type": "useable_app"}}})
+        "selection": {"bin": [NAME]}, "policy_refs": profile["combined_policy_refs"]})
     generic = call("install", "--scope", "acceptance/generic", "generic", generic_request, probe, shim_b, "--shim", "generic" + EXT)
     assert generic["status"] == "complete"
     assert call("--version", executable=ROOT / "bin" / ("generic" + EXT), raw=True).endswith("+lifecycle-b")
