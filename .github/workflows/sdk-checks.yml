@@ -67,7 +67,7 @@ jobs:
           node-version: '22'
           package-manager-cache: false
       - name: Build one manager for this job's SDK checks
-        run: cargo build --locked --bin saucepan
+        run: cargo build --locked --bins
       - name: Python types and resource contracts
         if: inputs.language != 'ts'
         shell: bash
@@ -113,6 +113,6 @@ jobs:
         with:
           node-version: '22'
           package-manager-cache: false
-      - run: cargo build --locked --bin saucepan
+      - run: cargo build --locked --bins
       - run: uv run --no-project python sdk/check_packages.py build --directory dist
       - run: uv run --no-project python sdk/check_packages.py verify --directory dist --binary target/debug/saucepan --source-installs

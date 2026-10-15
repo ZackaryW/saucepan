@@ -7,15 +7,23 @@ import sys
 import tempfile
 import unittest
 import uuid
+from fixtures.setup_flow import SetupFlowMixin
 
 REPO = Path(__file__).resolve().parents[3]
 BINARY = Path(os.environ.get('SAUCEPAN_TEST_BINARY', REPO / 'target/debug' / ('saucepan.exe' if os.name == 'nt' else 'saucepan'))).resolve()
 
 
 class PythonAdapter:
-    def __init__(self, root, app=None):
+    def __init__(self, root, app=None, api=None):
         from saucepan_sdk import Client
-        self.client = Client(executable=str(BINARY), root=str(root))
+        from saucepan_sdk.transport import CliTransport
+        from dataclasses import replace
+        class FixtureTransport(CliTransport):
+            def _invoke(self, config, call, options):
+                if api:
+                    call = replace(call, argv=['--test-github-api', api, *call.argv])
+                return super()._invoke(config, call, options)
+        self.client = Client(executable=str(BINARY), root=str(root), transport=FixtureTransport())
         if app:
             self.client = self.client.for_app(app)
         self.used = set()
@@ -24,7 +32,7 @@ class PythonAdapter:
         from saucepan_sdk import RunOptions, RunResult
         if 'options' in options:
             options['options'] = RunOptions(**options['options'])
-        self.used.add(name.replace('_', '-'))
+        self.used.add({'install_application': 'install', 'update_application': 'update-app'}.get(name, name.replace('_', '-')))
         result = getattr(self.client, name)(*args, **options)
         if isinstance(result, RunResult):
             return dict(exit_code=result.exit_code, signal=result.signal,
@@ -33,7 +41,7 @@ class PythonAdapter:
         return result
 
 
-class ResourceFlow(unittest.TestCase):
+class ResourceFlow(SetupFlowMixin, unittest.TestCase):
     adapter = PythonAdapter
 
     def setUp(self):

@@ -7,6 +7,7 @@ import type * as g from './models/group.js';
 import type * as p from './models/pin.js';
 import type * as po from './models/policy.js';
 import type * as s from './models/source.js';
+import type * as st from './models/setup.js';
 
 function flags(values: Record<string, string | number | readonly string[] | Payload | undefined>): (string | Payload)[] {
   const argv: (string | Payload)[] = [];
@@ -61,6 +62,41 @@ export class Client {
   private identity(app: string): string {
     if (this.config.app !== undefined && this.config.app !== app) throw new TransportError('context_mismatch');
     return app;
+  }
+  profiles(): Promise<st.ProfileName[]> { return this.json(['profiles'], { shape: 'array' }); }
+  profile(name?: st.ProfileName, options: { forInstall?: boolean; catalog?: po.Policy[]; retrievalPolicyRefs?: string[]; acquisitionPolicyRefs?: string[] } = {}): Promise<st.ProfileExpansion> {
+    return this.json(['profile', ...(name === undefined ? [] : [name]), ...(options.forInstall ? ['--for-install'] : []),
+      ...flags({ catalog: options.catalog === undefined ? undefined : new Payload(options.catalog), retrieval_policy: options.retrievalPolicyRefs, acquisition_policy: options.acquisitionPolicyRefs })],
+      { required: ['name', 'digest', 'catalog', 'retrieval_policy_refs', 'acquisition_policy_refs', 'combined_policy_refs', 'for_install'] });
+  }
+  explainPolicies(request: st.ExplainRequest, options: { policies?: po.Policy[] } = {}): Promise<st.PolicyExplanation> {
+    if (request.operation === 'claim') this.identity(request.app);
+    return this.json(['explain-policies', new Payload(request)], { policies: options.policies, required: ['axes', 'restrictions'] });
+  }
+  installApplication(name: string, request: c.AcquireRequest, probe: st.Probe, builtShim: string, options: { scope: string; shim: string; operation?: string }): Promise<st.LifecycleResult<st.Operation>> {
+    return this.json(['install', name, new Payload(request), new Payload(probe), builtShim,
+      ...flags({ scope: options.scope, shim: options.shim, operation: options.operation })], { mutates: true, lifecycle: 'operation' });
+  }
+  bootstrap(request: c.AcquireRequest, builtShim: string, options: { operation?: string } = {}): Promise<st.LifecycleResult<st.Operation>> {
+    return this.json(['bootstrap', new Payload(request), builtShim, ...flags({ operation: options.operation })], { mutates: true, lifecycle: 'operation' });
+  }
+  updateApplication(app: string, claim: string, probe: st.Probe, options: { operation?: string } = {}): Promise<st.LifecycleResult<st.Operation>> {
+    return this.json(['update-app', this.identity(app), claim, new Payload(probe), ...flags({ operation: options.operation })], { mutates: true, lifecycle: 'operation' });
+  }
+  selfUpdate(app: string, claim: string, options: { operation?: string } = {}): Promise<st.LifecycleResult<st.Operation>> {
+    return this.json(['self-update', this.identity(app), claim, ...flags({ operation: options.operation })], { mutates: true, lifecycle: 'operation' });
+  }
+  rollback(app: string, claim: string, entry: string, probe: st.Probe, options: { operation?: string } = {}): Promise<st.LifecycleResult<st.Operation>> {
+    return this.json(['rollback', this.identity(app), claim, entry, new Payload(probe), ...flags({ operation: options.operation })], { mutates: true, lifecycle: 'operation' });
+  }
+  uninstall(app: string, options: { leaveUnmanagedShims?: boolean; operation?: string } = {}): Promise<st.LifecycleResult<st.Operation>> {
+    return this.json(['uninstall', this.identity(app), ...(options.leaveUnmanagedShims ? ['--leave-unmanaged-shims'] : []), ...flags({ operation: options.operation })], { mutates: true, lifecycle: 'operation' });
+  }
+  operations(options: { app?: string } = {}): Promise<st.Operation[]> {
+    return this.json(['operations', ...flags({ app: options.app === undefined ? undefined : this.identity(options.app) })], { lifecycle: 'inspection' });
+  }
+  reconcile(options: { operation?: string } = {}): Promise<st.LifecycleResult<st.Operation[]>> {
+    return this.json(['reconcile', ...flags({ operation: options.operation })], { mutates: true, lifecycle: 'reconcile' });
   }
   private async json<T>(argv: readonly (string | Payload)[], call: Omit<Call, 'argv'> = {}): Promise<T> {
     return await this.transport.json(this.config, { ...call, argv }) as T;

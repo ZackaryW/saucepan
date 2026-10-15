@@ -5,13 +5,14 @@ from fixtures.resource_flow import ResourceFlow, BINARY
 
 
 class NodeAdapter:
-    def __init__(self, root, app=None):
+    def __init__(self, root, app=None, api=None):
         self.root, self.app, self.used = str(root), app, set()
+        self.api = api
 
     def call(self, name, *args, **options):
-        self.used.add(name.replace('_', '-'))
+        self.used.add({'install_application': 'install', 'update_application': 'update-app'}.get(name, name.replace('_', '-')))
         driver = Path(__file__).parent / 'fixtures/node_adapter.mjs'
-        result = subprocess.run(['node', str(driver)], input=json.dumps(dict(binary=str(BINARY), root=self.root, app=self.app, name=name, args=args, options=options)).encode(), capture_output=True, check=True)
+        result = subprocess.run(['node', str(driver)], input=json.dumps(dict(binary=str(BINARY), root=self.root, app=self.app, api=self.api, name=name, args=args, options=options)).encode(), capture_output=True, check=True)
         value = json.loads(result.stdout)
         if 'error' in value:
             error = RuntimeError(value['error']['code'])

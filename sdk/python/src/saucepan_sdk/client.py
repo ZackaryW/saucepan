@@ -8,6 +8,7 @@ from .transport import Call, CliTransport, Config, Payload, RunOptions, Transpor
 from .utils.process import RunResult
 from .utils.payloads import MAX_INTEGER
 from .models import claim as c, composition as co, group as g, pin as p, policy as po, source as s
+from .models import setup as st
 
 
 def _options(**values: str | int | Sequence[str] | Payload | None) -> list[str | Payload]:
@@ -47,9 +48,56 @@ class Client:
 
     def _json(self, argv: Sequence[str | Payload], *, required: tuple[str, ...] = (),
               mutates: bool = False, array: bool = False, bounded: bool = False,
-              policies: list[po.Policy] | None = None) -> object:
+              policies: list[po.Policy] | None = None, lifecycle: str | None = None) -> object:
         return self._transport.json(self._config, Call(argv, mutates, 'array' if array else 'object',
-            required, 1024 * 1024 if bounded else None, policies))
+            required, 1024 * 1024 if bounded else None, policies, lifecycle))
+
+    def profiles(self) -> list[st.ProfileName]:
+        return cast(list[st.ProfileName], self._json(['profiles'], array=True))
+
+    def profile(self, name: st.ProfileName | None = None, *, for_install: bool = False,
+                catalog: list[po.Policy] | None = None, retrieval_policy_refs: list[str] | None = None,
+                acquisition_policy_refs: list[str] | None = None) -> st.ProfileExpansion:
+        return cast(st.ProfileExpansion, self._json(['profile', *([] if name is None else [name]),
+            *(['--for-install'] if for_install else []), *_options(catalog=None if catalog is None else Payload(catalog),
+            retrieval_policy=retrieval_policy_refs, acquisition_policy=acquisition_policy_refs)],
+            required=('name', 'digest', 'catalog', 'retrieval_policy_refs', 'acquisition_policy_refs', 'combined_policy_refs', 'for_install')))
+
+    def explain_policies(self, request: st.ExplainRequest, *, policies: list[po.Policy] | None = None) -> st.PolicyExplanation:
+        if request['operation'] == 'claim':
+            self._identity(request['app'])
+        return cast(st.PolicyExplanation, self._json(['explain-policies', Payload(request)], policies=policies, required=('axes', 'restrictions')))
+
+    def install_application(self, name: str, request: c.AcquireRequest, probe: st.Probe, built_shim: str, *,
+                            scope: str, shim: str, operation: str | None = None) -> st.LifecycleResult[st.Operation]:
+        return cast(st.LifecycleResult[st.Operation], self._json(['install', name, Payload(request), Payload(probe), built_shim,
+            *_options(scope=scope, shim=shim, operation=operation)], mutates=True, lifecycle='operation'))
+
+    def bootstrap(self, request: c.AcquireRequest, built_shim: str, *, operation: str | None = None) -> st.LifecycleResult[st.Operation]:
+        return cast(st.LifecycleResult[st.Operation], self._json(['bootstrap', Payload(request), built_shim,
+            *_options(operation=operation)], mutates=True, lifecycle='operation'))
+
+    def update_application(self, app: str, claim: str, probe: st.Probe, *, operation: str | None = None) -> st.LifecycleResult[st.Operation]:
+        return cast(st.LifecycleResult[st.Operation], self._json(['update-app', self._identity(app), claim, Payload(probe),
+            *_options(operation=operation)], mutates=True, lifecycle='operation'))
+
+    def self_update(self, app: str, claim: str, *, operation: str | None = None) -> st.LifecycleResult[st.Operation]:
+        return cast(st.LifecycleResult[st.Operation], self._json(['self-update', self._identity(app), claim,
+            *_options(operation=operation)], mutates=True, lifecycle='operation'))
+
+    def rollback(self, app: str, claim: str, entry: str, probe: st.Probe, *, operation: str | None = None) -> st.LifecycleResult[st.Operation]:
+        return cast(st.LifecycleResult[st.Operation], self._json(['rollback', self._identity(app), claim, entry, Payload(probe),
+            *_options(operation=operation)], mutates=True, lifecycle='operation'))
+
+    def uninstall(self, app: str, *, leave_unmanaged_shims: bool = False, operation: str | None = None) -> st.LifecycleResult[st.Operation]:
+        return cast(st.LifecycleResult[st.Operation], self._json(['uninstall', self._identity(app),
+            *(['--leave-unmanaged-shims'] if leave_unmanaged_shims else []), *_options(operation=operation)], mutates=True, lifecycle='operation'))
+
+    def operations(self, *, app: str | None = None) -> list[st.Operation]:
+        return cast(list[st.Operation], self._json(['operations', *_options(app=None if app is None else self._identity(app))], lifecycle='inspection'))
+
+    def reconcile(self, *, operation: str | None = None) -> st.LifecycleResult[list[st.Operation]]:
+        return cast(st.LifecycleResult[list[st.Operation]], self._json(['reconcile', *_options(operation=operation)], mutates=True, lifecycle='reconcile'))
 
     def _run(self, argv: Sequence[str | Payload], command: Sequence[str], *,
              options: RunOptions | None, mutates: bool = False, bounded: bool = False,

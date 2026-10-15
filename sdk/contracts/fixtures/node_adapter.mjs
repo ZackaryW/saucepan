@@ -1,9 +1,13 @@
 // Test driver only; public SDK APIs remain explicit typed methods.
 import { readFileSync } from 'node:fs';
 import { Client, SaucepanError, TransportError } from '../../ts/dist/index.js';
+import { NodeTransport } from '../../ts/dist/transport.js';
 const input = JSON.parse(readFileSync(0, 'utf8'));
 const camel = name => name.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
-let client = new Client({ executable: input.binary, root: input.root });
+class FixtureTransport extends NodeTransport {
+  run(config,call,options) { return super.run(config,input.api ? {...call,argv:['--test-github-api',input.api,...call.argv]}:call,options); }
+}
+let client = new Client({ executable: input.binary, root: input.root, transport:new FixtureTransport() });
 if (input.app) client = client.forApp(input.app);
 const options = {};
 for (const [key, value] of Object.entries(input.options)) {

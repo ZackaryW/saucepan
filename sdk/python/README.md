@@ -43,4 +43,10 @@ For persistent sets, call `register_group`, then `prepare_group`. A `pin` argume
 
 Trusted administration can supply `credential_file` to `Client` when configuring a credential-protected app; that proof does not automatically select an app identity. App-bound calls use `for_app(app, credential_file=...)`. Conflicting app arguments fail before execution. No credential bytes are loaded by this library.
 
-Real-binary tests use `SAUCEPAN_TEST_BINARY` (otherwise the repository's debug build), isolated temporary roots and local Git fixtures. No network or real consumer repositories are needed. The fixture coverage inventory includes all 46 resource operations; cross-platform and external consumer integration remain separately reported evidence.
+## Profiles and managed applications
+
+`client.profile()` expands the manager's `managed` recipe without opening a root; `profile('explicit-update', for_install=True)` prepares ordinary policies for an executable install. Call `register_policies(profile['catalog'])` explicitly and attach the returned refs. `explain_policies(request, policies=catalog)` returns effective choices and provenance without fetching files. Inputs/results are typed in `saucepan_sdk.models.setup`.
+
+`install_application(name, request, probe, built_shim, scope=..., shim=...)`, `bootstrap(request, built_shim)`, `update_application`, `self_update`, `rollback`, `uninstall` and `reconcile` return `{'exit_code': 0 | 2, 'result': ...}`. Exit 2 preserves a recorded noncomplete outcome, including failed/conflict status. `operations(app=...)` returns a read-only list. Inspect receipts before explicitly reconciling or retrying the same `operation` UUID. No automatic downloads, PATH changes, retries, credentials or scopes are introduced. Standalone shim maintenance and activation remain CLI-only. See [the SDK guide](../README.md#profiles-and-managed-setup) and runnable `examples/profiles.py` / `examples/managed_setup.py`.
+
+Real-binary tests use `SAUCEPAN_TEST_BINARY` (otherwise the repository's debug build) and its sibling shim, isolated temporary roots, local Git and a loopback release fixture. No external service or real consumer repositories are needed. Cross-platform and external consumer integration remain separately reported evidence.

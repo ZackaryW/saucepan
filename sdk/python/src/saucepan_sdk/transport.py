@@ -33,6 +33,7 @@ class Call:
     required: tuple[str, ...] = ()
     payload_limit: int | None = None
     policies: object | None = None
+    lifecycle: str | None = None
 
 
 @dataclass(frozen=True)
@@ -53,16 +54,16 @@ def check_shape(value: object, call: Call) -> None:
         raise TransportError("protocol", started=True)
     # A small envelope check, not a second semantic schema/policy evaluator.
     strings = {'uuid', 'app', 'root', 'integrity', 'type', 'entry_uuid', 'directory',
-               'path', 'verification', 'released', 'removed', 'state'}
+               'path', 'verification', 'released', 'removed', 'state', 'name', 'digest'}
     objects = {'source', 'claim', 'view', 'acquired', 'entry', 'request', 'descriptor',
-               'ownership', 'definition', 'group', 'resources', 'paths', 'outputs', 'context', 'deferred', 'pending'}
-    arrays = {'sources', 'claims', 'policy_refs', 'reclaimed', 'stale'}
+               'ownership', 'definition', 'group', 'resources', 'paths', 'outputs', 'context', 'deferred', 'pending', 'axes'}
+    arrays = {'sources', 'claims', 'policy_refs', 'reclaimed', 'stale', 'catalog', 'retrieval_policy_refs', 'acquisition_policy_refs', 'combined_policy_refs', 'restrictions'}
     if isinstance(value, dict):
         for key in call.required:
             item = value[key]
             expected: type[object] | None = (str if key in strings else dict if key in objects
                 else list if key in arrays else int if key in {'revision', 'generation', 'policy_revision'}
-                else bool if key == 'purged' else None)
+                else bool if key in ('purged', 'for_install') else None)
             if expected is not None and type(item) is not expected:
                 raise TransportError('protocol', started=True)
         if 'type' in call.required and value['type'] not in {
@@ -72,7 +73,7 @@ def check_shape(value: object, call: Call) -> None:
             'revision_policy', 'reclaim_policy', 'useable_app_policy', 'pin_policy', 'policy_constraints'}:
             raise TransportError('protocol', started=True)
     elif isinstance(value, list):
-        expected_item = str if call.argv[0] == 'register-policies' else dict
+        expected_item = str if call.argv[0] in ('register-policies', 'profiles') else dict
         if any(not isinstance(item, expected_item) for item in value):
             raise TransportError('protocol', started=True)
 
@@ -114,7 +115,7 @@ class CliTransport:
     def json(self, config: Config, call: Call) -> object:
         result = self._invoke(config, call, RunOptions(capture=True, timeout=config.timeout))
         try:
-            if result.exit_code != 0:
+            if result.exit_code != 0 and not (call.lifecycle in ('operation', 'reconcile') and result.exit_code == 2):
                 envelope = decode(result.stderr or b"")
                 if isinstance(envelope, dict) and isinstance(envelope.get("error"), dict):
                     error = envelope["error"]
@@ -124,6 +125,9 @@ class CliTransport:
                         raise SaucepanError(error["code"], error["message"], error["details"])
                 raise TransportError("protocol", started=True)
             value = decode(result.stdout or b"")
+            if call.lifecycle is not None:
+                from .lifecycle import receipt_result
+                return receipt_result(value, result.exit_code, call.lifecycle)
             check_shape(value, call)
             return value
         except TransportError as error:
