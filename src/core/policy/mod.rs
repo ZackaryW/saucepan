@@ -7,6 +7,7 @@ pub mod catalog;
 pub(crate) mod claims;
 pub mod composition;
 mod execution;
+pub mod explain;
 pub mod fence;
 pub mod group;
 pub(crate) mod persistence;

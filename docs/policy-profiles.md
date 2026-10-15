@@ -64,3 +64,33 @@ The consumer receives the existing native resource environment. A temporary path
 does not remain valid after its owner exits. Use caller-owned delivery when the
 copied results must outlive the operation; use a no-store cache policy and explicit
 destination when the original material itself should be caller-owned.
+
+## Explain effective settings
+
+Wrap a normal request with its operation. For example, after saving a temporary
+profile's catalog in `policies.json`, use its retrieval refs in this input:
+
+```json
+{
+  "operation": "retrieve",
+  "request": {
+    "source": {"kind":"inline","source":{"type":"url","url":"https://example.com/tool.zip"}},
+    "selector": {"type":"url"},
+    "policy_refs": ["acf53062-66cd-4dd9-94bb-c9f849eb0002", "acf53062-66cd-4dd9-94bb-c9f849eb0004", "acf53062-66cd-4dd9-94bb-c9f849eb0005"]
+  }
+}
+```
+
+```powershell
+saucepan --policies policies.json explain-policies explanation.json
+```
+
+The result reports applicable axes, values, origin levels and definition evidence.
+It does not download the example URL. `acquire` inputs contain `source`, `request`
+and optional `scope`; `compose` contains `retrieval`, `acquisition` and optional
+`scope`. Use `{"operation":"claim","app":"APP_UUID","claim":"CLAIM_UUID"}`
+to explain an existing claim with its current application authorization. Supply
+credentials when required. Adopted claim behavior is distinguished from current
+restrictions and new defaults. A preview neither grants permission nor guarantees
+content availability; execution rechecks policies. Invalid or denied inputs fail
+without returning protected settings.

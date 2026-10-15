@@ -333,6 +333,9 @@ pub fn run() -> Result<()> {
         println!("{}", serde_json::to_string_pretty(&value)?);
         return Ok(());
     }
+    if let Commands::Policies(policies::PolicyCommand::ExplainPolicies { file }) = &args.command {
+        return policies::explain(file, &args);
+    }
     run_store(args)
 }
 

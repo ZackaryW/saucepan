@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 pub mod adoption;
 mod composition;
 pub mod effective;
+pub mod explanation;
 pub mod profile;
 pub mod record;
 pub mod references;

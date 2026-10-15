@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 
 #[derive(clap::Subcommand)]
 pub(super) enum PolicyCommand {
+    /// Explain a typed request without provider work or adoption.
+    ExplainPolicies { file: PathBuf },
     /// List built-in profiles without opening a store.
     Profiles,
     /// Expand a recipe into ordinary immutable policy definitions.
@@ -101,13 +103,67 @@ impl PolicyCommand {
         )
     }
 }
+pub(super) fn explain(file: &Path, args: &super::Args) -> Result<()> {
+    use crate::{
+        core::policy::{catalog::PolicyCatalog, explain},
+        models::{policy::explanation::ExplainRequest, retrieval::SourceInput},
+    };
+    let input: ExplainRequest = serde_json::from_slice(&std::fs::read(file)?)?;
+    let portable = if let Some(path) = &args.portable_policies {
+        PolicyCatalog::new(serde_json::from_slice::<
+            Vec<crate::models::policy::PolicyRecord>,
+        >(&std::fs::read(path)?)?)?
+    } else {
+        PolicyCatalog::default()
+    };
+    let target = match &input {
+        ExplainRequest::Claim { app, .. } => Some(*app),
+        _ => None,
+    };
+    anyhow::ensure!(
+        args.as_app.is_none() || target.is_none() || args.as_app == target,
+        crate::error::Error::new(
+            crate::error::ErrorCode::AccessDenied,
+            "application identity mismatch"
+        )
+    );
+    let app = args.as_app.or(target);
+    anyhow::ensure!(
+        args.credential_file.is_none() || app.is_some(),
+        crate::error::Error::new(
+            crate::error::ErrorCode::InvalidRequest,
+            "credential-file requires application context"
+        )
+    );
+    let value = if app.is_none() && matches!(input.source(), Some(SourceInput::Inline { .. })) {
+        explain::portable(&input, &portable)?
+    } else {
+        let root = super::root::resolve(args.root.clone())?;
+        super::root::require_existing(&root, args.root.is_some())?;
+        let mut store = Store::open(&root)?;
+        if let Some(app) = app {
+            store = store
+                .session(
+                    app,
+                    super::credentials::read(args.credential_file.as_deref())?,
+                )?
+                .into_store();
+        }
+        store.explain_policies(&input, &portable)?
+    };
+    println!("{}", serde_json::to_string_pretty(&value)?);
+    Ok(())
+}
+
 pub(super) fn run(
     store: &Store,
     command: PolicyCommand,
     credential_file: Option<&Path>,
 ) -> Result<serde_json::Value> {
     Ok(match command {
-        PolicyCommand::Profiles | PolicyCommand::Profile { .. } => {
+        PolicyCommand::Profiles
+        | PolicyCommand::Profile { .. }
+        | PolicyCommand::ExplainPolicies { .. } => {
             unreachable!("root-free preview")
         }
         PolicyCommand::RegisterPolicies { file } => {
