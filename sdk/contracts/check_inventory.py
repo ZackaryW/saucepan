@@ -15,4 +15,4 @@ for language in ['python','ts']:
     actual=set(json.loads(path.read_text()))
     if expected-actual:
         raise SystemExit(f'{language} missing real-binary coverage: {sorted(expected-actual)}')
-    print(f'{language}: {len(expected)} resource operations exercised')
+    print(f'{language}: {len(expected)} SDK operations exercised')

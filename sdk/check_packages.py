@@ -32,7 +32,7 @@ def build(destination):
     npm('pack', '--pack-destination', destination)
 
 
-def verify_python(artifact, base, binary, *, editable=False):
+def verify_python(artifact, base, binary, shim, *, editable=False):
     environment = base / 'environment'
     run(['uv', 'venv', environment])
     executable = environment / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
@@ -43,12 +43,16 @@ def verify_python(artifact, base, binary, *, editable=False):
             'Client().for_app("not-initialized"); '
             'print("standalone Python import without toolchain PATH")')
     run([executable, '-c', code], cwd=base, env=env)
-    if binary:
+    if binary and shim:
+        script = base/'installed_setup.py'
+        shutil.copy2(ROOT/'sdk/contracts/fixtures/installed_setup.py', script)
+        run([executable, script, binary, shim, base/'root'], cwd=base, env=env)
+    elif binary:
         code = 'import sys; from saucepan_sdk import Client; c=Client(executable=sys.argv[1],root=sys.argv[2]); c.init(); assert c.query_sources()["sources"]==[]'
         run([executable, '-c', code, binary, base/'root'], cwd=base, env=env)
 
 
-def verify(directory, binary, source_installs=False):
+def verify(directory, binary, source_installs=False, shim=None):
     version = tomllib.loads((PYTHON/'pyproject.toml').read_text())['project']['version']
     node_version = json.loads((TS/'package.json').read_text())['version']
     wheel = directory / f'saucepan_sdk-{version}-py3-none-any.whl'
@@ -63,11 +67,11 @@ def verify(directory, binary, source_installs=False):
         base = Path(temp)
         for name, artifact in [('wheel', wheel), ('sdist', sdist)]:
             directory_base = base/name; directory_base.mkdir()
-            verify_python(str(artifact), directory_base, binary)
+            verify_python(str(artifact), directory_base, binary, shim)
         if source_installs:
             for name, editable in [('local', False), ('editable', True)]:
                 directory_base = base/name; directory_base.mkdir()
-                verify_python(str(PYTHON), directory_base, binary, editable=editable)
+                verify_python(str(PYTHON), directory_base, binary, shim, editable=editable)
             # Test an exact commit and subdirectory without publishing or changing
             # this repository's history. Copy only the installable Python source.
             repo = base/'git-fixture'; (repo/'sdk').mkdir(parents=True)
@@ -76,7 +80,7 @@ def verify(directory, binary, source_installs=False):
                 run(['git','-C',repo,*args], stdout=subprocess.DEVNULL)
             commit = subprocess.check_output(['git','-C',str(repo),'rev-parse','HEAD'],text=True).strip()
             directory_base = base/'vcs'; directory_base.mkdir()
-            verify_python(f'git+{repo.as_uri()}@{commit}#subdirectory=sdk/python', directory_base, binary)
+            verify_python(f'git+{repo.as_uri()}@{commit}#subdirectory=sdk/python', directory_base, binary, shim)
         consumer = base/'node'; consumer.mkdir()
         (consumer/'package.json').write_text('{"type":"module","private":true}')
         npm('install','--ignore-scripts','--no-audit','--no-fund',tarball,cwd=consumer)
@@ -85,11 +89,22 @@ def verify(directory, binary, source_installs=False):
         if not node:
             raise RuntimeError('Node is required for package verification')
         run([node,'--input-type=module','-e','import {Client} from "saucepan-sdk"; import {Client as C} from "saucepan-sdk/client"; new Client({executable:"absent"}); new C();'],cwd=consumer,env=env)
-        if binary:
+        if binary and shim:
+            script = consumer/'installed_setup.mjs'
+            shutil.copy2(ROOT/'sdk/contracts/fixtures/installed_setup.mjs',script)
+            run([node,script,binary,shim,consumer/'root'],cwd=consumer,env=env)
+        elif binary:
             run([node,'--input-type=module','-e','import {Client} from "saucepan-sdk"; const c=new Client({executable:process.argv[1],root:process.argv[2]}); await c.init(); if((await c.querySources()).sources.length)throw Error("unexpected sources");',binary,consumer/'root'],cwd=consumer,env=env)
         (consumer/'consumer.ts').write_text('''import {Client} from 'saucepan-sdk';
 import type {EnsureRequest} from 'saucepan-sdk/models/claim';
+import type {ProfileName, LifecycleResult, Operation, Probe} from 'saucepan-sdk/models/setup';
 const client=new Client();
+const recipe:ProfileName='managed';
+void client.profile(recipe,{forInstall:true});
+const probe:Probe={args:['--version'],stdout_contains:'tool',timeout_seconds:10};
+const receipt:Promise<LifecycleResult<Operation>>=client.updateApplication('app','claim',probe);
+// @ts-expect-error unknown recipe is not a supported ProfileName
+void client.profile('invented');
 const request:EnsureRequest={source_uuid:'source',selector:{type:'ref',reference:'HEAD'},scope:'project'};
 void client.ensureClaim('app',request);
 // @ts-expect-error unsupported selector discriminator
@@ -106,11 +121,14 @@ def main():
     parser.add_argument('command',choices=['build','verify'])
     parser.add_argument('--directory',type=Path,required=True)
     parser.add_argument('--binary',type=Path)
+    parser.add_argument('--shim',type=Path,help='Explicit built shim; enables installed lifecycle verification with --binary')
     parser.add_argument('--source-installs',action='store_true')
     args=parser.parse_args()
+    if args.shim and not args.binary:
+        parser.error('--shim requires --binary')
     directory=args.directory.resolve()
     if args.command=='build': build(directory)
-    else: verify(directory,args.binary.resolve() if args.binary else None,args.source_installs)
+    else: verify(directory,args.binary.resolve() if args.binary else None,args.source_installs,args.shim.resolve() if args.shim else None)
 
 
 if __name__=='__main__': main()
