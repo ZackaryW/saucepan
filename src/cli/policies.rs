@@ -140,7 +140,7 @@ pub(super) fn explain(file: &Path, args: &super::Args) -> Result<()> {
     } else {
         let root = super::root::resolve(args.root.clone())?;
         super::root::require_existing(&root, args.root.is_some())?;
-        let mut store = Store::open(&root)?;
+        let mut store = Store::open_metadata(&root, &crate::core::claim::security::NativeKeyring)?;
         if let Some(app) = app {
             store = store
                 .session(

@@ -37,6 +37,71 @@ fn policy(value: Value) -> PolicyRecord {
 }
 
 #[test]
+fn explanation_requires_recovery_without_replaying_pending_metadata() {
+    use saucepan::core::claim::{
+        persistence::Metadata,
+        security::{Identity, Kind, NativeKeyring},
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let file = tmp.path().join("input");
+    fs::write(&file, "one").unwrap();
+    let store = Store::create(&tmp.path().join("root")).unwrap();
+    let source = store.register_source(Source::Local { path: file }).unwrap();
+    let request: ExplainRequest = serde_json::from_value(json!({"operation":"retrieve","request":{
+        "source":{"kind":"registered","source_uuid":source.uuid},"selector":{"type":"local"}
+    }}))
+    .unwrap();
+    let metadata = Metadata::open(store.root(), &NativeKeyring).unwrap();
+    let snapshot = metadata.snapshot().unwrap();
+    let id = Identity {
+        kind: Kind::Source,
+        owner: None,
+        member: Some(source.uuid),
+    };
+    assert!(
+        metadata
+            .publish_observed(
+                &snapshot,
+                vec![(id, serde_json::to_value(&source).unwrap())],
+                vec![],
+                |_| { Err(Error::new(ErrorCode::IoError, "stop after journal")) }
+            )
+            .is_err()
+    );
+    let pending = store.root().join(".staging/metadata-transaction.json");
+    let before = fs::read(&pending).unwrap();
+    let root_before = fs::read(store.root().join("root.json")).unwrap();
+    assert_eq!(
+        Error::from_anyhow(
+            &store
+                .explain_policies(&request, &PolicyCatalog::default())
+                .unwrap_err()
+        )
+        .code,
+        ErrorCode::RecoveryRequired
+    );
+    let input = tmp.path().join("request.json");
+    fs::write(&input, serde_json::to_vec(&request).unwrap()).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_saucepan"))
+        .arg("--root")
+        .arg(store.root())
+        .args(["--error-format", "json", "explain-policies"])
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output.stderr).unwrap()["error"]["code"],
+        "recovery_required"
+    );
+    assert_eq!(fs::read(&pending).unwrap(), before);
+    assert_eq!(
+        fs::read(store.root().join("root.json")).unwrap(),
+        root_before
+    );
+}
+
+#[test]
 fn portable_explanation_and_cli_do_not_fetch_or_create_a_root() {
     let expanded = profile::expand(&ProfileRequest {
         name: ProfileName::Temporary,
@@ -125,7 +190,9 @@ fn claim_explanation_freezes_adopted_behavior_and_enforces_current_scope() {
         )
         .unwrap();
     let custom = policy(json!({"type":"revision_policy","history":"latest","keep":3}));
-    store.register_policies(&[custom.clone()]).unwrap();
+    store
+        .register_policies(std::slice::from_ref(&custom))
+        .unwrap();
     store
         .adopt_application_policies(
             app.uuid,
@@ -153,7 +220,9 @@ fn claim_explanation_freezes_adopted_behavior_and_enforces_current_scope() {
     assert_eq!(report["axes"]["revision"]["origin"], "adopted_claim");
     assert_eq!(before, fs::read(store.root().join("root.json")).unwrap());
     let deny = policy(json!({"type":"access_policy","scopes":[]}));
-    store.register_policies(&[deny.clone()]).unwrap();
+    store
+        .register_policies(std::slice::from_ref(&deny))
+        .unwrap();
     store
         .adopt_application_policies(
             app.uuid,
@@ -268,7 +337,9 @@ fn explanations_reject_unknown_conflicting_and_corrupt_records() {
         ErrorCode::InvalidRequest
     );
     let always = policy(json!({"type":"refresh_policy","mode":"always"}));
-    store.register_policies(&[always.clone()]).unwrap();
+    store
+        .register_policies(std::slice::from_ref(&always))
+        .unwrap();
     let mut ids = profile.retrieval_policy_refs.ids().to_vec();
     ids.push(always.uuid);
     assert_eq!(
@@ -320,7 +391,9 @@ fn profile_history_defers_pins_and_overrides_cannot_escape_constraints() {
     };
     let first = store.acquire(&request).unwrap();
     let pin_policy = policy(json!({"type":"pin_policy","retention":"until_released"}));
-    store.register_policies(&[pin_policy.clone()]).unwrap();
+    store
+        .register_policies(std::slice::from_ref(&pin_policy))
+        .unwrap();
     store
         .pin_outputs(&saucepan::models::pin::PinRequest {
             registration_key: "reader".to_string().try_into().unwrap(),

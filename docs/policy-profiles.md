@@ -94,3 +94,7 @@ credentials when required. Adopted claim behavior is distinguished from current
 restrictions and new defaults. A preview neither grants permission nor guarantees
 content availability; execution rechecks policies. Invalid or denied inputs fail
 without returning protected settings.
+
+If a pending metadata transaction needs recovery, explanation returns
+`recovery_required` without replaying it. Run explicit recovery separately before
+requesting another explanation.

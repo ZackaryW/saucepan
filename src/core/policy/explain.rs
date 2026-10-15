@@ -234,6 +234,13 @@ impl Store {
         input: &ExplainRequest,
         portable: &PolicyCatalog,
     ) -> Result<PolicyExplanation> {
+        // Observation must not replay a pending transaction, even through an
+        // administrative Store handle. Reuse the existing read-only boundary.
+        if !self.metadata_only {
+            let mut reader = self.clone();
+            reader.metadata_only = true;
+            return reader.explain_policies(input, portable);
+        }
         let _lock = self.lock()?;
         let snapshot = self.metadata.snapshot()?;
         let registered = persistence::load(&self.metadata, &snapshot)?;
