@@ -28,7 +28,7 @@ to false; select it only when testing native custody on configured runners.
 The equivalent GitHub CLI command for basic Linux checks is:
 
 ```sh
-gh workflow run core-platforms.yml -f ref=v0.9.0 -f platform=linux -F check_msrv=false
+gh workflow run core-platforms.yml -f ref=v0.10.0 -f platform=linux -F check_msrv=false
 ```
 
 Use `ref` to check a specific commit or tag; leaving it empty checks the selected
@@ -40,7 +40,7 @@ SDK checks are also separate manual or explicitly reusable workflows. Select
 `language` (`python`, `ts`, or `both`) and `platform` on `sdk-checks.yml`:
 
 ```sh
-gh workflow run sdk-checks.yml -f ref=v0.9.0 -f language=python -f platform=windows
+gh workflow run sdk-checks.yml -f ref=v0.10.0 -f language=python -f platform=windows
 ```
 
 The selected job builds one native manager, runs only the requested SDK checks
@@ -53,7 +53,7 @@ installs and exercises an explicit native binary. This package job checks both
 languages independently of the runtime language/platform selection:
 
 ```sh
-gh workflow run sdk-checks.yml -f ref=v0.9.0 -f language=both -f platform=linux -F check_packages=true
+gh workflow run sdk-checks.yml -f ref=v0.10.0 -f language=both -f platform=linux -F check_packages=true
 ```
 
 To retry failures on the same revision, GitHub's
@@ -77,7 +77,7 @@ the recent macOS native-keychain failure is not resolved by making it optional.
 
 `release.yml` runs on a pushed `v*` tag or manual dispatch with an **existing** tag.
 The tag must equal `v` followed by the version in that tag's `Cargo.toml`, such as
-`v0.9.0` or `v0.10.0-rc.1`. Both paths check out the tag, resolve it to a commit,
+`v0.10.0` or `v0.10.0-rc.1`. Both paths check out the tag, resolve it to a commit,
 and build that same commit. Manual dispatch does not package the latest
 default-branch source under an unrelated version. Prerelease tags produce
 GitHub prereleases, which Saucepan's `latest_stable` selector excludes.

@@ -30,7 +30,7 @@ npm pack
 # In a separate consumer:
 npm install /absolute/path/to/sdk/ts
 # Or install the built distributable:
-npm install /absolute/path/to/saucepan-sdk-0.1.0.tgz
+npm install /absolute/path/to/saucepan-sdk-0.2.0.tgz
 ```
 
 npm's Git dependency support does not select a package subdirectory. Use the built local folder or tarball instead. Import `Client` from `saucepan-sdk`; its client/types entry point has no eager Node filesystem/process dependency, while actual operations need the default Node transport or an explicit capable host transport.
