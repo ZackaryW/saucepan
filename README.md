@@ -6,6 +6,8 @@ Saucepan retrieves sources, produces immutable outputs, and manages optional app
 
 Build with Rust 1.89 or newer, or obtain the manager and shim from a release. Git and Git LFS must also be installed when required by a repository source.
 
+The 0.10.0 release pairs the Rust manager/shim with Python and TypeScript SDKs 0.2.0. Download the platform ZIP and, when needed, the separate SDK archives from [GitHub releases](https://github.com/ZackaryW/saucepan/releases). Extract both binaries from the same ZIP; SDK installation does not install them. See [release assets and checksums](docs/releases.md#assets) and [SDK installation](sdk/README.md#install-from-a-release).
+
 ```powershell
 cargo build --locked --bins
 cargo run -- init
@@ -48,6 +50,16 @@ Sources can be local files/directories, URLs, Git repositories, GitHub repositor
 
 Retrieval works with original source material; acquisition copies or extracts the selected results. Cached retrieval, acquisition updates and revision history have independent policies. Inline temporary/no-store requests can run without a home, store, app or keyring.
 
+Optional profiles provide starting policies:
+
+| Profile | Retrieval behavior | Managed acquisition behavior |
+| --- | --- | --- |
+| `managed` | Reuse valid cached material for 24 hours | Manual updates, identical-content reuse, latest ten revisions |
+| `explicit-update` | Check the origin on each explicit retrieval | Same as managed; lookup does not fetch or activate an update |
+| `temporary` | Fetch fresh into temporary storage | No managed history; use guarded execution or an explicit caller-owned destination |
+
+`saucepan profile managed` previews flat policy definitions and UUID references without creating a store. Register and attach those definitions explicitly for managed use. Profiles do not enable credentials, choose an app scope or create pins. Add `--for-install` when preparing managed executable setup; source, platform, probe and shim inputs remain explicit.
+
 - [Source discovery](docs/source-query.md): public lookup, optional app identity and CLI filters.
 - [Retrieval and acquisition](docs/composition.md): request payloads, source paths, copied results and root-free operations.
 - [Policy resources](docs/policy-resources.md): immutable UUID definitions, lookup and explicit adoption.
@@ -75,6 +87,8 @@ For an update with delayed readers: pin A, prepare and pin B, switch consumers, 
 ## Integrating an application
 
 The SDKs accept request objects and invoke an explicitly selected manager or find it on PATH. Installing an SDK does not install the manager. Rust owns policy evaluation, retrieval, publication and retention.
+
+Use SDK 0.2.0 with manager 0.10.0 for profile expansion, policy explanations and managed lifecycle calls. Upgrading the SDK or expanding a profile does not change existing claims' adopted policies; changing those associations requires explicit adoption.
 
 - [Language SDK overview](sdk/README.md): source installation, context/lifetime choices and development commands.
 - [Python SDK](sdk/python/README.md): Python 3.12+ installation and typed usage.

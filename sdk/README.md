@@ -8,6 +8,19 @@ The operation inventory under `contracts/` tracks argument layouts, types, ident
 
 Paths and retention are different: bare lookup is read-only, guarded execution retains resources through the native launch boundary, and durable pins last until explicit release. Keep consumer writes outside immutable managed outputs.
 
+## Install from a release
+
+Saucepan 0.10.0 includes Python and TypeScript SDKs 0.2.0. Their profile, explanation and managed lifecycle methods need the matching manager contract; installing an updated SDK does not upgrade an existing executable. Obtain the manager and shim separately from the platform ZIP.
+
+Download `saucepan_sdk-0.2.0-py3-none-any.whl` (or the Python source distribution) and `saucepan-sdk-0.2.0.tgz` from the [v0.10.0 release](https://github.com/ZackaryW/saucepan/releases/tag/v0.10.0), verify them against its `SHA256SUMS`, then install the needed package:
+
+```sh
+pip install ./saucepan_sdk-0.2.0-py3-none-any.whl
+npm install ./saucepan-sdk-0.2.0.tgz
+```
+
+`sdk-manifest.json` records the package versions, hashes and associated manager tag/commit. Use that evidence when pinning consumer dependencies. These packages are distributed as release assets; no npm or PyPI publication is configured.
+
 ## Install from source
 
 Python (3.12+):
