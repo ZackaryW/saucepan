@@ -26,7 +26,7 @@ pub enum Operation {
     Configure,
 }
 impl Operation {
-    fn accepts(self, axis: Axis) -> bool {
+    pub(crate) fn accepts(self, axis: Axis) -> bool {
         use Axis::*;
         match axis {
             Cache | Refresh | Stale | PayloadVerification | Selection => {

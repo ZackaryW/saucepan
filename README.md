@@ -51,6 +51,7 @@ Retrieval works with original source material; acquisition copies or extracts th
 - [Source discovery](docs/source-query.md): public lookup, optional app identity and CLI filters.
 - [Retrieval and acquisition](docs/composition.md): request payloads, source paths, copied results and root-free operations.
 - [Policy resources](docs/policy-resources.md): immutable UUID definitions, lookup and explicit adoption.
+- [Policy profiles](docs/policy-profiles.md): optional starting points, customization and installation policies.
 
 ## Application claims and queries
 

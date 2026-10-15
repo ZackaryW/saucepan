@@ -4,6 +4,20 @@ use std::path::{Path, PathBuf};
 
 #[derive(clap::Subcommand)]
 pub(super) enum PolicyCommand {
+    /// List built-in profiles without opening a store.
+    Profiles,
+    /// Expand a recipe into ordinary immutable policy definitions.
+    Profile {
+        name: Option<String>,
+        #[arg(long)]
+        for_install: bool,
+        #[arg(long)]
+        catalog: Option<PathBuf>,
+        #[arg(long = "retrieval-policy")]
+        retrieval: Vec<uuid::Uuid>,
+        #[arg(long = "acquisition-policy")]
+        acquisition: Vec<uuid::Uuid>,
+    },
     /// Register an array of immutable policy definitions from JSON.
     RegisterPolicies { file: PathBuf },
     /// Inspect one policy definition by UUID; no app or query file is required.
@@ -37,6 +51,40 @@ pub(super) enum PolicyCommand {
         policies: Vec<uuid::Uuid>,
     },
 }
+/// Root-free preview must be dispatched before store resolution.
+pub(super) fn preview(command: &PolicyCommand) -> Result<Option<serde_json::Value>> {
+    use crate::{core::policy::profile, models::policy::profile::ProfileRequest};
+    Ok(Some(match command {
+        PolicyCommand::Profiles => serde_json::to_value(profile::NAMES)?,
+        PolicyCommand::Profile {
+            name,
+            for_install,
+            catalog,
+            retrieval,
+            acquisition,
+        } => {
+            let name = serde_json::from_value(serde_json::Value::String(
+                name.as_deref().unwrap_or("managed").into(),
+            ))
+            .map_err(|_| {
+                crate::error::Error::new(crate::error::ErrorCode::InvalidRequest, "unknown profile")
+            })?;
+            let catalog = catalog
+                .as_ref()
+                .map(|path| -> Result<_> { Ok(serde_json::from_slice(&std::fs::read(path)?)?) })
+                .transpose()?
+                .unwrap_or_default();
+            serde_json::to_value(profile::expand(&ProfileRequest {
+                name,
+                for_install: *for_install,
+                catalog,
+                retrieval_policy_refs: retrieval.clone().try_into()?,
+                acquisition_policy_refs: acquisition.clone().try_into()?,
+            })?)?
+        }
+        _ => return Ok(None),
+    }))
+}
 impl PolicyCommand {
     pub fn application(&self) -> Option<uuid::Uuid> {
         match self {
@@ -59,6 +107,9 @@ pub(super) fn run(
     credential_file: Option<&Path>,
 ) -> Result<serde_json::Value> {
     Ok(match command {
+        PolicyCommand::Profiles | PolicyCommand::Profile { .. } => {
+            unreachable!("root-free preview")
+        }
         PolicyCommand::RegisterPolicies { file } => {
             serde_json::to_value(store.register_policies(&serde_json::from_slice::<
                 Vec<crate::models::policy::PolicyRecord>,

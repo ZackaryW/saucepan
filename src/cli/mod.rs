@@ -327,6 +327,12 @@ pub fn run() -> Result<()> {
     if let Commands::Composition(command) = &args.command {
         return composition::run(command, &args);
     }
+    if let Commands::Policies(command) = &args.command
+        && let Some(value) = policies::preview(command)?
+    {
+        println!("{}", serde_json::to_string_pretty(&value)?);
+        return Ok(());
+    }
     run_store(args)
 }
 

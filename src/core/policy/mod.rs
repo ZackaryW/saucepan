@@ -11,6 +11,7 @@ pub mod fence;
 pub mod group;
 pub(crate) mod persistence;
 pub mod prepare;
+pub mod profile;
 pub mod resolve;
 pub(crate) mod source;
 pub fn validate(request: &OutputPlan) -> Result<()> {
