@@ -433,18 +433,6 @@ fn partial_marker_inheritance_and_spawn_failure_release_all_outputs() {
         return;
     }
     for partial in [false, true] {
-        let marker_tmp = tempfile::tempdir().unwrap();
-        let marker_path = marker_tmp.path().join("marker");
-        let marker = crate::utils::lifetime::inheritable_marker(&marker_path).unwrap();
-        eprintln!(
-            "primitive held before drop: {}",
-            crate::utils::lifetime::marker_held(&marker_path).unwrap()
-        );
-        drop(marker);
-        eprintln!(
-            "primitive held after drop: {}",
-            crate::utils::lifetime::marker_held(&marker_path).unwrap()
-        );
         let (tmp, store, request, first) = fixture();
         let preparation = store.lease(first, VerificationMode::Metadata).unwrap();
         fs::write(tmp.path().join("input/hooks/script"), "second").unwrap();
@@ -460,19 +448,22 @@ fn partial_marker_inheritance_and_spawn_failure_release_all_outputs() {
             std::process::Command::new(tmp.path().join("missing-program")),
             owned,
         );
-        eprintln!(
-            "partial={partial}, result={result:?}, root={:?}",
-            store.root()
-        );
-        if let Ok(output) = std::process::Command::new("lsof")
-            .args(["-p", &std::process::id().to_string()])
-            .output()
-        {
-            eprintln!("open files: {}", String::from_utf8_lossy(&output.stdout));
-        }
         assert!(result.is_err());
         assert!(available(&store, first) && available(&store, second));
-        assert!(!store.has_live_execution(first).unwrap());
+        let first_held = store.has_live_execution(first).unwrap();
+        if first_held {
+            eprintln!(
+                "partial={partial}, result={result:?}, root={:?}",
+                store.root()
+            );
+            if let Ok(output) = std::process::Command::new("lsof")
+                .args(["-p", &std::process::id().to_string()])
+                .output()
+            {
+                eprintln!("open files: {}", String::from_utf8_lossy(&output.stdout));
+            }
+        }
+        assert!(!first_held);
         assert!(!store.has_live_execution(second).unwrap());
     }
 }
