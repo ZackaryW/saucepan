@@ -2,6 +2,13 @@ import json
 import unittest
 from saucepan_sdk import Client, TransportError, SaucepanError, RunResult
 from saucepan_sdk.transport import CliTransport, Call, Config, Payload
+import uuid
+
+def setup_receipt(status='complete'):
+    return dict(schema_version=1, root='root', status=status, changed=status == 'complete',
+                launcher_path='root/bin/saucepan', app=str(uuid.uuid4()), claim=str(uuid.uuid4()),
+                output=str(uuid.uuid4()), installed_version='v-next', operation=str(uuid.uuid4()),
+                lifecycle_operation=str(uuid.uuid4()), backup_paths=[], diagnostics=[], retry_shim=None)
 
 def receipt(status):
     return dict(operation='operation', app='app', claim='claim', fingerprint='hash', status=status,
@@ -15,6 +22,45 @@ class Harness(CliTransport):
         return RunResult(self.code, None, json.dumps(self.value).encode(), self.stderr)
 
 class SetupTests(unittest.TestCase):
+    def test_setup_receipt_validation_and_status_observation(self):
+        for phase in ['complete', 'preparing', 'commit_intent', 'cleanup_pending', 'failed', 'conflict']:
+            value = setup_receipt(phase)
+            code = 0 if phase == 'complete' else 2
+            result = Harness(value, code).json(Config(), Call(['setup'], mutates=True, lifecycle='setup'))
+            self.assertEqual(result, {'exit_code': code, 'result': value})
+        good = setup_receipt()
+        for value, code in [(good, 2), ({**good, 'app': None}, 0), ({**good, 'schema_version': True}, 0),
+                            ({**good, 'operation': 'not-a-uuid'}, 0), ({**good, 'retry_shim': 3}, 0)]:
+            with self.assertRaises(TransportError) as error:
+                Harness(value, code).json(Config(), Call(['setup'], mutates=True, lifecycle='setup'))
+            self.assertTrue(error.exception.indeterminate)
+        observation = dict(schema_version=1, root='missing', state='absent', launcher_path=None,
+                           app=None, claim=None, output=None, installed_version=None, operation=None, diagnostics=[])
+        self.assertEqual(Harness(observation, 0).json(Config(), Call(['setup-status'], lifecycle='setup_status')), observation)
+        with self.assertRaises(TransportError) as error:
+            Harness({**observation, 'state': 'ready'}, 0).json(Config(), Call(['setup-status'], lifecycle='setup_status'))
+        self.assertFalse(error.exception.indeterminate)
+
+    def test_setup_maps_literals_and_rejects_bound_client_without_execution(self):
+        calls = []
+        class Spy:
+            def json(self, config, call):
+                calls.append((config, call)); return {}
+        client = Client(root='root space 雪', transport=Spy())
+        client.setup('shim space 雪', tag='v-next', operation='op', migrate_unmanaged=True, expected_sha256='hash')
+        config, call = calls[-1]
+        self.assertEqual(config.root, 'root space 雪')
+        self.assertEqual(call.argv, ['setup', 'shim space 雪', '--tag', 'v-next', '--operation', 'op', '--expected-sha256', 'hash', '--migrate-unmanaged'])
+        self.assertEqual(call.lifecycle, 'setup')
+        client.setup_status()
+        self.assertEqual(calls[-1][1].argv, ['setup-status'])
+        client.self_update('app', 'claim', tag='v-next')
+        self.assertEqual(calls[-1][1].argv, ['self-update', 'app', 'claim', '--tag', 'v-next'])
+        count = len(calls)
+        for action in [lambda: client.for_app('app').setup('shim', tag='v-next'), lambda: client.for_app('app').setup_status()]:
+            with self.assertRaises(TransportError): action()
+        self.assertEqual(len(calls), count)
+
     def test_receipts_and_mixed_reconcile_are_explicit(self):
         for status in ['complete','preparing','commit_intent','cleanup_pending','failed','conflict']:
             code = 0 if status == 'complete' else 2

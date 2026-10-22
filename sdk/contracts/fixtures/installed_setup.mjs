@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { Client } from 'saucepan-sdk';
 const [binary,shim,root]=process.argv.slice(2);
 const client=new Client({executable:binary,root});
+assert.equal((await client.setupStatus()).state,'absent');
 assert.ok((await client.profiles()).includes('managed'));
 const profile=await client.profile('explicit-update',{forInstall:true});
 const explained=await client.explainPolicies({operation:'retrieve',request:{

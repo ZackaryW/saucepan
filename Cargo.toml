@@ -1,6 +1,6 @@
 [package]
 name = "saucepan"
-version = "0.10.0"
+version = "0.11.0"
 edition = "2024"
 rust-version = "1.89"
 license = "MIT"
@@ -36,7 +36,7 @@ process-wrap = { version = "10", default-features = false, features = ["std", "c
 hex = "0.4.3"
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.62", features = ["Win32_System_Threading", "Win32_System_Console", "Win32_Security_Authorization"] }
+windows = { version = "0.62", features = ["Win32_System_Threading", "Win32_System_Console", "Win32_Security_Authorization", "Win32_Storage_FileSystem"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

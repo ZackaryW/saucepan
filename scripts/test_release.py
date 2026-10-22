@@ -31,8 +31,9 @@ class ReleasePackaging(unittest.TestCase):
                     self.assertEqual(archive.read(name), (self.binaries / name).read_bytes())
                     self.assertEqual(archive.getinfo(name).external_attr >> 16 & 0o777, 0o755)
         sdk_assets(self.dist, self.tag, self.commit)
+        release.installers(self.tag, self.dist, self.commit)
         release.checksums(self.tag, self.dist, self.commit)
-        self.assertEqual(len((self.dist / 'SHA256SUMS').read_text().splitlines()), 11)
+        self.assertEqual(len((self.dist / 'SHA256SUMS').read_text().splitlines()), 13)
         for line in (self.dist / "SHA256SUMS").read_text().splitlines():
             digest, name = line.split("  ")
             self.assertEqual(digest, hashlib.sha256((self.dist / name).read_bytes()).hexdigest())
@@ -63,12 +64,24 @@ class ReleasePackaging(unittest.TestCase):
         for target in release.TARGETS:
             release.package(self.tag, target, self.binaries, self.dist)
         sdk_assets(self.dist, self.tag, self.commit)
+        release.installers(self.tag, self.dist, self.commit)
         extra=self.dist/'unexpected'
         extra.mkdir()
         with self.assertRaises(ValueError): release.checksums(self.tag,self.dist,self.commit)
         extra.rmdir(); extra.write_text('unexpected')
         with self.assertRaises(ValueError): release.checksums(self.tag,self.dist,self.commit)
         self.assertFalse((self.dist/'SHA256SUMS').exists())
+
+    def test_missing_or_mixed_release_installer_is_rejected(self):
+        for target in release.TARGETS:
+            release.package(self.tag, target, self.binaries, self.dist)
+        sdk_assets(self.dist, self.tag, self.commit)
+        with self.assertRaises(ValueError): release.checksums(self.tag, self.dist, self.commit)
+        release.installers(self.tag, self.dist, self.commit)
+        script = self.dist / 'install.ps1'
+        script.write_bytes(script.read_bytes().replace(self.commit.encode(), b'b' * 40))
+        with self.assertRaises(ValueError): release.checksums(self.tag, self.dist, self.commit)
+        with self.assertRaises(FileExistsError): release.installers(self.tag, self.dist, self.commit)
 
 
 if __name__ == "__main__":

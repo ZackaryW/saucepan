@@ -6,7 +6,7 @@ Saucepan retrieves sources, produces immutable outputs, and manages optional app
 
 Build with Rust 1.89 or newer, or obtain the manager and shim from a release. Git and Git LFS must also be installed when required by a repository source.
 
-The 0.10.0 release pairs the Rust manager/shim with Python and TypeScript SDKs 0.2.0. Download the platform ZIP and, when needed, the separate SDK archives from [GitHub releases](https://github.com/ZackaryW/saucepan/releases). Extract both binaries from the same ZIP; SDK installation does not install them. See [release assets and checksums](docs/releases.md#assets) and [SDK installation](sdk/README.md#install-from-a-release).
+The upcoming 0.11.0 release pairs the Rust manager/shim with Python and TypeScript SDKs 0.3.0. Once published, download the platform ZIP and, when needed, the separate SDK archives from [GitHub releases](https://github.com/ZackaryW/saucepan/releases). Extract both binaries from the same ZIP; SDK installation does not install them. See [release assets and checksums](docs/releases.md#assets) and [SDK installation](sdk/README.md#install-from-a-release).
 
 ```powershell
 cargo build --locked --bins
@@ -18,6 +18,8 @@ cargo run -- query-sources --type github_release --repo owner/project
 Managed commands use `%USERPROFILE%\.saucepan` on Windows or `~/.saucepan` on Unix. Use `--root PATH` for another store. Project-local stores are not auto-discovered, and queries do not initialize missing stores. Public discovery needs no app UUID, scope, or query file; sources are private until explicitly published, so an empty result is expected for a new store.
 
 New stores use basic checksum integrity without an OS keyring. Keyring protection and application credentials are separate opt-ins. See [integrity and access](#integrity-and-access).
+
+Version 0.11.0 builds provide [managed setup and explicit raw-manager migration](docs/managed-setup.md), including read-only installation status and exact-tag self-update. Production adoption requires the new release to be published; published v0.10.0 does not include this surface.
 
 ### Acquire a local resource
 
@@ -88,7 +90,7 @@ For an update with delayed readers: pin A, prepare and pin B, switch consumers, 
 
 The SDKs accept request objects and invoke an explicitly selected manager or find it on PATH. Installing an SDK does not install the manager. Rust owns policy evaluation, retrieval, publication and retention.
 
-Use SDK 0.2.0 with manager 0.10.0 for profile expansion, policy explanations and managed lifecycle calls. Upgrading the SDK or expanding a profile does not change existing claims' adopted policies; changing those associations requires explicit adoption.
+Use SDK 0.3.0 with manager 0.11.0 for managed setup, profile expansion, policy explanations and managed lifecycle calls. Upgrading the SDK or expanding a profile does not change existing claims' adopted policies; changing those associations requires explicit adoption.
 
 - [Language SDK overview](sdk/README.md): source installation, context/lifetime choices and development commands.
 - [Python SDK](sdk/python/README.md): Python 3.12+ installation and typed usage.

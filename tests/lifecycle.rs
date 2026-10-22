@@ -365,6 +365,7 @@ fn interrupted_preparation_rechecks_probe_without_publishing_a_transition() {
                 claim: installed.claim,
                 probe: probe.clone(),
                 rollback: None,
+                tag: None,
             },
         )
         .unwrap();
@@ -508,6 +509,7 @@ fn resumed_preparation_retains_its_original_source_policy_observation() {
                 claim: installed.claim,
                 probe: input.probe.clone(),
                 rollback: None,
+                tag: None,
             },
         )
         .unwrap();
@@ -620,6 +622,7 @@ fn managed_update_rejects_aba_and_foreign_rollback() {
                 claim: installed.claim,
                 probe: input.probe.clone(),
                 rollback: None,
+                tag: None,
             },
         )
         .unwrap();

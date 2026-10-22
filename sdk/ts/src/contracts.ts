@@ -18,7 +18,7 @@ export interface Call {
   readonly required?: readonly string[] | undefined;
   readonly payloadLimit?: number | undefined;
   readonly policies?: unknown;
-  readonly lifecycle?: 'operation' | 'reconcile' | 'inspection';
+  readonly lifecycle?: 'operation' | 'reconcile' | 'inspection' | 'setup' | 'setup_status';
 }
 export interface RunOptions {
   readonly capture?: boolean;

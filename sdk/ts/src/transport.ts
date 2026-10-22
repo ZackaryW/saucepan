@@ -5,6 +5,7 @@ import { decode } from './utils/json.js';
 import { payloadFiles } from './utils/payloads.js';
 import { invoke } from './utils/process.js';
 import { receiptResult } from './lifecycle.js';
+import { setupResult } from './setup.js';
 
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -64,7 +65,7 @@ export class NodeTransport implements Transport {
   async json(config: Config, call: Call): Promise<unknown> {
     const result = await this.run(config, call, { capture: true, timeout: config.timeout });
     try {
-      if (result.exitCode !== 0 && !(call.lifecycle && call.lifecycle !== 'inspection' && result.exitCode === 2)) {
+      if (result.exitCode !== 0 && !(['operation', 'reconcile', 'setup'].includes(call.lifecycle ?? '') && result.exitCode === 2)) {
         const envelope = decode(result.stderr ?? new Uint8Array());
         const error = object(envelope) ? envelope.error : undefined;
         if (object(error) && typeof error.code === 'string' && typeof error.message === 'string' && object(error.details)
@@ -74,6 +75,7 @@ export class NodeTransport implements Transport {
         throw new TransportError('protocol', true);
       }
       const value = decode(result.stdout ?? new Uint8Array());
+      if (call.lifecycle === 'setup' || call.lifecycle === 'setup_status') return setupResult(value, result.exitCode, call.lifecycle);
       if (call.lifecycle) return receiptResult(value, result.exitCode, call.lifecycle);
       checkShape(value, call);
       return value;

@@ -9,6 +9,10 @@ not build or download the Rust manager.
 
 ## Checks and publication
 
+The current checkout targets manager/shim 0.11.0 and both SDKs 0.3.0. These
+versions are not yet published. Tag-based examples below apply after the
+corresponding tag exists; use a committed revision for checks before tagging.
+
 `core-platforms.yml` runs on manual dispatch or an explicit reusable-workflow
 call. The release workflow does not invoke it. Pull requests and ordinary branch pushes do not start hosted checks;
 this keeps the full platform matrix an explicit CI expense. It runs formatting, Clippy,
@@ -28,7 +32,7 @@ to false; select it only when testing native custody on configured runners.
 The equivalent GitHub CLI command for basic Linux checks is:
 
 ```sh
-gh workflow run core-platforms.yml -f ref=v0.10.0 -f platform=linux -F check_msrv=false
+gh workflow run core-platforms.yml -f ref=v0.11.0 -f platform=linux -F check_msrv=false
 ```
 
 Use `ref` to check a specific commit or tag; leaving it empty checks the selected
@@ -40,7 +44,7 @@ SDK checks are also separate manual or explicitly reusable workflows. Select
 `language` (`python`, `ts`, or `both`) and `platform` on `sdk-checks.yml`:
 
 ```sh
-gh workflow run sdk-checks.yml -f ref=v0.10.0 -f language=python -f platform=windows
+gh workflow run sdk-checks.yml -f ref=v0.11.0 -f language=python -f platform=windows
 ```
 
 The selected job builds one native manager, runs only the requested SDK checks
@@ -53,7 +57,7 @@ installs and exercises an explicit native binary. This package job checks both
 languages independently of the runtime language/platform selection:
 
 ```sh
-gh workflow run sdk-checks.yml -f ref=v0.10.0 -f language=both -f platform=linux -F check_packages=true
+gh workflow run sdk-checks.yml -f ref=v0.11.0 -f language=both -f platform=linux -F check_packages=true
 ```
 
 To retry failures on the same revision, GitHub's
@@ -77,7 +81,7 @@ the recent macOS native-keychain failure is not resolved by making it optional.
 
 `release.yml` runs on a pushed `v*` tag or manual dispatch with an **existing** tag.
 The tag must equal `v` followed by the version in that tag's `Cargo.toml`, such as
-`v0.10.0` or `v0.10.0-rc.1`. Both paths check out the tag, resolve it to a commit,
+`v0.11.0` or `v0.11.0-rc.1`. Both paths check out the tag, resolve it to a commit,
 and build that same commit. Manual dispatch does not package the latest
 default-branch source under an unrelated version. Prerelease tags produce
 GitHub prereleases, which Saucepan's `latest_stable` selector excludes.
@@ -117,13 +121,14 @@ their own package metadata and can differ from Rust's version.
 
 The optional SDK checking job installs archives outside the checkout and exercises
 the selected binary, source installation and declarations. The publication validator
-requires the exact seven ZIPs plus those three SDK archives and manifest,
+requires the exact seven ZIPs plus those three SDK archives, manifest and the
+`install.ps1` / `install.sh` scripts rendered from the same release commit,
 cross-checks package/source identities and contents, rejects unsafe or duplicate
 members and refuses mixed-commit manifests. Unexpected files/directories fail
 validation; it does not blindly publish a `dist/*` glob. No npm/PyPI publication
 is configured.
 
-`SHA256SUMS` records hashes for all eleven payloads including the manifest. These are checksums,
+`SHA256SUMS` records hashes for all thirteen payloads including the manifest and installers. These are checksums,
 not publisher signatures or notarization.
 
 For a Windows x64 GitHub release request, use an asset pattern such as

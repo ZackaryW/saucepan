@@ -64,6 +64,8 @@ pub enum Action {
         claim: Uuid,
         probe: Probe,
         rollback: Option<Uuid>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tag: Option<String>,
     },
     Shim {
         action: ShimAction,

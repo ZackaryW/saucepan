@@ -88,3 +88,33 @@ class LifecycleResult[T](TypedDict):
     """Exit 2 is a recorded noncomplete outcome, not a transport failure."""
     exit_code: Literal[0, 2]
     result: T
+
+type SetupState = Literal['absent', 'unmanaged', 'ready', 'pending', 'conflict']
+
+class SetupStatus(TypedDict):
+    schema_version: Literal[1]
+    root: str
+    state: SetupState
+    launcher_path: str | None
+    app: str | None
+    claim: str | None
+    output: str | None
+    installed_version: str | None
+    operation: str | None
+    diagnostics: list[str]
+
+class SetupOutcome(TypedDict):
+    schema_version: Literal[1]
+    root: str
+    status: Phase
+    changed: bool
+    launcher_path: str | None
+    app: str | None
+    claim: str | None
+    output: str | None
+    installed_version: str | None
+    operation: str
+    lifecycle_operation: str | None
+    backup_paths: list[str]
+    diagnostics: list[str]
+    retry_shim: str | None

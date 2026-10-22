@@ -146,6 +146,24 @@ impl Store {
         options: &AcquireOptions,
         operation: Option<Uuid>,
     ) -> Result<Operation> {
+        self.update_application_selected(app, claim, probe, rollback, options, operation, None)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn update_application_selected(
+        &self,
+        app: Uuid,
+        claim: Uuid,
+        probe: &Probe,
+        rollback: Option<Uuid>,
+        options: &AcquireOptions,
+        operation: Option<Uuid>,
+        tag: Option<&str>,
+    ) -> Result<Operation> {
+        ensure!(
+            tag.is_none() || rollback.is_none(),
+            "tag cannot be combined with rollback"
+        );
         if self.policy_fence.is_none() {
             let _lock = self.lock()?;
             let registry = self.registry(app)?;
@@ -155,7 +173,8 @@ impl Store {
             })?;
             let execution = self.with_policy_fence(selected.request.source_uuid, Some(app))?;
             drop(_lock);
-            return execution.update_application(app, claim, probe, rollback, options, operation);
+            return execution
+                .update_application_selected(app, claim, probe, rollback, options, operation, tag);
         }
         let (mut op, _guard) = self.begin_operation(
             operation.unwrap_or_else(Uuid::new_v4),
@@ -164,6 +183,7 @@ impl Store {
                 claim,
                 probe: probe.clone(),
                 rollback,
+                tag: tag.map(str::to_owned),
             },
         )?;
         if op.status.terminal() {
@@ -187,12 +207,16 @@ impl Store {
                 current
             };
             let mut registry = self.registry(app)?;
-            let request = registry
+            let mut request = registry
                 .claims
                 .get(&claim)
                 .context("claim missing")?
                 .request
                 .clone();
+            if let Some(tag) = tag {
+                ensure!(!tag.is_empty(), "empty self-update tag");
+                request.selector = crate::models::store::Selector::Tag { tag: tag.into() };
+            }
             let binary = executable(&request)?.to_owned();
             let (entry, _guard) = if let Some(entry) = rollback {
                 let _lock = self.lock()?;
@@ -220,6 +244,11 @@ impl Store {
                 .get_mut(&claim)
                 .context("claim missing")?
                 .entry_uuid = entry;
+            registry
+                .claims
+                .get_mut(&claim)
+                .context("claim missing")?
+                .request = request;
             desired.active = Some(Binding {
                 entry_uuid: entry,
                 executable: binary,

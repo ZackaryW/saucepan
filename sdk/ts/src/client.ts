@@ -83,8 +83,17 @@ export class Client {
   updateApplication(app: string, claim: string, probe: st.Probe, options: { operation?: string } = {}): Promise<st.LifecycleResult<st.Operation>> {
     return this.json(['update-app', this.identity(app), claim, new Payload(probe), ...flags({ operation: options.operation })], { mutates: true, lifecycle: 'operation' });
   }
-  selfUpdate(app: string, claim: string, options: { operation?: string } = {}): Promise<st.LifecycleResult<st.Operation>> {
-    return this.json(['self-update', this.identity(app), claim, ...flags({ operation: options.operation })], { mutates: true, lifecycle: 'operation' });
+  setup(builtShim: string, options: { tag: string; operation?: string; migrateUnmanaged?: boolean; expectedSha256?: string }): Promise<st.LifecycleResult<st.SetupOutcome>> {
+    if (this.config.app !== undefined) throw new TransportError('context_mismatch');
+    return this.json(['setup', builtShim, ...flags({ tag: options.tag, operation: options.operation, expected_sha256: options.expectedSha256 }),
+      ...(options.migrateUnmanaged ? ['--migrate-unmanaged'] : [])], { mutates: true, lifecycle: 'setup' });
+  }
+  setupStatus(): Promise<st.SetupStatus> {
+    if (this.config.app !== undefined) throw new TransportError('context_mismatch');
+    return this.json(['setup-status'], { lifecycle: 'setup_status' });
+  }
+  selfUpdate(app: string, claim: string, options: { operation?: string; tag?: string } = {}): Promise<st.LifecycleResult<st.Operation>> {
+    return this.json(['self-update', this.identity(app), claim, ...flags({ operation: options.operation, tag: options.tag })], { mutates: true, lifecycle: 'operation' });
   }
   rollback(app: string, claim: string, entry: string, probe: st.Probe, options: { operation?: string } = {}): Promise<st.LifecycleResult<st.Operation>> {
     return this.json(['rollback', this.identity(app), claim, entry, new Payload(probe), ...flags({ operation: options.operation })], { mutates: true, lifecycle: 'operation' });

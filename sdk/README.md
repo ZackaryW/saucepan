@@ -10,13 +10,13 @@ Paths and retention are different: bare lookup is read-only, guarded execution r
 
 ## Install from a release
 
-Saucepan 0.10.0 includes Python and TypeScript SDKs 0.2.0. Their profile, explanation and managed lifecycle methods need the matching manager contract; installing an updated SDK does not upgrade an existing executable. Obtain the manager and shim separately from the platform ZIP.
+The upcoming Saucepan 0.11.0 release includes Python and TypeScript SDKs 0.3.0. Their setup, profile, explanation and managed lifecycle methods need the matching manager contract; installing an updated SDK does not upgrade an existing executable. Obtain the manager and shim separately from the platform ZIP.
 
-Download `saucepan_sdk-0.2.0-py3-none-any.whl` (or the Python source distribution) and `saucepan-sdk-0.2.0.tgz` from the [v0.10.0 release](https://github.com/ZackaryW/saucepan/releases/tag/v0.10.0), verify them against its `SHA256SUMS`, then install the needed package:
+After v0.11.0 is published, download `saucepan_sdk-0.3.0-py3-none-any.whl` (or the Python source distribution) and `saucepan-sdk-0.3.0.tgz` from [GitHub releases](https://github.com/ZackaryW/saucepan/releases), verify them against that release's `SHA256SUMS`, then install the needed package. Until then, use an explicit local build; these version numbers alone are not release evidence.
 
 ```sh
-pip install ./saucepan_sdk-0.2.0-py3-none-any.whl
-npm install ./saucepan-sdk-0.2.0.tgz
+pip install ./saucepan_sdk-0.3.0-py3-none-any.whl
+npm install ./saucepan-sdk-0.3.0.tgz
 ```
 
 `sdk-manifest.json` records the package versions, hashes and associated manager tag/commit. Use that evidence when pinning consumer dependencies. These packages are distributed as release assets; no npm or PyPI publication is configured.
@@ -43,7 +43,7 @@ npm pack
 # In a separate consumer:
 npm install /absolute/path/to/sdk/ts
 # Or install the built distributable:
-npm install /absolute/path/to/saucepan-sdk-0.2.0.tgz
+npm install /absolute/path/to/saucepan-sdk-0.3.0.tgz
 ```
 
 npm's Git dependency support does not select a package subdirectory. Use the built local folder or tarball instead. Import `Client` from `saucepan-sdk`; its client/types entry point has no eager Node filesystem/process dependency, while actual operations need the default Node transport or an explicit capable host transport.
@@ -92,3 +92,6 @@ uv run --no-project python sdk/check_packages.py verify --directory target/sdk-d
 Set `SAUCEPAN_TEST_BINARY` to select an explicit executable for resource tests, with its matching `saucepan-shim` alongside it. Add `--binary /absolute/path/to/saucepan --shim /absolute/path/to/saucepan-shim` to installed-package verification for profile/explanation and managed lifecycle checks. No hosted run is triggered by these commands.
 
 `contracts/operations.json` maps the current adapter methods to CLI operations. Resource fixtures use isolated roots and local Git; consumer fixtures exercise cross-language pin handover, grouped execution and scoped upgrades. They are not migrations of external applications.
+## Managed setup development
+
+The upcoming setup-capable contract is documented in [managed setup SDK calls](managed-setup.md).

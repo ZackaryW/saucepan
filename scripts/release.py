@@ -22,6 +22,27 @@ TARGETS = (
     "x86_64-unknown-linux-musl",
     "universal-apple-darwin",
 )
+INSTALLERS = ('install.ps1', 'install.sh')
+
+
+def installer_bytes(name, tag, commit):
+    validate_tag(tag)
+    if name not in INSTALLERS or not re.fullmatch(r'[0-9a-f]{40}', commit):
+        raise ValueError('invalid installer identity')
+    source = (Path('scripts') / name).read_text(encoding='utf-8')
+    if '@SAUCEPAN_RELEASE_TAG@' not in source or '@SAUCEPAN_RELEASE_COMMIT@' not in source:
+        raise ValueError('installer source lacks release identity markers')
+    return source.replace('@SAUCEPAN_RELEASE_TAG@', tag).replace('@SAUCEPAN_RELEASE_COMMIT@', commit).encode('utf-8')
+
+
+def installers(tag, directory, commit):
+    payloads = {name: installer_bytes(name, tag, commit) for name in INSTALLERS}
+    directory.mkdir(parents=True, exist_ok=True)
+    if any((directory / name).exists() for name in INSTALLERS):
+        raise FileExistsError('installer assets already exist')
+    for name, content in payloads.items():
+        with (directory / name).open('xb') as output:
+            output.write(content)
 
 
 def validate_tag(tag, manifest=Path("Cargo.toml")):
@@ -68,7 +89,7 @@ def checksums(tag, directory, commit=None):
     if commit is None:
         commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
     binaries = {asset_name(tag, target) for target in TARGETS}
-    expected = binaries | sdk_release.verify_manifest(tag, commit, directory)
+    expected = binaries | set(INSTALLERS) | sdk_release.verify_manifest(tag, commit, directory)
     actual = {p.name for p in directory.iterdir()}
     if actual != expected:
         raise ValueError(f"release assets differ: missing={expected - actual}, extra={actual - expected}")
@@ -77,6 +98,8 @@ def checksums(tag, directory, commit=None):
         path = directory / name
         if path.is_symlink() or not path.is_file():
             raise ValueError('release asset is not a regular file')
+        if name in INSTALLERS and path.read_bytes() != installer_bytes(name, tag, commit):
+            raise ValueError('installer differs from the release tag/commit source')
         suffix = ".exe" if "windows" in name else ""
         if name in binaries:
             with zipfile.ZipFile(path) as archive:
@@ -107,6 +130,8 @@ def main():
     check.add_argument("--directory", type=Path, default=Path("dist"))
     sdk = commands.add_parser('sdk-manifest')
     sdk.add_argument('--directory', type=Path, default=Path('dist'))
+    installer = commands.add_parser('installers')
+    installer.add_argument('--directory', type=Path, default=Path('dist'))
     args = parser.parse_args()
     tag = os.environ["RELEASE_TAG"]
     validate_tag(tag)
@@ -122,6 +147,8 @@ def main():
             raise ValueError('checkout differs from requested release commit')
         if args.command == 'sdk-manifest':
             sdk_release.write_manifest(tag, commit, args.directory)
+        elif args.command == 'installers':
+            installers(tag, args.directory, commit)
         else:
             checksums(tag, args.directory, commit)
 

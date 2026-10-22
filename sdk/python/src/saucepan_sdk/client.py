@@ -81,9 +81,22 @@ class Client:
         return cast(st.LifecycleResult[st.Operation], self._json(['update-app', self._identity(app), claim, Payload(probe),
             *_options(operation=operation)], mutates=True, lifecycle='operation'))
 
-    def self_update(self, app: str, claim: str, *, operation: str | None = None) -> st.LifecycleResult[st.Operation]:
+    def setup(self, built_shim: str, *, tag: str, operation: str | None = None,
+              migrate_unmanaged: bool = False, expected_sha256: str | None = None) -> st.LifecycleResult[st.SetupOutcome]:
+        if self._config.app is not None:
+            raise TransportError('context_mismatch')
+        return cast(st.LifecycleResult[st.SetupOutcome], self._json(['setup', built_shim,
+            *_options(tag=tag, operation=operation, expected_sha256=expected_sha256),
+            *(['--migrate-unmanaged'] if migrate_unmanaged else [])], mutates=True, lifecycle='setup'))
+
+    def setup_status(self) -> st.SetupStatus:
+        if self._config.app is not None:
+            raise TransportError('context_mismatch')
+        return cast(st.SetupStatus, self._json(['setup-status'], lifecycle='setup_status'))
+
+    def self_update(self, app: str, claim: str, *, operation: str | None = None, tag: str | None = None) -> st.LifecycleResult[st.Operation]:
         return cast(st.LifecycleResult[st.Operation], self._json(['self-update', self._identity(app), claim,
-            *_options(operation=operation)], mutates=True, lifecycle='operation'))
+            *_options(operation=operation, tag=tag)], mutates=True, lifecycle='operation'))
 
     def rollback(self, app: str, claim: str, entry: str, probe: st.Probe, *, operation: str | None = None) -> st.LifecycleResult[st.Operation]:
         return cast(st.LifecycleResult[st.Operation], self._json(['rollback', self._identity(app), claim, entry, Payload(probe),

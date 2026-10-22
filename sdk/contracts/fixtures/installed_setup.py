@@ -7,6 +7,7 @@ from saucepan_sdk import Client
 
 binary, shim, root = map(Path, sys.argv[1:])
 client = Client(executable=str(binary), root=str(root))
+assert client.setup_status()['state'] == 'absent'
 assert 'managed' in client.profiles()
 profile = client.profile('explicit-update', for_install=True)
 explained = client.explain_policies({'operation':'retrieve', 'request': {

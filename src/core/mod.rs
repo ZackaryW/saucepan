@@ -11,6 +11,7 @@ pub mod pin;
 pub mod policy;
 pub mod query;
 pub mod retrieval;
+pub mod setup;
 pub mod shims;
 pub mod source;
 pub mod store;

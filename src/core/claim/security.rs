@@ -186,6 +186,7 @@ pub enum Kind {
     Pin,
     Group,
     Operation,
+    Setup,
     Transaction,
 }
 

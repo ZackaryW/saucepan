@@ -30,3 +30,15 @@ export interface Operation {
 }
 /** Exit 2 preserves a noncomplete receipt instead of triggering an automatic retry. */
 export interface LifecycleResult<T> { exit_code: 0 | 2; result: T; }
+export type SetupState = 'absent' | 'unmanaged' | 'ready' | 'pending' | 'conflict';
+export interface SetupStatus {
+  schema_version: 1; root: string; state: SetupState; launcher_path: string | null;
+  app: string | null; claim: string | null; output: string | null; installed_version: string | null;
+  operation: string | null; diagnostics: string[];
+}
+export interface SetupOutcome {
+  schema_version: 1; root: string; status: Phase; changed: boolean; launcher_path: string | null;
+  app: string | null; claim: string | null; output: string | null; installed_version: string | null;
+  operation: string; lifecycle_operation: string | null; backup_paths: string[];
+  diagnostics: string[]; retry_shim: string | null;
+}

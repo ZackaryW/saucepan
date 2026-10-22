@@ -577,6 +577,7 @@ pub fn record_path(identity: Identity) -> Result<String> {
         (Kind::Registry, Some(app), None) => Ok(format!("claims/{app}/index.json")),
         (Kind::Claim, Some(app), Some(id)) => Ok(format!("claims/{app}/{id}.json")),
         (Kind::Operation, _, Some(id)) => Ok(format!(".staging/lifecycle/{id}/index.json")),
+        (Kind::Setup, None, Some(id)) => Ok(format!(".staging/setup/{id}/index.json")),
         _ => Err(integrity_error()),
     }
 }

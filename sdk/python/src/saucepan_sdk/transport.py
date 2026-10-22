@@ -115,7 +115,7 @@ class CliTransport:
     def json(self, config: Config, call: Call) -> object:
         result = self._invoke(config, call, RunOptions(capture=True, timeout=config.timeout))
         try:
-            if result.exit_code != 0 and not (call.lifecycle in ('operation', 'reconcile') and result.exit_code == 2):
+            if result.exit_code != 0 and not (call.lifecycle in ('operation', 'reconcile', 'setup') and result.exit_code == 2):
                 envelope = decode(result.stderr or b"")
                 if isinstance(envelope, dict) and isinstance(envelope.get("error"), dict):
                     error = envelope["error"]
@@ -125,6 +125,9 @@ class CliTransport:
                         raise SaucepanError(error["code"], error["message"], error["details"])
                 raise TransportError("protocol", started=True)
             value = decode(result.stdout or b"")
+            if call.lifecycle in ('setup', 'setup_status'):
+                from .setup import setup_result
+                return setup_result(value, result.exit_code, call.lifecycle)
             if call.lifecycle is not None:
                 from .lifecycle import receipt_result
                 return receipt_result(value, result.exit_code, call.lifecycle)

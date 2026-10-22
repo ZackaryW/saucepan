@@ -77,6 +77,10 @@ jobs:
       - name: Ordinary tests without native key custody
         shell: bash
         run: cargo test --locked --all-targets -- --nocapture
+      - name: Managed setup and installer acceptance
+        run: |
+          cargo build --locked --bins
+          python -B -m unittest discover -s scripts -p test_setup.py -v
       - name: Native keyring checks not requested
         if: ${{ !inputs.check_keyring }}
         shell: bash

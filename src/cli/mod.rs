@@ -9,6 +9,7 @@ mod group;
 mod policies;
 mod registered_groups;
 mod root;
+mod setup;
 mod source_query;
 
 #[derive(Clone, Copy, clap::ValueEnum)]
@@ -55,6 +56,10 @@ struct Args {
 }
 #[derive(Subcommand)]
 enum Commands {
+    /// Inspect managed setup without initialization, repair, or acquisition.
+    SetupStatus,
+    /// Initialize and install a managed exact release using an explicitly obtained shim.
+    Setup(Box<setup::SetupArgs>),
     #[command(flatten)]
     Policies(policies::PolicyCommand),
     #[command(flatten)]
@@ -105,6 +110,8 @@ enum Commands {
     SelfUpdate {
         app: uuid::Uuid,
         claim: uuid::Uuid,
+        #[arg(long)]
+        tag: Option<String>,
         #[arg(long)]
         operation: Option<uuid::Uuid>,
     },
@@ -324,6 +331,9 @@ pub fn run() -> Result<()> {
             .into());
         }
     };
+    if matches!(args.command, Commands::Setup(_) | Commands::SetupStatus) {
+        return setup::run(&args);
+    }
     if let Commands::Composition(command) = &args.command {
         return composition::run(command, &args);
     }
@@ -372,6 +382,7 @@ fn run_store(args: Args) -> Result<()> {
     };
     let mut exit_code = 0;
     let value = match args.command {
+        Commands::Setup(_) | Commands::SetupStatus => unreachable!(),
         Commands::Init { integrity } => {
             let mode = match integrity {
                 IntegrityChoice::Basic => crate::models::claim::security::IntegrityMode::Basic,
@@ -527,9 +538,10 @@ fn run_store(args: Args) -> Result<()> {
                 Commands::SelfUpdate {
                     app,
                     claim,
+                    tag,
                     operation,
                 } => operation_value(
-                    store.self_update_with_operation(app, claim, &options, operation)?,
+                    store.self_update_tag(app, claim, &options, operation, tag.as_deref())?,
                     &mut exit_code,
                 )?,
                 Commands::Install {
@@ -809,7 +821,10 @@ fn run_store(args: Args) -> Result<()> {
                     )?,
                     &mut exit_code,
                 )?,
-                Commands::Init { .. } | Commands::Composition(_) => unreachable!(),
+                Commands::Init { .. }
+                | Commands::Setup(_)
+                | Commands::SetupStatus
+                | Commands::Composition(_) => unreachable!(),
             }
         }
     };

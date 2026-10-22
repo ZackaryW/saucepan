@@ -87,6 +87,20 @@ impl Store {
         previous: Option<&OwnedShim>,
     ) -> Result<()> {
         let wanted = names(desired);
+        for setup in self.setup_records_internal()? {
+            if setup.lifecycle_operation != op.operation && !setup.result.status.terminal() {
+                let name = if cfg!(windows) {
+                    "saucepan.exe"
+                } else {
+                    "saucepan"
+                };
+                ensure!(
+                    !wanted.contains(&name.to_string()) && !wanted.contains(&sidecar(name)?),
+                    "shim name reserved by setup {}",
+                    setup.operation
+                );
+            }
+        }
         for record in self.records()? {
             if let Record::Application(app) = record {
                 for owned in app.shims {

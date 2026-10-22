@@ -97,8 +97,12 @@ def verify(directory, binary, source_installs=False, shim=None):
             run([node,'--input-type=module','-e','import {Client} from "saucepan-sdk"; const c=new Client({executable:process.argv[1],root:process.argv[2]}); await c.init(); if((await c.querySources()).sources.length)throw Error("unexpected sources");',binary,consumer/'root'],cwd=consumer,env=env)
         (consumer/'consumer.ts').write_text('''import {Client} from 'saucepan-sdk';
 import type {EnsureRequest} from 'saucepan-sdk/models/claim';
-import type {ProfileName, LifecycleResult, Operation, Probe} from 'saucepan-sdk/models/setup';
+import type {ProfileName, LifecycleResult, Operation, Probe, SetupOutcome, SetupStatus} from 'saucepan-sdk/models/setup';
 const client=new Client();
+const setupStatus:Promise<SetupStatus>=client.setupStatus();
+const setup:Promise<LifecycleResult<SetupOutcome>>=client.setup('shim',{tag:'v1'});
+// @ts-expect-error setup requires an explicit tag
+void client.setup('shim',{});
 const recipe:ProfileName='managed';
 void client.profile(recipe,{forInstall:true});
 const probe:Probe={args:['--version'],stdout_contains:'tool',timeout_seconds:10};

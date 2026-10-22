@@ -89,11 +89,30 @@ impl Store {
         options: &AcquireOptions,
         operation: Option<Uuid>,
     ) -> Result<Operation> {
+        self.self_update_tag(app, claim, options, operation, None)
+    }
+
+    pub fn self_update_tag(
+        &self,
+        app: Uuid,
+        claim: Uuid,
+        options: &AcquireOptions,
+        operation: Option<Uuid>,
+        tag: Option<&str>,
+    ) -> Result<Operation> {
         // A terminal retry remains inspectable even after the application is removed.
         if let Some(id) = operation
             && self.operation_dir(id)?.join("index.json").exists()
         {
-            return self.update_application(app, claim, &saucepan_probe(), None, options, Some(id));
+            return self.update_application_selected(
+                app,
+                claim,
+                &saucepan_probe(),
+                None,
+                options,
+                Some(id),
+                tag,
+            );
         }
         self.application(app)?;
         let application = self.registry(app)?;
@@ -103,6 +122,14 @@ impl Store {
             .ok_or_else(|| anyhow::anyhow!("claim missing"))?
             .request;
         self.self_request(request)?;
-        self.update_application(app, claim, &saucepan_probe(), None, options, operation)
+        self.update_application_selected(
+            app,
+            claim,
+            &saucepan_probe(),
+            None,
+            options,
+            operation,
+            tag,
+        )
     }
 }

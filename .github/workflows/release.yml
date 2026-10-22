@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing release tag matching Cargo.toml (for example v0.10.0)
+        description: Existing release tag matching Cargo.toml (for example v0.11.0)
         required: true
         type: string
 
@@ -177,7 +177,9 @@ jobs:
           path: dist
           merge-multiple: true
       - name: Validate complete asset set and generate checksums
-        run: python scripts/release.py checksums
+        run: |
+          python scripts/release.py installers
+          python scripts/release.py checksums
       - uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
@@ -191,6 +193,8 @@ jobs:
             dist/*.tar.gz
             dist/*.tgz
             dist/sdk-manifest.json
+            dist/install.ps1
+            dist/install.sh
             dist/SHA256SUMS
           fail_on_unmatched_files: true
           overwrite_files: false
