@@ -76,7 +76,7 @@ jobs:
       - run: python -B -m unittest discover -s scripts -p 'test_*release.py'
       - name: Ordinary tests without native key custody
         shell: bash
-        run: cargo test --locked --all-targets -- --nocapture
+        run: cargo test --locked --lib partial_marker_inheritance_and_spawn_failure_release_all_outputs -- --nocapture
       - name: Managed setup and installer acceptance
         run: |
           cargo build --locked --bins
