@@ -33,6 +33,8 @@ class ForgeRoutes(unittest.TestCase):
         self.assertTrue(asset["digest"].startswith("sha256:"))
         self.assertEqual(fetch(f"{self.forge.base}/repos/owner/tool/releases/assets/{asset['id']}"), (200, b"two"))
         self.assertEqual(fetch(asset["browser_download_url"])[0], 410)
+        self.forge.browser_downloads = True  # earlier releases download this way
+        self.assertEqual(fetch(asset["browser_download_url"]), (200, b"two"))
         status, body = fetch(self.forge.github_api + "/repos/owner/tool/releases/tags/v1")
         self.assertEqual(json.loads(body)["tag_name"], "v1")
 

@@ -56,6 +56,9 @@ class Forge:
         self.installers: dict[str, dict[str, bytes]] = {}
         self.requests: list[Request] = []
         self.fail = False
+        # Releases up to v0.11.0 download assets through browser_download_url; scenarios
+        # that run them opt in. Otherwise those URLs answer 410 to catch regressions.
+        self.browser_downloads = False
         self._assets: dict[int, bytes] = {}
         self._next_id = 1
         self._lock = threading.Lock()
@@ -195,6 +198,9 @@ class Forge:
             data = self.installers.get(parts[1], {}).get(parts[2])
             return (200, data, "application/octet-stream") if data is not None else _missing()
         if parts[:1] == ["browser"]:
+            data = self._assets.get(int(parts[1])) if len(parts) == 2 and parts[1].isdigit() else None
+            if self.browser_downloads and data is not None:
+                return 200, data, "application/octet-stream"
             return 410, b"browser download URLs are not used", "text/plain"
         return _missing()
 
