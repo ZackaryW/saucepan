@@ -30,7 +30,7 @@ Saucepan SHALL publish an output as ready only after acquisition and required va
 - **AND** no path lookup reports a partial output as ready
 
 ### Requirement: Legacy data is not implicitly accepted or migrated
-Saucepan SHALL identify the flat-policy layout through a distinct named store contract without inheriting the old FORMAT_VERSION or compatibility decoders. Opening a legacy store, earlier inline-claim layout or preceding nested-policy composition store SHALL fail explicitly with unsupported_store before recovery, signing-key provisioning or data mutation. New flat stores SHALL have an explicit store UUID and contract discriminator. Missing or corrupt required claim or policy metadata SHALL NOT be treated as an empty new store. Known flat stores containing mixed inline and referenced policy authorities SHALL fail validation without fallback. No automatic conversion or in-place migration is provided.
+Saucepan SHALL identify the current layout, flat policy resources with platform source records, through a distinct named store contract without inheriting the old FORMAT_VERSION or compatibility decoders. Opening a legacy store, earlier inline-claim layout, preceding nested-policy composition store or preceding flat-policy store whose source records may use the removed `git` type SHALL fail explicitly with unsupported_store before recovery, signing-key provisioning or data mutation. New stores SHALL have an explicit store UUID and contract discriminator. Missing or corrupt required claim or policy metadata SHALL NOT be treated as an empty new store. Known flat stores containing mixed inline and referenced policy authorities SHALL fail validation without fallback. No automatic conversion or in-place migration is provided.
 
 #### Scenario: An old encrypted central index is present
 - **WHEN** initialization or opening detects a legacy Saucepan store
@@ -40,6 +40,11 @@ Saucepan SHALL identify the flat-policy layout through a distinct named store co
 - **WHEN** a root uses the preceding nested-policy contract
 - **THEN** the binary reports unsupported_store with guidance to use a separate fresh root
 - **AND** the source data, metadata, pending journal and credentials remain unchanged
+
+#### Scenario: Previous flat-policy store is opened
+- **WHEN** a root uses the preceding flat-policy contract
+- **THEN** the binary reports unsupported_store with guidance to use a separate fresh root
+- **AND** its source records, outputs and metadata remain unchanged
 
 ### Requirement: An explicit root isolates the full application flow
 Saucepan SHALL accept an explicit root for initialization and subsequent operations, and SHALL preserve that root through its managed Saucepan shim and child Saucepan execution. Explicit-root operations SHALL NOT silently read or mutate the production root. A fresh simulated root SHALL be usable directly without an additional nested `.saucepan` directory. The repository's existing `mock/` is historical evidence under an earlier contract; current acceptance SHALL preserve it and use a separate fresh root rather than treating explicit root selection as migration permission.
