@@ -47,7 +47,7 @@ Both languages SHALL have a checked operation inventory and real-binary tests us
 - **THEN** lookup does not refresh it, and explicit preparation can advance only the intended consumer scope
 
 ### Requirement: SDK validation preserves selective CI execution
-Native Rust, minimum-version, optional keyring, SDK runtime and SDK installation checks SHALL be separately selectable checking workflows, independent of release publication. Checking workflows SHALL accept a target commit or tag and support their applicable platform/language selectors. SDK archive installation and source-install verification SHALL be an explicit option, disabled by default, that checks both packages on one platform. Release workflows SHALL build platform-independent SDK archives once and validate artifact integrity without invoking or depending on these checking workflows. An omitted check SHALL not be represented as passed. Ordinary branch pushes SHALL not automatically start checks or publish packages.
+Native Rust, minimum-version, optional keyring, SDK runtime and SDK installation checks SHALL remain separately selectable manual checking workflows that accept a target commit or tag and their applicable platform/language selectors. SDK archive installation and source-install verification SHALL be an explicit option, disabled by default, that checks both packages on one platform. Release workflows SHALL build platform-independent SDK archives once and SHALL NOT depend on the manual checking workflows. Ordinary pushes and pull requests SHALL run only the Linux check workflow (formatting, Clippy, Rust tests and harness self-tests) and SHALL NOT publish packages. An omitted check SHALL not be represented as passed.
 
 #### Scenario: Selected manual check
 - **WHEN** the user requests only Python SDK checks on Windows
@@ -55,7 +55,7 @@ Native Rust, minimum-version, optional keyring, SDK runtime and SDK installation
 
 #### Scenario: Release without optional verification
 - **WHEN** a release is triggered for an existing valid version tag
-- **THEN** it builds and validates the complete artifact set without scheduling native Rust tests, keyring checks, SDK contract tests or SDK installation tests
+- **THEN** it builds and verifies the artifact set without scheduling native Rust tests, keyring checks, SDK contract tests or SDK installation tests
 
 #### Scenario: Explicit package installation check
 - **WHEN** a caller enables package checks for a selected commit or tag
@@ -64,6 +64,10 @@ Native Rust, minimum-version, optional keyring, SDK runtime and SDK installation
 #### Scenario: Verification failure is reported independently
 - **WHEN** a selected SDK or native check fails
 - **THEN** that checking workflow reports failure without becoming an automatic release dependency or implying that unselected checks passed
+
+#### Scenario: Push runs only the Linux checks
+- **WHEN** a commit is pushed to a branch or a pull request is updated
+- **THEN** only the Linux check workflow runs, and no Windows or macOS job, release or package publication is scheduled
 
 ### Requirement: Official installer launchers hand off verified release binaries
 Saucepan SHALL publish PowerShell and POSIX shell installer scripts from the same tagged commit as the manager/shim. Each script SHALL identify its release and accept explicit release/root/operation selectors and explicit migration inputs. It SHALL resolve only supported published platform assets, validate the exact archive checksum from that release, and stage the matching manager and shim outside the selected store before execution. Invalid checksums, missing/duplicate/escaping archive entries, unsupported platforms, unavailable prerequisites and a manager lacking setup SHALL fail without publishing a raw binary or silently using a different version.
@@ -87,7 +91,7 @@ Scripts SHALL use literal argument passing, preserve setup JSON/exit results and
 - **THEN** the intended literal paths reach setup and cleanup does not escape its owned scratch directory
 
 ### Requirement: Release validation includes installer identities and selective acceptance
-Release packaging SHALL include both installer scripts in its exact artifact allowlist and checksum manifest, verify their tag/source consistency, and reject missing, extra or mixed-release artifacts. Existing published assets SHALL not be overwritten. Checking workflows SHALL separately exercise installer and SDK/setup contracts using real built binaries, isolated roots and controlled release fixtures on the selected platforms. Packaging SHALL not imply those optional runtime checks passed, and ordinary pushes SHALL not automatically schedule all checks or publish.
+Release packaging SHALL include both installer scripts in its exact artifact allowlist and checksum manifest, verify their tag/source consistency, and reject missing, extra or mixed-release artifacts. Existing published assets SHALL not be overwritten. Publication SHALL follow acceptance of the packaged artifacts as defined in release-verification. Manual checking workflows SHALL separately exercise installer and SDK/setup contracts from source using real built binaries, isolated roots and controlled release fixtures on the selected platforms. Packaging SHALL not imply that runtime checks passed.
 
 #### Scenario: Installer script missing from a release
 - **WHEN** a setup-capable release lacks one required script or its embedded tag differs
