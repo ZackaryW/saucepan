@@ -3,7 +3,6 @@
 Run cargo build --bins, then python -m unittest discover -s scripts -p test_setup.py.
 """
 import hashlib
-import http.server
 import io
 import json
 import os
@@ -12,8 +11,8 @@ import platform
 import subprocess
 import shutil
 import time
+import sys
 import tempfile
-import threading
 import unittest
 import uuid
 import zipfile
@@ -22,6 +21,8 @@ from concurrent.futures import ThreadPoolExecutor
 import release
 
 REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO))
+from acceptance.forge import Forge  # noqa: E402
 EXT = ".exe" if os.name == "nt" else ""
 NAME = "saucepan" + EXT
 EXE = REPO / "target/debug" / NAME
@@ -49,95 +50,60 @@ class SetupAcceptance(unittest.TestCase):
             output.write(SHIM, 'saucepan-shim')
             output.write(REPO / 'LICENSE', 'LICENSE')
         cls.shell_archive = shell_archive.getvalue()
-        cls.requests = []
-        cls.events = []
-        cls.blocked = threading.Event()
-        cls.release = threading.Event()
-        cls.block = False
         invalid = io.BytesIO()
         with zipfile.ZipFile(invalid, "w") as output:
             output.writestr(NAME, b"invalid executable")
         cls.invalid = invalid.getvalue()
+        cls.events = []
+        cls.forge = Forge().start()
+        for tag in ("v0.0.0", "v0.0.1", "v0.0.2", "v0.0.3", "v0.0.4", "v0.11.0", "v0.11.0-bad",
+                    "v0.12.0", "v0.13.0", "v99.0.0", "vbad"):
+            bad = tag == "vbad" or tag.endswith("-bad")
+            cls.forge.release("ZackaryW/saucepan", tag,
+                              {f"saucepan-{tag}-{TARGET}.zip": cls.invalid if bad else cls.archive})
+            cls.forge.installer(tag, cls.installer_files(tag))
+        cls.base = cls.forge.base
 
-        class Handler(http.server.BaseHTTPRequestHandler):
-            def do_GET(self):
-                cls.requests.append(self.path)
-                if "/releases/assets/" in self.path:
-                    data = cls.invalid if self.path.endswith("/2") else cls.archive
-                elif self.path.startswith("/repos/"):
-                    tag = self.path.rsplit("/", 1)[-1]
-                    if cls.block:
-                        cls.blocked.set()
-                        if not cls.release.wait(20):
-                            self.send_error(500)
-                            return
-                    bad = tag == 'vbad' or tag.endswith('-bad')
-                    payload = cls.invalid if bad else cls.archive
-                    data = json.dumps({"id": 1, "tag_name": tag, "draft": False, "prerelease": False,
-                                       "assets": [{"id": 2 if bad else 1, "name": f"saucepan-{tag}-{TARGET}.zip",
-                                                   "browser_download_url": cls.base + ("/invalid" if bad else "/archive"),
-                                                   "digest": "sha256:" + hashlib.sha256(payload).hexdigest()}]}).encode()
-                elif self.path == "/archive":
-                    data = cls.archive
-                elif self.path == "/invalid":
-                    data = cls.invalid
-                elif self.path.startswith('/releases/'):
-                    tag, filename = self.path.split('/')[-2:]
-                    payload = cls.archive
-                    if tag == 'v0.0.0':
-                        legacy = io.BytesIO()
-                        with zipfile.ZipFile(legacy, 'w') as output:
-                            output.write(SHIM, NAME)  # A real executable without the manager setup CLI.
-                            output.write(SHIM, SHIM.name)
-                            output.write(REPO / 'LICENSE', 'LICENSE')
-                        payload = legacy.getvalue()
-                    elif tag in ('v0.0.2', 'v0.0.3', 'v0.0.4'):
-                        malformed = io.BytesIO()
-                        with zipfile.ZipFile(malformed, 'w') as output:
-                            output.write(EXE, NAME)
-                            with warnings.catch_warnings():
-                                warnings.simplefilter('ignore', UserWarning)
-                                output.write(SHIM, NAME if tag == 'v0.0.4' else SHIM.name)
-                            output.write(REPO / 'LICENSE', 'LICENSE')
-                            if tag != 'v0.0.4':
-                                output.writestr('../escape' if tag == 'v0.0.2' else 'unexpected', b'not allowed')
-                        payload = malformed.getvalue()
-                    if filename == 'SHA256SUMS':
-                        digest = '0' * 64 if tag == 'v0.0.1' else hashlib.sha256(payload).hexdigest()
-                        data = f'{digest}  saucepan-{tag}-{TARGET}.zip\n'.encode()
-                        if os.name == 'nt':
-                            shell_digest = '0' * 64 if tag == 'v0.0.1' else hashlib.sha256(cls.shell_archive).hexdigest()
-                            data += f'{shell_digest}  saucepan-{tag}-x86_64-unknown-linux-musl.zip\n'.encode()
-                    else:
-                        data = cls.shell_archive if os.name == 'nt' and filename.endswith('x86_64-unknown-linux-musl.zip') else payload
-                else:
-                    self.send_error(404)
-                    return
-                try:
-                    self.send_response(200)
-                    self.send_header("Content-Length", str(len(data)))
-                    self.end_headers()
-                    self.wfile.write(data)
-                except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
-                    pass  # A crash-recovery test intentionally terminates the client.
-
-            def log_message(self, *_):
-                pass
-
-        cls.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-        cls.base = f"http://127.0.0.1:{cls.server.server_port}"
-        cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
-        cls.thread.start()
+    @classmethod
+    def installer_files(cls, tag):
+        """Release downloads the installer scripts fetch for ``tag``."""
+        payload = cls.archive
+        if tag == 'v0.0.0':
+            legacy = io.BytesIO()
+            with zipfile.ZipFile(legacy, 'w') as output:
+                output.write(SHIM, NAME)  # A real executable without the manager setup CLI.
+                output.write(SHIM, SHIM.name)
+                output.write(REPO / 'LICENSE', 'LICENSE')
+            payload = legacy.getvalue()
+        elif tag in ('v0.0.2', 'v0.0.3', 'v0.0.4'):
+            malformed = io.BytesIO()
+            with zipfile.ZipFile(malformed, 'w') as output:
+                output.write(EXE, NAME)
+                with warnings.catch_warnings():
+                    warnings.simplefilter('ignore', UserWarning)
+                    output.write(SHIM, NAME if tag == 'v0.0.4' else SHIM.name)
+                output.write(REPO / 'LICENSE', 'LICENSE')
+                if tag != 'v0.0.4':
+                    output.writestr('../escape' if tag == 'v0.0.2' else 'unexpected', b'not allowed')
+            payload = malformed.getvalue()
+        files = {f'saucepan-{tag}-{TARGET}.zip': payload}
+        digest = '0' * 64 if tag == 'v0.0.1' else hashlib.sha256(payload).hexdigest()
+        sums = [f'{digest}  saucepan-{tag}-{TARGET}.zip']
+        if os.name == 'nt':
+            shell = f'saucepan-{tag}-x86_64-unknown-linux-musl.zip'
+            files[shell] = cls.shell_archive
+            shell_digest = '0' * 64 if tag == 'v0.0.1' else hashlib.sha256(cls.shell_archive).hexdigest()
+            sums.append(f'{shell_digest}  {shell}')
+        files['SHA256SUMS'] = ''.join(line + '\n' for line in sums).encode()
+        return files
 
     @classmethod
     def tearDownClass(cls):
-        cls.server.shutdown()
-        cls.server.server_close()
-        cls.thread.join()
+        cls.forge.close()
         evidence = {'platform': platform.platform(), 'binary': str(EXE),
                     'binary_sha256': hashlib.sha256(EXE.read_bytes()).hexdigest(),
                     'shim_sha256': hashlib.sha256(SHIM.read_bytes()).hexdigest(),
-                    'requests': cls.requests, 'observations': cls.events}
+                    'requests': [r.path for r in cls.forge.requests], 'observations': cls.events}
         report = REPO / 'target/setup-acceptance.json'
         prior = json.loads(report.read_text(encoding='utf-8')) if report.exists() else {'runs': []}
         if 'runs' not in prior:
@@ -175,12 +141,12 @@ class SetupAcceptance(unittest.TestCase):
         self.assertEqual(self.call("setup-status")["state"], "ready")
         launcher = Path(setup["launcher_path"])
         self.assertIn("saucepan ", self.call("--version", executable=launcher, raw=True).stdout)
-        requests = len(self.requests)
+        requests = len(self.forge.requests)
         before = (self.root / "root.json").read_bytes()
         reused = self.call("setup", SHIM, "--tag", "v0.11.0")
         self.assertFalse(reused["changed"])
         self.assertEqual(reused["app"], setup["app"])
-        self.assertEqual(requests, len(self.requests))
+        self.assertEqual(requests, len(self.forge.requests))
         self.assertEqual(before, (self.root / "root.json").read_bytes())
         mismatch = self.call("setup", SHIM, "--tag", "v0.12.0", code=1)
         self.assertIn('self-update', mismatch.stderr)
@@ -267,10 +233,7 @@ class SetupAcceptance(unittest.TestCase):
         self.assertEqual(sum(result["changed"] for result in results), 1)
 
     def test_interrupted_preparation_uses_durable_shim_and_original_identities(self):
-        cls = type(self)
-        cls.blocked.clear()
-        cls.release.clear()
-        cls.block = True
+        self.forge.hold_discovery()
         operation = str(uuid.uuid4())
         staged = Path(self.temp.name) / ("external shim" + EXT)
         shutil.copy2(SHIM, staged)
@@ -278,12 +241,11 @@ class SetupAcceptance(unittest.TestCase):
                                     "setup", str(staged), "--tag", "v0.11.0", "--operation", operation],
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         try:
-            self.assertTrue(cls.blocked.wait(20), "setup never reached release acquisition")
+            self.assertTrue(self.forge.held.wait(20), "setup never reached release acquisition")
             process.kill()
             process.communicate(timeout=10)
         finally:
-            cls.block = False
-            cls.release.set()
+            self.forge.resume_discovery()
             if process.poll() is None:
                 process.kill()
                 process.communicate(timeout=10)

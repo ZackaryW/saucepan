@@ -94,11 +94,15 @@ class Forge:
     def installer(self, tag: str, files: dict[str, bytes]) -> None:
         self.installers.setdefault(tag, {}).update(files)
 
-    def hold_discovery(self) -> threading.Event:
-        """Block release discovery until the returned event is set; ``held`` is set once a request waits."""
+    def hold_discovery(self) -> None:
+        """Block release discovery until ``resume_discovery``; ``held`` is set once a request waits."""
         self._gate = threading.Event()
         self.held.clear()
-        return self._gate
+
+    def resume_discovery(self) -> None:
+        gate, self._gate = self._gate, None
+        if gate is not None:
+            gate.set()
 
     # -- endpoints ---------------------------------------------------------
     @property
@@ -145,13 +149,16 @@ class Forge:
                                                   self.headers.get("PRIVATE-TOKEN"),
                                                   self.headers.get("Accept")))
                 status, data, kind = forge._route(unquote(urlsplit(self.path).path))
-                self.send_response(status)
-                self.send_header("Content-Length", str(len(data)))
-                self.send_header("Content-Type", kind)
-                self.send_header("ETag", '"' + hashlib.sha256(data).hexdigest()[:16] + '"')
-                self.end_headers()
-                if body:
-                    self.wfile.write(data)
+                try:
+                    self.send_response(status)
+                    self.send_header("Content-Length", str(len(data)))
+                    self.send_header("Content-Type", kind)
+                    self.send_header("ETag", '"' + hashlib.sha256(data).hexdigest()[:16] + '"')
+                    self.end_headers()
+                    if body:
+                        self.wfile.write(data)
+                except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                    pass  # crash-recovery scenarios terminate clients mid-response
 
             def log_message(self, *_):
                 pass
@@ -196,9 +203,11 @@ class Forge:
         if rest[:2] == ["releases", "assets"] and len(rest) == 3:
             data = self._assets.get(int(rest[2])) if rest[2].isdigit() else None
             return (200, data, "application/octet-stream") if data is not None else _missing()
-        if self._gate is not None and rest[:1] == ["releases"]:
+        gate = self._gate
+        if gate is not None and rest[:1] == ["releases"]:
             self.held.set()
-            self._gate.wait(30)
+            if not gate.wait(30):
+                return 500, b"discovery hold expired", "text/plain"
         if self.fail:
             return 503, b"fixture outage", "text/plain"
         if repository is None:

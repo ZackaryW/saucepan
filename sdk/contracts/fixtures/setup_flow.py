@@ -1,14 +1,15 @@
 """Same public SDK setup scenarios run against Python and TypeScript adapters."""
 import hashlib
-import http.server
-import json
 import os
 from pathlib import Path
 import shutil
-import threading
+import sys
 import uuid
 import zipfile
 import platform
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+from acceptance.forge import Forge  # noqa: E402  (the shared provider fixture)
 
 class SetupFlowMixin:
     def test_profiles_explanations_and_managed_lifecycle(self):
@@ -58,22 +59,15 @@ class SetupFlowMixin:
         archive = self.base/'saucepan.zip'
         with zipfile.ZipFile(archive,'w',compression=zipfile.ZIP_DEFLATED) as output:
             output.write(BINARY,BINARY.name)
-        digest = hashlib.sha256(archive.read_bytes()).hexdigest()
         target = {('Windows','AMD64'):'x86_64-pc-windows-msvc', ('Windows','ARM64'):'aarch64-pc-windows-msvc',
                   ('Linux','x86_64'):'x86_64-unknown-linux-musl', ('Darwin','arm64'):'aarch64-apple-darwin',
                   ('Darwin','x86_64'):'x86_64-apple-darwin'}[(platform.system(), platform.machine())]
-        class Handler(http.server.BaseHTTPRequestHandler):
-            def do_GET(inner):
-                tag = inner.path.rsplit('/', 1)[-1] if '/tags/' in inner.path else 'v1'
-                data = archive.read_bytes() if '/releases/assets/' in inner.path else json.dumps({
-                    'id':1,'tag_name':tag,'draft':False,'prerelease':False,'assets':[
-                        {'id':index,'name':name,'browser_download_url':base+'/asset','digest':'sha256:'+digest}
-                        for index, name in enumerate(['saucepan.zip', f'saucepan-{tag}-{target}.zip'], 1)]}).encode()
-                inner.send_response(200); inner.send_header('Content-Length',str(len(data))); inner.end_headers(); inner.wfile.write(data)
-            def log_message(*_): pass
-        server = http.server.ThreadingHTTPServer(('127.0.0.1',0),Handler)
-        base = f'http://127.0.0.1:{server.server_port}'
-        thread = threading.Thread(target=server.serve_forever,daemon=True); thread.start()
+        packaged = archive.read_bytes()
+        forge = Forge().start()
+        forge.release('fixture/sdk', 'v1', {'saucepan.zip': packaged, f'saucepan-v1-{target}.zip': packaged})
+        for tag in ('v1', 'v2'):
+            forge.release('ZackaryW/saucepan', tag, {f'saucepan-{tag}-{target}.zip': packaged})
+        base = forge.base
         try:
             setup = self.adapter(self.root,api=base)
             release = setup.call('register_source',{'type':'github_release','repo':'fixture/sdk'})['uuid']
@@ -104,4 +98,4 @@ class SetupFlowMixin:
             self.sdk.used.update(migration.used)
             self.sdk.used.update(setup.used)
         finally:
-            server.shutdown(); server.server_close(); thread.join()
+            forge.close()
