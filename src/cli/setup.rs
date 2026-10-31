@@ -1,8 +1,5 @@
 use super::{Args, Commands};
-use crate::{
-    core::{setup, source::AcquireOptions},
-    models::index::lifecycle::Phase,
-};
+use crate::{core::setup, models::index::lifecycle::Phase};
 use anyhow::{Result, ensure};
 
 #[derive(clap::Args)]
@@ -69,11 +66,7 @@ fn run_inner(args: &Args) -> Result<()> {
                     migrate_unmanaged: *migrate_unmanaged,
                     expected_sha256: expected_sha256.clone(),
                 },
-                &AcquireOptions {
-                    test_now: args.test_now,
-                    test_github_api: args.test_github_api.clone(),
-                    ..Default::default()
-                },
+                &args.acquire_options()?,
             )?;
             if result.status != Phase::Complete {
                 code = 2;

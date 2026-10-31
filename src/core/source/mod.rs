@@ -11,6 +11,7 @@ mod composition;
 pub(crate) mod credentials;
 pub(crate) mod git;
 pub(crate) mod remote;
+pub(crate) use remote::check_loopback;
 pub(crate) mod retrieve;
 
 #[derive(Debug, Clone, Default)]

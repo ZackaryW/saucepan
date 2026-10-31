@@ -51,8 +51,36 @@ struct Args {
     test_now: Option<u64>,
     #[arg(long, global = true, hide = true)]
     test_github_api: Option<String>,
+    #[arg(long, global = true, hide = true)]
+    test_github_raw: Option<String>,
+    #[arg(long, global = true, hide = true)]
+    test_git_raw: Option<String>,
+    #[arg(long, global = true, hide = true)]
+    test_gh: Option<PathBuf>,
     #[command(subcommand)]
     command: Commands,
+}
+impl Args {
+    /// Hidden fixture seams; provider URL overrides must be loopback.
+    fn acquire_options(&self) -> Result<crate::core::source::AcquireOptions> {
+        for url in [
+            &self.test_github_api,
+            &self.test_github_raw,
+            &self.test_git_raw,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            crate::core::source::check_loopback(url)?;
+        }
+        Ok(crate::core::source::AcquireOptions {
+            test_now: self.test_now,
+            test_github_api: self.test_github_api.clone(),
+            test_github_raw: self.test_github_raw.clone(),
+            test_git_raw: self.test_git_raw.clone(),
+            test_gh: self.test_gh.clone(),
+        })
+    }
 }
 #[derive(Subcommand)]
 enum Commands {
@@ -375,12 +403,8 @@ fn run_store(args: Args) -> Result<()> {
         )
     );
     let explicit_root = args.root.is_some();
+    let options = args.acquire_options()?;
     let root = root::resolve(args.root)?;
-    let options = crate::core::source::AcquireOptions {
-        test_now: args.test_now,
-        test_github_api: args.test_github_api,
-        ..Default::default()
-    };
     let mut exit_code = 0;
     let value = match args.command {
         Commands::Setup(_) | Commands::SetupStatus => unreachable!(),

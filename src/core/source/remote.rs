@@ -149,14 +149,18 @@ fn git_raw_base(host: &str, options: &AcquireOptions) -> Result<String> {
     loopback_override(options.test_git_raw.as_deref(), &format!("https://{host}"))
 }
 fn loopback_override(test: Option<&str>, default: &str) -> Result<String> {
-    let base = test.unwrap_or(default).trim_end_matches('/');
-    if test.is_some() {
-        ensure!(
-            base.starts_with("http://127.0.0.1:") || base.starts_with("http://localhost:"),
-            "test endpoint must be loopback"
-        );
+    if let Some(test) = test {
+        check_loopback(test)?;
     }
-    Ok(base.to_owned())
+    Ok(test.unwrap_or(default).trim_end_matches('/').to_owned())
+}
+/// Fixture endpoint overrides may only name a loopback HTTP listener.
+pub(crate) fn check_loopback(url: &str) -> Result<()> {
+    ensure!(
+        url.starts_with("http://127.0.0.1:") || url.starts_with("http://localhost:"),
+        Error::new(ErrorCode::InvalidRequest, "test endpoint must be loopback")
+    );
+    Ok(())
 }
 
 pub(super) fn repo_path(repo: &str) -> Result<()> {

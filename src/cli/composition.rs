@@ -106,12 +106,15 @@ fn root(args: &Args) -> Result<PathBuf> {
     super::root::require_existing(&root, args.root.is_some())?;
     Ok(root)
 }
-fn options(args: &Args) -> RetrieveOptions {
-    RetrieveOptions {
-        test_now: args.test_now,
-        test_github_api: args.test_github_api.clone(),
-        ..Default::default()
-    }
+fn options(args: &Args) -> Result<RetrieveOptions> {
+    let options = args.acquire_options()?;
+    Ok(RetrieveOptions {
+        test_now: options.test_now,
+        test_github_api: options.test_github_api,
+        test_gh: options.test_gh,
+        test_github_raw: options.test_github_raw,
+        test_git_raw: options.test_git_raw,
+    })
 }
 fn command(args: &[OsString]) -> Command {
     let mut process = Command::new(&args[0]);
@@ -195,8 +198,8 @@ fn retrieve(
         )
     );
     match store {
-        Some(store) => store.retrieve_referenced_scoped(request, catalog, scope, &options(args)),
-        None => Retriever::retrieve_referenced(request, catalog, &options(args)),
+        Some(store) => store.retrieve_referenced_scoped(request, catalog, scope, &options(args)?),
+        None => Retriever::retrieve_referenced(request, catalog, &options(args)?),
     }
 }
 fn compose(
@@ -212,13 +215,13 @@ fn compose(
             &request.acquisition,
             catalog,
             scope,
-            &options(args),
+            &options(args)?,
         ),
         None => Acquirer::compose_referenced(
             &request.retrieval,
             &request.acquisition,
             catalog,
-            &options(args),
+            &options(args)?,
         ),
     }
 }
@@ -315,7 +318,7 @@ pub(super) fn run(input: &CompositionCommand, args: &Args) -> Result<()> {
                 &request.acquisition,
                 &catalog,
                 selected.as_ref(),
-                &options(args),
+                &options(args)?,
             )?;
             serde_json::to_value(result.descriptor())?
         }

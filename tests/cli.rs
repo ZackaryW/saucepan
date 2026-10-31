@@ -256,3 +256,34 @@ fn preceding_flat_policy_store_is_unsupported_and_unchanged() {
     );
     assert_eq!(fs::read_to_string(&path).unwrap(), previous);
 }
+
+#[test]
+fn provider_test_endpoints_are_hidden_and_loopback_only() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("root");
+    native_root::create(&root).unwrap();
+    let call = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_saucepan"))
+            .arg("--root")
+            .arg(&root)
+            .args(["--error-format", "json"])
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    for flag in ["--test-github-api", "--test-github-raw", "--test-git-raw"] {
+        let output = call(&[flag, "https://example.com", "query-sources"]);
+        assert!(!output.status.success(), "{flag}");
+        assert!(output.stdout.is_empty());
+        let error: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
+        assert_eq!(error["error"]["code"], "invalid_request", "{flag}");
+        let accepted = call(&[flag, "http://127.0.0.1:9", "query-sources"]);
+        assert!(accepted.status.success(), "{flag}");
+    }
+    let help = Command::new(env!("CARGO_BIN_EXE_saucepan"))
+        .arg("--help")
+        .output()
+        .unwrap();
+    assert!(help.status.success());
+    assert!(!String::from_utf8_lossy(&help.stdout).contains("--test-"));
+}
