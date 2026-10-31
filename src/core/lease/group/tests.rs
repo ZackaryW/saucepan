@@ -450,20 +450,31 @@ fn partial_marker_inheritance_and_spawn_failure_release_all_outputs() {
         );
         assert!(result.is_err());
         assert!(available(&store, first) && available(&store, second));
+        // On macOS under full-suite load the marker lock was observed held for
+        // ~160µs after the failed launch with no process holding the file
+        // (run 41181713789): a delayed release, not a leak. Liveness may be
+        // briefly conservative, but every marker must clear on its own.
         for entry in [first, second] {
-            if store.has_live_execution(entry).unwrap() {
+            if let Some(report) = held_marker_diagnostics(&store, entry) {
                 panic!(
-                    "{entry} still live after spawn failure (partial={partial}, result={result:?})\n{}",
-                    held_marker_diagnostics(&store, entry)
+                    "{entry} still live after spawn failure (partial={partial}, result={result:?})\n{report}"
                 );
             }
         }
     }
 }
 
-/// Distinguishes a delayed release from a leaked holder: which markers remain,
-/// which processes hold them, and whether the lock clears on its own.
-fn held_marker_diagnostics(store: &Store, entry: uuid::Uuid) -> String {
+/// None once the entry's live markers release within two seconds; otherwise
+/// which markers remain and which processes hold them, to tell a leaked
+/// holder from a delayed release.
+fn held_marker_diagnostics(store: &Store, entry: uuid::Uuid) -> Option<String> {
+    let started = std::time::Instant::now();
+    while started.elapsed() < Duration::from_secs(2) {
+        if !store.has_live_execution(entry).unwrap() {
+            return None;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
     let mut report = String::new();
     let prefix = format!("live-{entry}-");
     for marker in fs::read_dir(store.root().join(".locks")).unwrap().flatten() {
@@ -479,14 +490,7 @@ fn held_marker_diagnostics(store: &Store, entry: uuid::Uuid) -> String {
             report += &format!("holders:\n{}\n", String::from_utf8_lossy(&output.stdout));
         }
     }
-    let started = std::time::Instant::now();
-    while started.elapsed() < Duration::from_secs(2) {
-        if !store.has_live_execution(entry).unwrap() {
-            return report + &format!("released after {:?}\n", started.elapsed());
-        }
-        std::thread::sleep(Duration::from_millis(50));
-    }
-    report + "still held after 2s\n"
+    Some(report + "still held after 2s\n")
 }
 
 #[test]

@@ -138,7 +138,9 @@ fn fixture_hold() {
     let base = std::path::PathBuf::from(base);
     fs::write(base.join("ready"), b"running").unwrap();
     let start = Instant::now();
-    while !base.join("release").exists() && start.elapsed() < Duration::from_secs(15) {
+    // Tests always write `release`; the cap only bounds an abandoned fixture. 15 s
+    // proved too short on loaded CI runners (run 41180783397 exited early).
+    while !base.join("release").exists() && start.elapsed() < Duration::from_secs(120) {
         std::thread::sleep(Duration::from_millis(10));
     }
     fs::write(base.join("done"), b"exited").unwrap();
