@@ -9,15 +9,29 @@ export interface UrlSource {
   type: "url";
   url: string;
 }
-export interface GitSource {
-  type: "git";
+export interface GitRepoSource {
+  type: "git_repo";
   origin: string;
+  token_file?: string;
 }
 export interface GithubSource {
-  type: "github_repo" | "github_release";
+  type: "github_repo" | "github_release" | "github_source";
   repo: string;
 }
-export type Source = LocalSource | UrlSource | GitSource | GithubSource;
+export interface GithubRawSource {
+  type: "github_raw";
+  repo: string;
+  path: string;
+}
+export interface GitRawSource {
+  type: "git_raw";
+  host: string;
+  platform: "gitlab" | "gitea";
+  repo: string;
+  path: string;
+  token_file?: string;
+}
+export type Source = LocalSource | UrlSource | GitRepoSource | GithubSource | GithubRawSource | GitRawSource;
 export interface SimpleSelector {
   type: "local" | "url" | "latest_stable";
 }
@@ -40,7 +54,7 @@ export interface Platform {
 }
 export interface SourceQuery {
   uuid?: string;
-  type?: "local" | "url" | "git" | "github_release";
+  type?: "local" | "url" | "git_repo" | "github_repo" | "github_release" | "github_raw" | "git_raw" | "github_source";
   repo?: string;
   origin?: string;
   url?: string;

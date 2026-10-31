@@ -11,15 +11,29 @@ class UrlSource(TypedDict):
     type: Literal["url"]
     url: str
 
-class GitSource(TypedDict):
-    type: Literal["git"]
+class GitRepoSource(TypedDict):
+    type: Literal["git_repo"]
     origin: str
+    token_file: NotRequired[str]
 
 class GithubSource(TypedDict):
-    type: Literal["github_repo", "github_release"]
+    type: Literal["github_repo", "github_release", "github_source"]
     repo: str
 
-type Source = LocalSource | UrlSource | GitSource | GithubSource
+class GithubRawSource(TypedDict):
+    type: Literal["github_raw"]
+    repo: str
+    path: str
+
+class GitRawSource(TypedDict):
+    type: Literal["git_raw"]
+    host: str
+    platform: Literal["gitlab", "gitea"]
+    repo: str
+    path: str
+    token_file: NotRequired[str]
+
+type Source = LocalSource | UrlSource | GitRepoSource | GithubSource | GithubRawSource | GitRawSource
 
 class SimpleSelector(TypedDict):
     type: Literal["local", "url", "latest_stable"]
@@ -44,7 +58,7 @@ class Platform(TypedDict):
 
 class SourceQuery(TypedDict, total=False):
     uuid: str
-    type: Literal["local", "url", "git", "github_release"]
+    type: Literal["local", "url", "git_repo", "github_repo", "github_release", "github_raw", "git_raw", "github_source"]
     repo: str
     origin: str
     url: str
