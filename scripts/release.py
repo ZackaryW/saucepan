@@ -23,6 +23,9 @@ TARGETS = (
     "universal-apple-darwin",
 )
 INSTALLERS = ('install.ps1', 'install.sh')
+# Verification-only second builds of the candidate (distinct build ID); never published.
+TWIN_TARGETS = ("x86_64-pc-windows-msvc", "aarch64-apple-darwin", "x86_64-unknown-linux-musl")
+TWIN_PREFIX = "verify-twin-"
 
 
 def installer_bytes(name, tag, commit):
@@ -60,8 +63,10 @@ def asset_name(tag, target):
     return f"saucepan-{tag}-{target}.zip"
 
 
-def package(tag, target, binary_dir, destination):
+def package(tag, target, binary_dir, destination, twin=False):
     validate_tag(tag)
+    if twin and target not in TWIN_TARGETS:
+        raise ValueError(f"no verification twin for target: {target}")
     suffix = ".exe" if "windows" in target else ""
     inputs = [
         (binary_dir / f"{name}{suffix}", f"{name}{suffix}", 0o755)
@@ -71,7 +76,7 @@ def package(tag, target, binary_dir, destination):
         if source.is_symlink() or not source.is_file() or source.stat().st_size == 0:
             raise ValueError(f"missing or invalid package input: {source}")
     destination.mkdir(parents=True, exist_ok=True)
-    archive = destination / asset_name(tag, target)
+    archive = destination / (f"{TWIN_PREFIX}{target}.zip" if twin else asset_name(tag, target))
     # Set Unix mode explicitly: artifact transfer and Windows builds lose it.
     with zipfile.ZipFile(archive, "x", compression=zipfile.ZIP_DEFLATED) as output:
         for source, name, mode in inputs:
@@ -91,6 +96,8 @@ def checksums(tag, directory, commit=None):
     binaries = {asset_name(tag, target) for target in TARGETS}
     expected = binaries | set(INSTALLERS) | sdk_release.verify_manifest(tag, commit, directory)
     actual = {p.name for p in directory.iterdir()}
+    if any(name.startswith(TWIN_PREFIX) for name in actual):
+        raise ValueError("verification twins must not be published")
     if actual != expected:
         raise ValueError(f"release assets differ: missing={expected - actual}, extra={actual - expected}")
     lines = []
@@ -126,6 +133,7 @@ def main():
     build.add_argument("--target", required=True, choices=TARGETS)
     build.add_argument("--binary-dir", type=Path, required=True)
     build.add_argument("--destination", type=Path, default=Path("dist"))
+    build.add_argument("--twin", action="store_true", help="package a verification twin, never published")
     check = commands.add_parser("checksums")
     check.add_argument("--directory", type=Path, default=Path("dist"))
     sdk = commands.add_parser('sdk-manifest')
@@ -140,7 +148,7 @@ def main():
         with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
             output.write(f"tag={tag}\ncommit={commit}\nprerelease={str('-' in tag).lower()}\n")
     elif args.command == "package":
-        print(package(tag, args.target, args.binary_dir, args.destination))
+        print(package(tag, args.target, args.binary_dir, args.destination, twin=args.twin))
     else:
         commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
         if os.environ.get('RELEASE_COMMIT', commit) != commit:

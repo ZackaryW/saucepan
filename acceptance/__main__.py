@@ -1,11 +1,14 @@
-"""python -m acceptance [--tag TAG ...] [--name TEXT ...] [--list]"""
+"""python -m acceptance [--tag TAG ...] [--name TEXT ...] [--list]
+                        [--artifacts DIR [--twin DIR] [--previous DIR]]"""
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 import sys
 import unittest
 
 from . import REPO, report
+from .builds import Artifacts
 from .sandbox import Run
 from .scenario import Scenario, install_run
 
@@ -41,13 +44,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--tag", action="append", default=[], help="run scenarios with this tag")
     parser.add_argument("--name", action="append", default=[], help="run scenarios whose id contains this text")
     parser.add_argument("--list", action="store_true", help="list scenarios and tags without running")
+    parser.add_argument("--artifacts", type=Path, help="test downloaded release assets instead of building")
+    parser.add_argument("--twin", type=Path, help="directory holding verify-twin-<target>.zip (artifacts mode)")
+    parser.add_argument("--previous", type=Path, help="directory holding the previous release's host archive")
     args = parser.parse_args(argv)
+    if (args.twin or args.previous) and not args.artifacts:
+        parser.error("--twin and --previous require --artifacts")
     cases = scenarios()
     if args.list:
         for case in cases:
             print(f"{case.id()}  [{', '.join(sorted(getattr(case, 'tags', ())))}]")
         return 0
-    run = Run()
+    artifacts = Artifacts(args.artifacts.resolve(), args.twin and args.twin.resolve(),
+                          args.previous and args.previous.resolve()) if args.artifacts else None
+    run = Run(artifacts=artifacts)
     run.builds.manager()  # before isolation: cargo keeps the developer's environment
     run.isolate()
     install_run(run)
@@ -60,7 +70,7 @@ def main(argv: list[str] | None = None) -> int:
     results = dict(outcomes.results)
     for case in cases:
         results.setdefault(case.id(), {"outcome": "not_selected"})
-    written = report.write(run.dir, run.id, results, run.builds.built())
+    written = report.write(run.dir, run.id, results, run.builds.built(), run.artifacts)
     print(f"report: {run.dir / 'report.json'}  {written['summary']}", file=sys.stderr)
     return 1 if written["summary"]["failed"] else 0
 

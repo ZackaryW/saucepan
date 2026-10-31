@@ -73,7 +73,7 @@ class ReleaseLifecycle(Scenario):
         self.assertEqual(boot["exit_code"], 0, boot)
         app, claim, a = boot["result"]["app"], boot["result"]["claim"], boot["result"]["candidate"]
         launcher = root / "bin" / NAME
-        self.assertTrue(self.version(launcher).endswith("+lifecycle-a"))
+        self.assertTrue(self.version(launcher).endswith("+" + build_a.build_id))
         self.assertEqual(digest(root / "store" / a / NAME), build_a.digest)
 
         # A second app shares the same output through its own shim.
@@ -87,7 +87,7 @@ class ReleaseLifecycle(Scenario):
         # Update while the old launcher is busy.
         ready, release = self.sandbox.dir / "ready", self.sandbox.dir / "release"
         running = self.hold(launcher, ready, release)
-        self.assertEqual(ready.read_text(), "lifecycle-a")
+        self.assertEqual(ready.read_text(), build_a.build_id)
         self.forge.release(SOURCE, "v2", {"saucepan.zip": build_b.archive.read_bytes()})
         through_launcher = self.sandbox.client_for(launcher)
         update = through_launcher.self_update(app, claim)
@@ -95,7 +95,7 @@ class ReleaseLifecycle(Scenario):
         self.assertEqual((update["exit_code"], update["result"]["status"]), (0, "complete"))
         self.assertNotEqual(a, b)
         self.assertEqual(digest(root / "store" / b / NAME), build_b.digest)
-        self.assertTrue(self.version(launcher).endswith("+lifecycle-b"))
+        self.assertTrue(self.version(launcher).endswith("+" + build_b.build_id))
 
         # A failing release leaves the selected claim and binding untouched.
         previous = client.inspect(app)
@@ -113,7 +113,7 @@ class ReleaseLifecycle(Scenario):
         self.assertNotEqual(rejected.returncode, 0)
         self.assertIn("no active binding", rejected.stderr)
         self.admin.activate(app, a, NAME, PROBE)
-        self.assertTrue(self.version(launcher).endswith("+lifecycle-a"))
+        self.assertTrue(self.version(launcher).endswith("+" + build_a.build_id))
 
         # Replace the busy launcher; Windows defers the swap until reconciliation.
         replacement = self.admin.replace_shim(app, NAME, build_b.shim, saucepan=True, code=2 if WINDOWS else 0)
@@ -129,7 +129,7 @@ class ReleaseLifecycle(Scenario):
         removed = through_launcher.uninstall(app)
         self.assertEqual(removed["result"]["status"], "cleanup_pending" if WINDOWS else "complete")
         self.assertIsNone(running.poll())
-        self.assertTrue(self.version(other_shim).endswith("+lifecycle-a"))
+        self.assertTrue(self.version(other_shim).endswith("+" + build_a.build_id))
         self.assertIn(a, client.reclaim()["deferred"])
         self.assertEqual(client.uninstall(other)["result"]["status"], "complete")
         self.assertIn(a, client.reclaim()["deferred"])
@@ -152,6 +152,6 @@ class ReleaseLifecycle(Scenario):
         generic = client.install_application("generic", generic_request, PROBE, str(build_b.shim),
                                              scope="acceptance/generic", shim="generic" + EXE)
         self.assertEqual(generic["result"]["status"], "complete")
-        self.assertTrue(self.version(root / "bin" / ("generic" + EXE)).endswith("+lifecycle-b"))
+        self.assertTrue(self.version(root / "bin" / ("generic" + EXE)).endswith("+" + build_b.build_id))
         self.assertEqual(client.uninstall(generic["result"]["app"])["result"]["status"], "complete")
         self.assertEqual(tree_digest(REPO / "mock"), mock_before, "historical mock changed")

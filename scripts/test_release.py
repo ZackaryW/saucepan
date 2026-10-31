@@ -38,6 +38,20 @@ class ReleasePackaging(unittest.TestCase):
             digest, name = line.split("  ")
             self.assertEqual(digest, hashlib.sha256((self.dist / name).read_bytes()).hexdigest())
 
+    def test_verification_twin_is_packaged_but_never_published(self):
+        twin = release.package(self.tag, "x86_64-unknown-linux-musl", self.binaries, self.dist, twin=True)
+        self.assertEqual(twin.name, "verify-twin-x86_64-unknown-linux-musl.zip")
+        with zipfile.ZipFile(twin) as archive:
+            self.assertEqual(sorted(archive.namelist()), ["LICENSE", "saucepan", "saucepan-shim"])
+        with self.assertRaises(ValueError):
+            release.package(self.tag, "i686-pc-windows-msvc", self.binaries, self.dist, twin=True)
+        for target in release.TARGETS:
+            release.package(self.tag, target, self.binaries, self.dist)
+        sdk_assets(self.dist, self.tag, self.commit)
+        release.installers(self.tag, self.dist, self.commit)
+        with self.assertRaisesRegex(ValueError, "twins must not be published"):
+            release.checksums(self.tag, self.dist, self.commit)
+
     def test_missing_shim_cannot_publish_a_package(self):
         (self.binaries / "saucepan-shim.exe").unlink()
         with self.assertRaises(ValueError):

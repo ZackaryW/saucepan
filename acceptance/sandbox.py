@@ -15,7 +15,7 @@ import subprocess
 import uuid
 
 from . import REPO
-from .builds import Builds
+from .builds import Artifacts, Builds
 from .forge import Forge
 from .watchdog import Watchdog
 
@@ -24,11 +24,12 @@ HOME_VARIABLES = ("HOME", "USERPROFILE", "XDG_CONFIG_HOME", "XDG_CACHE_HOME",
 
 
 class Run:
-    def __init__(self, directory: Path | None = None) -> None:
+    def __init__(self, directory: Path | None = None, artifacts: Artifacts | None = None) -> None:
         self.id = str(uuid.uuid4())
         self.dir = directory or REPO / "target" / "acceptance" / self.id
         self.home = self.dir / "home"
-        self.builds = Builds(self.dir / "builds")
+        self.artifacts = artifacts
+        self.builds = Builds(self.dir / "builds", artifacts=artifacts)
         self.watchdog = Watchdog()
         self._saved: dict[str, str | None] | None = None
 

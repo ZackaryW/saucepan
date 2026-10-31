@@ -11,7 +11,7 @@ import time
 import traceback
 import unittest
 
-from .builds import Build
+from .builds import Artifacts, Build, digest, host_target
 
 
 def launch_environment() -> str:
@@ -78,11 +78,33 @@ class Outcomes(unittest.TestResult):
         self._record(test, "failed", detail)
 
 
-def write(directory: Path, run_id: str, outcomes: dict[str, dict], builds: list[Build]) -> dict:
+def artifacts_section(artifacts: Artifacts | None) -> dict | None:
+    """Which packaged assets were tested, and which packaged targets were not."""
+    if artifacts is None:
+        return None
+    host = host_target()
+    section = {
+        "candidate": {"tag": artifacts.tag,
+                      "archives": {p.name: digest(p) for p in sorted(artifacts.candidate.glob("saucepan-*.zip"))}},
+        "verified_target": host,
+        "unverified_targets": [t for t in artifacts.packaged_targets() if t != host],
+    }
+    if artifacts.twin is not None:
+        section["twin"] = {p.name: digest(p) for p in sorted(artifacts.twin.glob("verify-twin-*.zip"))}
+    if artifacts.previous is not None:
+        archive, tag = Artifacts.archive(artifacts.previous, host)
+        section["previous"] = {"tag": tag, "archive": archive.name, "sha256": digest(archive)}
+    return section
+
+
+def write(directory: Path, run_id: str, outcomes: dict[str, dict], builds: list[Build],
+          artifacts: Artifacts | None = None) -> dict:
     report = {
         "run": run_id,
         "environment": environment(),
-        "builds": [{"label": b.label, "manager": str(b.manager), "sha256": b.digest} for b in builds],
+        "artifacts": artifacts_section(artifacts),
+        "builds": [{"label": b.label, "manager": str(b.manager), "sha256": b.digest,
+                    "build_id": b.build_id} for b in builds],
         "scenarios": outcomes,
         "summary": {state: sum(1 for o in outcomes.values() if o["outcome"] == state)
                     for state in ("passed", "failed", "skipped", "not_selected")},

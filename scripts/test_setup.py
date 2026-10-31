@@ -35,19 +35,25 @@ TARGET = {("Windows", "AMD64"): "x86_64-pc-windows-msvc",
 
 
 class SetupAcceptance(unittest.TestCase):
+    # Binaries under test and an optional directory of release installers; the
+    # acceptance harness points these at a release candidate in artifacts mode.
+    exe = EXE
+    shim = SHIM
+    installers_dir = None
+
     @classmethod
     def setUpClass(cls):
-        if not EXE.is_file() or not SHIM.is_file() or TARGET is None:
+        if not cls.exe.is_file() or not cls.shim.is_file() or TARGET is None:
             raise RuntimeError("build the host binaries with cargo build --bins first")
         archive = io.BytesIO()
         with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as output:
-            for path in (EXE, SHIM, REPO / "LICENSE"):
+            for path in (cls.exe, cls.shim, REPO / "LICENSE"):
                 output.write(path, path.name)
         cls.archive = archive.getvalue()
         shell_archive = io.BytesIO()
         with zipfile.ZipFile(shell_archive, 'w', zipfile.ZIP_DEFLATED) as output:
-            output.write(EXE, 'saucepan')
-            output.write(SHIM, 'saucepan-shim')
+            output.write(cls.exe, 'saucepan')
+            output.write(cls.shim, 'saucepan-shim')
             output.write(REPO / 'LICENSE', 'LICENSE')
         cls.shell_archive = shell_archive.getvalue()
         invalid = io.BytesIO()
@@ -71,17 +77,17 @@ class SetupAcceptance(unittest.TestCase):
         if tag == 'v0.0.0':
             legacy = io.BytesIO()
             with zipfile.ZipFile(legacy, 'w') as output:
-                output.write(SHIM, NAME)  # A real executable without the manager setup CLI.
-                output.write(SHIM, SHIM.name)
+                output.write(cls.shim, NAME)  # A real executable without the manager setup CLI.
+                output.write(cls.shim, cls.shim.name)
                 output.write(REPO / 'LICENSE', 'LICENSE')
             payload = legacy.getvalue()
         elif tag in ('v0.0.2', 'v0.0.3', 'v0.0.4'):
             malformed = io.BytesIO()
             with zipfile.ZipFile(malformed, 'w') as output:
-                output.write(EXE, NAME)
+                output.write(cls.exe, NAME)
                 with warnings.catch_warnings():
                     warnings.simplefilter('ignore', UserWarning)
-                    output.write(SHIM, NAME if tag == 'v0.0.4' else SHIM.name)
+                    output.write(cls.shim, NAME if tag == 'v0.0.4' else cls.shim.name)
                 output.write(REPO / 'LICENSE', 'LICENSE')
                 if tag != 'v0.0.4':
                     output.writestr('../escape' if tag == 'v0.0.2' else 'unexpected', b'not allowed')
@@ -100,9 +106,9 @@ class SetupAcceptance(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.forge.close()
-        evidence = {'platform': platform.platform(), 'binary': str(EXE),
-                    'binary_sha256': hashlib.sha256(EXE.read_bytes()).hexdigest(),
-                    'shim_sha256': hashlib.sha256(SHIM.read_bytes()).hexdigest(),
+        evidence = {'platform': platform.platform(), 'binary': str(cls.exe),
+                    'binary_sha256': hashlib.sha256(cls.exe.read_bytes()).hexdigest(),
+                    'shim_sha256': hashlib.sha256(cls.shim.read_bytes()).hexdigest(),
                     'requests': [r.path for r in cls.forge.requests], 'observations': cls.events}
         report = REPO / 'target/setup-acceptance.json'
         prior = json.loads(report.read_text(encoding='utf-8')) if report.exists() else {'runs': []}
@@ -116,7 +122,8 @@ class SetupAcceptance(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name) / "root space é"
 
-    def call(self, *args, code=0, executable=EXE, raw=False):
+    def call(self, *args, code=0, executable=None, raw=False):
+        executable = executable or self.exe
         result = subprocess.run([str(executable), "--root", str(self.root), "--test-github-api", self.base,
                                  *map(str, args)], capture_output=True, text=True, encoding="utf-8", timeout=120)
         self.assertEqual(result.returncode, code, (args, result.stdout, result.stderr))
@@ -132,28 +139,28 @@ class SetupAcceptance(unittest.TestCase):
     def test_missing_inspection_and_app_bound_setup_have_no_effects(self):
         self.assertEqual(self.call("setup-status")["state"], "absent")
         self.assertFalse(self.root.exists())
-        self.call("--as-app", uuid.uuid4(), "setup", SHIM, "--tag", "v0.11.0", code=1)
+        self.call("--as-app", uuid.uuid4(), "setup", self.shim, "--tag", "v0.11.0", code=1)
         self.assertFalse(self.root.exists())
 
     def test_fresh_reuse_changed_tag_and_damaged_launcher(self):
-        setup = self.call("setup", SHIM, "--tag", "v0.11.0")
+        setup = self.call("setup", self.shim, "--tag", "v0.11.0")
         self.assertEqual(setup["status"], "complete")
         self.assertEqual(self.call("setup-status")["state"], "ready")
         launcher = Path(setup["launcher_path"])
         self.assertIn("saucepan ", self.call("--version", executable=launcher, raw=True).stdout)
         requests = len(self.forge.requests)
         before = (self.root / "root.json").read_bytes()
-        reused = self.call("setup", SHIM, "--tag", "v0.11.0")
+        reused = self.call("setup", self.shim, "--tag", "v0.11.0")
         self.assertFalse(reused["changed"])
         self.assertEqual(reused["app"], setup["app"])
         self.assertEqual(requests, len(self.forge.requests))
         self.assertEqual(before, (self.root / "root.json").read_bytes())
-        mismatch = self.call("setup", SHIM, "--tag", "v0.12.0", code=1)
+        mismatch = self.call("setup", self.shim, "--tag", "v0.12.0", code=1)
         self.assertIn('self-update', mismatch.stderr)
         self.assertEqual(before, (self.root / "root.json").read_bytes())
         launcher.write_bytes(b"changed")
         self.assertEqual(self.call("setup-status")["state"], "conflict")
-        self.call("setup", SHIM, "--tag", "v0.11.0", code=1)
+        self.call("setup", self.shim, "--tag", "v0.11.0", code=1)
         self.assertEqual(launcher.read_bytes(), b"changed")
 
     def test_unmanaged_and_unsupported_roots_are_preserved(self):
@@ -161,40 +168,40 @@ class SetupAcceptance(unittest.TestCase):
         launcher = self.root / "bin" / NAME
         launcher.write_bytes(b"raw manager")
         self.assertEqual(self.call("setup-status")["state"], "unmanaged")
-        self.call("setup", SHIM, "--tag", "v0.11.0", code=1)
+        self.call("setup", self.shim, "--tag", "v0.11.0", code=1)
         self.assertEqual(launcher.read_bytes(), b"raw manager")
         self.root = Path(self.temp.name) / "unsupported"
         self.root.mkdir()
         (self.root / "existing").write_text("preserve")
-        self.call("setup", SHIM, "--tag", "v0.11.0", code=1)
+        self.call("setup", self.shim, "--tag", "v0.11.0", code=1)
         self.call("setup-status", code=1)
         self.assertEqual(list(p.name for p in self.root.iterdir()), ["existing"])
 
     def test_explicit_migration_retains_backup_and_rejects_wrong_digest(self):
         self.call("init")
         launcher = self.root / "bin" / NAME
-        shutil.copy2(EXE, launcher)
+        shutil.copy2(self.exe, launcher)
         expected = hashlib.sha256(launcher.read_bytes()).hexdigest()
-        self.call("setup", SHIM, "--tag", "v0.11.0", "--migrate-unmanaged",
+        self.call("setup", self.shim, "--tag", "v0.11.0", "--migrate-unmanaged",
                   "--expected-sha256", "0" * 64, "--operation", uuid.uuid4(), code=1)
         self.assertEqual(hashlib.sha256(launcher.read_bytes()).hexdigest(), expected)
         operation = str(uuid.uuid4())
-        result = self.call("setup", SHIM, "--tag", "v0.11.0", "--migrate-unmanaged",
+        result = self.call("setup", self.shim, "--tag", "v0.11.0", "--migrate-unmanaged",
                            "--expected-sha256", expected, "--operation", operation)
         self.assertEqual(result["status"], "complete")
         self.assertEqual(len(result["backup_paths"]), 1)
         self.assertEqual(hashlib.sha256(Path(result["backup_paths"][0]).read_bytes()).hexdigest(), expected)
         self.assertEqual(self.call("setup-status")["state"], "ready")
-        self.assertEqual(hashlib.sha256(launcher.read_bytes()).hexdigest(), hashlib.sha256(SHIM.read_bytes()).hexdigest())
+        self.assertEqual(hashlib.sha256(launcher.read_bytes()).hexdigest(), hashlib.sha256(self.shim.read_bytes()).hexdigest())
 
     def test_hardlinks_and_sidecars_are_not_migrated(self):
         self.call("init")
         launcher = self.root / "bin" / NAME
-        shutil.copy2(EXE, launcher)
+        shutil.copy2(self.exe, launcher)
         expected = hashlib.sha256(launcher.read_bytes()).hexdigest()
         alias = Path(self.temp.name) / "hardlink"
         os.link(launcher, alias)
-        args = ("setup", SHIM, "--tag", "v0.11.0", "--migrate-unmanaged",
+        args = ("setup", self.shim, "--tag", "v0.11.0", "--migrate-unmanaged",
                 "--expected-sha256", expected, "--operation", uuid.uuid4())
         self.call(*args, code=1)
         self.assertTrue(launcher.exists())
@@ -207,10 +214,10 @@ class SetupAcceptance(unittest.TestCase):
     def test_failed_migration_preserves_backup_and_new_attempt_reuses_evidence(self):
         self.call("init")
         launcher = self.root / "bin" / NAME
-        shutil.copy2(EXE, launcher)
+        shutil.copy2(self.exe, launcher)
         expected = hashlib.sha256(launcher.read_bytes()).hexdigest()
         operation = str(uuid.uuid4())
-        args = ("setup", SHIM, "--tag", "vbad", "--migrate-unmanaged",
+        args = ("setup", self.shim, "--tag", "vbad", "--migrate-unmanaged",
                 "--expected-sha256", expected, "--operation", operation)
         failed = self.call(*args, code=2)
         self.assertEqual(failed["status"], "failed")
@@ -219,7 +226,7 @@ class SetupAcceptance(unittest.TestCase):
         before = (self.root / "root.json").read_bytes()
         self.assertEqual(self.call(*args, code=2), failed)
         self.assertEqual(before, (self.root / "root.json").read_bytes())
-        good = self.call("setup", SHIM, "--tag", "v0.11.0", "--migrate-unmanaged",
+        good = self.call("setup", self.shim, "--tag", "v0.11.0", "--migrate-unmanaged",
                          "--expected-sha256", expected, "--operation", uuid.uuid4())
         self.assertEqual(good["status"], "complete")
         self.assertEqual(good["backup_paths"], failed["backup_paths"])
@@ -227,7 +234,7 @@ class SetupAcceptance(unittest.TestCase):
     def test_concurrent_setup_reuses_one_application(self):
         self.call("init")
         with ThreadPoolExecutor(max_workers=2) as pool:
-            jobs = [pool.submit(self.call, "setup", SHIM, "--tag", "v0.11.0") for _ in range(2)]
+            jobs = [pool.submit(self.call, "setup", self.shim, "--tag", "v0.11.0") for _ in range(2)]
             results = [job.result() for job in jobs]
         self.assertEqual(results[0]["app"], results[1]["app"])
         self.assertEqual(sum(result["changed"] for result in results), 1)
@@ -236,8 +243,8 @@ class SetupAcceptance(unittest.TestCase):
         self.forge.hold_discovery()
         operation = str(uuid.uuid4())
         staged = Path(self.temp.name) / ("external shim" + EXT)
-        shutil.copy2(SHIM, staged)
-        process = subprocess.Popen([str(EXE), "--root", str(self.root), "--test-github-api", self.base,
+        shutil.copy2(self.shim, staged)
+        process = subprocess.Popen([str(self.exe), "--root", str(self.root), "--test-github-api", self.base,
                                     "setup", str(staged), "--tag", "v0.11.0", "--operation", operation],
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         try:
@@ -264,7 +271,7 @@ class SetupAcceptance(unittest.TestCase):
         self.call("setup-status", code=1)
 
     def test_explicit_tag_update_changes_claim_and_binding_together(self):
-        installed = self.call("setup", SHIM, "--tag", "v0.11.0")
+        installed = self.call("setup", self.shim, "--tag", "v0.11.0")
         app, claim = installed["app"], installed["claim"]
         operation = str(uuid.uuid4())
         updated = self.call("self-update", app, claim, "--tag", "v0.12.0", "--operation", operation)
@@ -280,18 +287,19 @@ class SetupAcceptance(unittest.TestCase):
         self.assertEqual(self.call("claims", app), claims)
         self.assertEqual(self.call("setup-status")["installed_version"], "v0.12.0")
 
-    def installer(self, version='v0.11.0', code=0, extra=()):
-        artifacts = Path(self.temp.name) / 'installer artifacts'
+    def installer(self, version='v0.11.0', code=0, extra=(), base=None):
+        base = base or self.base
+        artifacts = self.installers_dir or Path(self.temp.name) / 'installer artifacts'
         if not artifacts.exists():
             tag = 'v' + release.tomllib.loads((REPO / 'Cargo.toml').read_text())['package']['version']
             release.installers(tag, artifacts, '0' * 40)  # Explicit local release fixture identity.
         if os.name == 'nt':
             command = ['powershell.exe', '-NoProfile', '-NonInteractive', '-File', str(artifacts / 'install.ps1'),
-                       '-Version', version, '-Root', str(self.root), '-TestReleaseBase', self.base + '/releases',
-                       '-TestGithubApi', self.base, *map(str, extra)]
+                       '-Version', version, '-Root', str(self.root), '-TestReleaseBase', base + '/releases',
+                       '-TestGithubApi', base, *map(str, extra)]
         else:
             command = ['sh', str(artifacts / 'install.sh'), '--version', version, '--root', str(self.root),
-                       '--test-release-base', self.base + '/releases', '--test-github-api', self.base, *map(str, extra)]
+                       '--test-release-base', base + '/releases', '--test-github-api', base, *map(str, extra)]
         result = subprocess.run(command, capture_output=True, text=True, encoding='utf-8', timeout=120)
         self.assertEqual(result.returncode, code, (command, result.stdout, result.stderr))
         if code in (0, 2):
@@ -311,7 +319,7 @@ class SetupAcceptance(unittest.TestCase):
     def test_official_installer_preserves_noncomplete_receipt(self):
         self.call('init')
         launcher = self.root / 'bin' / NAME
-        shutil.copy2(EXE, launcher)
+        shutil.copy2(self.exe, launcher)
         expected = hashlib.sha256(launcher.read_bytes()).hexdigest()
         operation = str(uuid.uuid4())
         flags = ('-MigrateUnmanaged', '-ExpectedSha256', expected, '-Operation', operation) if os.name == 'nt' else (
@@ -332,7 +340,11 @@ class SetupAcceptance(unittest.TestCase):
         env = dict(os.environ, PATH=str(mock) + os.pathsep + os.environ['PATH'])
         root = subprocess.check_output([shell, '-c', 'cygpath -u "$1"', '--', str(self.root)], text=True, encoding='utf-8').strip()
         mock_path = subprocess.check_output([shell, '-c', 'cygpath -u "$1"', '--', str(mock)], text=True, encoding='utf-8').strip()
-        args = [shell, '-c', 'PATH="$1:$PATH"; export PATH; shift; exec sh scripts/install.sh "$@"', '--', mock_path,
+        script = 'scripts/install.sh'
+        if self.installers_dir:
+            script = subprocess.check_output([shell, '-c', 'cygpath -u "$1"', '--', str(self.installers_dir / 'install.sh')],
+                                             text=True, encoding='utf-8').strip()
+        args = [shell, '-c', f'PATH="$1:$PATH"; export PATH; shift; exec sh "{script}" "$@"', '--', mock_path,
                 '--root', root, '--operation', str(uuid.uuid4()),
                 '--test-release-base', self.base + '/releases', '--test-github-api', self.base]
         bad = subprocess.run([*args, '--version', 'v0.0.1'], env=env, capture_output=True, text=True, encoding='utf-8', timeout=120)
@@ -351,7 +363,7 @@ class SetupAcceptance(unittest.TestCase):
         self.assertEqual(unsupported.returncode, 1)
         self.assertIn('Unsupported installer platform', unsupported.stderr)
         minimal = list(args)
-        minimal[2] = 'PATH="$1"; export PATH; shift; exec /usr/bin/sh scripts/install.sh "$@"'
+        minimal[2] = f'PATH="$1"; export PATH; shift; exec /usr/bin/sh "{script}" "$@"'
         missing = subprocess.run([*minimal, '--version', 'v0.11.0'], env=env, capture_output=True, text=True, encoding='utf-8', timeout=20)
         self.assertEqual(missing.returncode, 1)
         self.assertIn('Missing prerequisite: curl', missing.stderr)
@@ -361,7 +373,7 @@ class SetupAcceptance(unittest.TestCase):
     def test_busy_raw_manager_is_preserved_then_explicitly_retried(self):
         self.call("init")
         launcher = self.root / "bin" / NAME
-        shutil.copy2(EXE, launcher)
+        shutil.copy2(self.exe, launcher)
         expected = hashlib.sha256(launcher.read_bytes()).hexdigest()
         ready, release = Path(self.temp.name) / "ready", Path(self.temp.name) / "release"
         running = subprocess.Popen([str(launcher), "--root", str(self.root), "test-hold", str(ready), str(release)],
@@ -373,7 +385,7 @@ class SetupAcceptance(unittest.TestCase):
                 self.assertLess(time.monotonic(), deadline)
                 time.sleep(.01)
             operation = str(uuid.uuid4())
-            args = ("setup", SHIM, "--tag", "v0.11.0", "--migrate-unmanaged",
+            args = ("setup", self.shim, "--tag", "v0.11.0", "--migrate-unmanaged",
                     "--expected-sha256", expected, "--operation", operation)
             result = self.call(*args, code=2)
             self.assertEqual(result["status"], "preparing")
