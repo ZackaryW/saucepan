@@ -50,6 +50,23 @@ Use the output UUID returned by `acquire` for `path`. Empty policy references us
 
 Sources can be local files/directories, URLs, Git repositories, GitHub repositories, or GitHub releases. Git selectors support refs, tags and exact commits. Release selection supports platform and asset filters; a release source does not clone a repository. Remote discovery normally refreshes after 24 hours, with policies for other freshness and stale-result behavior.
 
+| Type | Fields | Fetches | Credentials |
+| --- | --- | --- | --- |
+| `git_repo` | `origin`, `token_file?` | Bare clone from any Git host, GitHub included | `token_file` only |
+| `github_repo` | `repo` | Bare clone from github.com | Borrowed from `gh` |
+| `github_release` | `repo` | One release asset through the asset API | Borrowed from `gh` |
+| `github_raw` | `repo`, `path` | One file at the resolved commit | Borrowed from `gh` |
+| `github_source` | `repo` | Source snapshot ZIP at the resolved commit, no history | Borrowed from `gh` |
+| `git_raw` | `host`, `platform` (`gitlab`/`gitea`), `repo`, `path`, `token_file?` | One file through the platform raw route | `token_file` only |
+
+```json
+{"type": "github_raw", "repo": "owner/skills", "path": "skills/review/SKILL.md"}
+{"type": "github_source", "repo": "owner/skills"}
+{"type": "git_raw", "host": "gitlab.example.com", "platform": "gitlab", "repo": "group/subgroup/project", "path": "docs/guide.md", "token_file": "~/.config/saucepan/gitlab.token"}
+```
+
+`github_*` types run `gh auth token` and proceed anonymously when `gh` is missing or logged out. `token_file` paths may start with `~`. Tokens stay in memory and are never written to records or errors; a 401 or 403 fails with `source_error` naming the provider and status. Raw types acquire one file in natural format and reject folder selection. GitLab `repo` may name nested groups. `github_source` extracts in natural format, removes the archive's generated root folder before any `folder` selection, and has documented limits: submodules are absent, LFS files stay pointer text, and symbolic links fail acquisition naming the entry.
+
 Retrieval works with original source material; acquisition copies or extracts the selected results. Cached retrieval, acquisition updates and revision history have independent policies. Inline temporary/no-store requests can run without a home, store, app or keyring.
 
 Optional profiles provide starting policies:

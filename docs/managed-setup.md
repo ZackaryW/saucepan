@@ -54,6 +54,24 @@ New setup records add a metadata kind; older binaries may reject such catalogs.
 No format or integrity conversion is performed. Use a setup-capable manager for
 roots containing these records, and a separate root for older incompatible tools.
 
+## Store contract upgrades
+
+Saucepan 0.11.0 replaces the `git` source type with `git_repo`, makes
+`github_repo` a persisted type and adds `github_raw`, `git_raw` and
+`github_source`. Stores record the `saucepan.platform-sources` contract; roots
+created by earlier releases (`nested-policy` or `flat-policy-resources`) fail
+with `unsupported_store` and are never converted in place. To upgrade a managed
+installation, move the old root aside and reinstall into a fresh root with the
+official installer:
+
+```sh
+mv ~/.saucepan ~/.saucepan.pre-0.11
+sh ./install.sh --version v0.11.0 --root ~/.saucepan --operation "$(uuidgen)"
+```
+
+Consumers must register sources with the new types in a paired release; for
+example, Powerspec moves from `{"type": "git"}` to `github_repo` or `git_repo`.
+
 ## Explicit raw-manager migration
 
 Migration supports an initialized store containing a raw manager at the exact

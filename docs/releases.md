@@ -10,7 +10,11 @@ not build or download the Rust manager.
 ## Checks and publication
 
 The current checkout targets manager/shim 0.11.0 and both SDKs 0.3.0. These
-versions are not yet published. Tag-based examples below apply after the
+versions are not yet published. 0.11.0 introduces the `saucepan.platform-sources`
+store contract: earlier roots fail with `unsupported_store`, so release notes
+must point users to [store contract upgrades](managed-setup.md#store-contract-upgrades)
+and pair the release with consumers (such as Powerspec) that register the new
+source types. Tag-based examples below apply after the
 corresponding tag exists; use a committed revision for checks before tagging.
 
 `core-platforms.yml` runs on manual dispatch or an explicit reusable-workflow

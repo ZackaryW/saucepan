@@ -73,17 +73,21 @@ Global `--root`, `--as-app`, `--credential-file` and `--error-format` options wo
 with either form. An empty JSON object is equivalent to supplying no query inputs.
 
 - `uuid`: exact registered source UUID.
-- `type`: `local`, `url`, `git`, or `github_release`.
-- `repo`: exact stored GitHub release repository string.
-- `origin`: exact stored Git origin.
+- `type`: `local`, `url`, `git_repo`, `github_repo`, `github_release`,
+  `github_raw`, `git_raw`, or `github_source`.
+- `repo`: exact stored repository string of a `github_repo`, `github_release`,
+  `github_raw`, `git_raw` or `github_source` source.
+- `origin`: exact stored `git_repo` origin.
 - `url`: exact stored URL source string.
 
 String filters are case-sensitive literal matches, 1..4096 UTF-8 bytes, without
 globs, normalization or filesystem traversal. Inapplicable or contradictory
 filters match nothing. Unknown fields/types and invalid UUIDs fail. There is no
 `scope`, `where`, claim context or arbitrary field dictionary in this query.
-`github_repo` registration normalizes to `git`; for example `Owner/Repo` is stored
-as `https://github.com/owner/repo.git` and queried using `origin`.
+GitHub repository names are lowercased at registration; for example a
+`github_repo` registered as `Owner/Repo` is stored and queried as `owner/repo`.
+`github_repo` and `git_repo` are separate types: a `git_repo` with a GitHub
+origin is queried by `origin`, never by `repo`.
 
 Results contain the observed catalogue `generation` and a `sources` array sorted
 by UUID. Each view includes `uuid`, `source` and `public_discovery`. Cached release
