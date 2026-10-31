@@ -26,6 +26,16 @@ jobs:
       commit: ${{ steps.metadata.outputs.commit }}
       prerelease: ${{ steps.metadata.outputs.prerelease }}
     steps:
+      # Manual dispatch needs an existing tag; say so instead of failing inside checkout.
+      - name: Require an existing release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" > /dev/null 2>&1; then
+            echo "::error::tag $RELEASE_TAG does not exist; create and push it first: git tag $RELEASE_TAG <commit> && git push origin $RELEASE_TAG"
+            exit 1
+          fi
       - uses: actions/checkout@v7
         with:
           ref: refs/tags/${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}

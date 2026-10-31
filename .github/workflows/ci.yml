@@ -1,11 +1,19 @@
 name: Linux checks
 
-# The only automatic checks: one Linux compile and test pass per push or pull
-# request. Windows, macOS and from-source acceptance stay in the manual
-# core-platforms workflow; releases verify their packaged artifacts instead.
+# The only automatic checks: one Linux compile and test pass per commit. Windows,
+# macOS and from-source acceptance stay in the manual core-platforms workflow;
+# releases verify their packaged artifacts instead. Tag pushes are excluded
+# because a tag names a commit that was already checked when it was pushed.
 on:
   push:
+    branches: ['**']
   pull_request:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Run the checks even if this commit already passed
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -15,8 +23,39 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Test results are cached per commit: a commit that already passed this workflow
+  # is not tested again (for example the same commit pushed to another branch).
+  # Re-running a run or dispatching with force always tests.
+  cache:
+    name: Reuse an earlier pass for this commit
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    outputs:
+      passed: ${{ steps.lookup.outputs.passed }}
+    steps:
+      - id: lookup
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ github.run_attempt != 1 || inputs.force == true }}
+        run: |
+          if [ "$FORCE" = true ]; then
+            echo "passed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          prior=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&status=success&per_page=20" \
+            --jq "[.workflow_runs[] | select(.id != $GITHUB_RUN_ID)][0].html_url // empty")
+          if [ -n "$prior" ]; then
+            echo "Commit $GITHUB_SHA already passed: $prior" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "passed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "passed=false" >> "$GITHUB_OUTPUT"
+          fi
+
   linux:
     name: Format, lint and test (Linux)
+    needs: cache
+    if: needs.cache.outputs.passed != 'true'
     runs-on: ubuntu-latest
     env:
       RUST_BACKTRACE: '1'

@@ -17,9 +17,13 @@ pair it with consumers (such as Powerspec) that register the new source types.
 Tag-based examples below apply after the corresponding tag exists; use a
 committed revision for checks before tagging.
 
-Every push and pull request runs `ci.yml`: formatting, Clippy, all-target Rust
-tests, release packaging tests and the acceptance harness self-tests, on Linux
-only. Windows and macOS checks are not automatic.
+Every branch push and pull request runs `ci.yml`: formatting, Clippy, all-target
+Rust tests, release packaging tests and the acceptance harness self-tests, on
+Linux only. Results are cached per commit: when the same commit already passed
+(for example pushed again to another branch), the test job is skipped and the
+summary links the earlier run. Re-running a run, or dispatching `ci.yml` with
+`force`, always tests. Tag pushes do not run it; the tagged commit was checked
+when it was pushed. Windows and macOS checks are not automatic.
 
 `core-platforms.yml` runs on manual dispatch or an explicit reusable-workflow
 call; the release workflow does not invoke it. It lets every platform finish
@@ -87,7 +91,8 @@ backend unavailability fails a selected test. Omitted native checks are reported
 as not requested, not verified. Windows native custody has local evidence;
 the recent macOS native-keychain failure is not resolved by making it optional.
 
-`release.yml` runs on a pushed `v*` tag or manual dispatch with an **existing** tag.
+`release.yml` runs on a pushed `v*` tag or manual dispatch with an **existing** tag;
+dispatching a tag that was never pushed fails immediately with the push command.
 The tag must equal `v` followed by the version in that tag's `Cargo.toml`, such as
 `v0.11.0` or `v0.11.0-rc.1`. Both paths check out the tag, resolve it to a commit,
 and build that same commit. Manual dispatch does not package the latest
