@@ -141,7 +141,7 @@ cargo test --locked --all-targets
 openspec validate --all --strict
 ```
 
-SDK test and package commands are in the [SDK guide](sdk/README.md#development). Optional native keyring tests require separate selection; basic-store or injected-key tests do not establish native custody. Hosted checking workflows are selected separately from releases. The original `mock/` installation is historical evidence and is not migrated by tests.
+Real-build acceptance runs with `python -m acceptance`; see [acceptance](docs/acceptance.md) for tags, reports and writing scenarios. SDK test and package commands are in the [SDK guide](sdk/README.md#development). Optional native keyring tests require separate selection; basic-store or injected-key tests do not establish native custody. Hosted checking workflows are selected separately from releases. The original `mock/` installation is historical evidence and is not migrated by tests.
 
 ## Specifications and change history
 
