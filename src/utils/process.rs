@@ -48,9 +48,22 @@ pub fn grouped(command: Command) -> CommandWrap {
 }
 
 struct Running(Box<dyn ChildWrapper>);
+impl Running {
+    /// Stop the whole group/job. On Windows the wrapper's waiting kill blocks
+    /// indefinitely on the job completion port once `try_wait` polling has
+    /// drained its notifications, so terminate the job without that wait; pipe
+    /// readers still wait for every descendant holding an output handle. Unix
+    /// keeps the waiting kill, which also reaps a child stopped at the deadline.
+    fn stop(&mut self) -> io::Result<()> {
+        #[cfg(windows)]
+        return self.0.start_kill();
+        #[cfg(not(windows))]
+        return self.0.kill();
+    }
+}
 impl Drop for Running {
     fn drop(&mut self) {
-        let _ = self.0.kill();
+        let _ = self.stop();
     }
 }
 
@@ -100,7 +113,7 @@ fn execute(mut command: Command, timeout: Duration, limit: usize) -> io::Result<
         thread::sleep(Duration::from_millis(5));
     };
     // Also stop descendants that outlive their direct parent and keep pipes open.
-    let cleanup = child.0.kill();
+    let cleanup = child.stop();
     let out = stdout
         .map(|h| {
             h.join()
