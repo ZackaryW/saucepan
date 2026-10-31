@@ -55,20 +55,20 @@ roots containing these records, and a separate root for older incompatible tools
 
 ## Store contract upgrades
 
-The release after v0.11.0 replaces the `git` source type with `git_repo`, makes
+Saucepan 0.12.0 replaces the `git` source type with `git_repo`, makes
 `github_repo` a persisted type and adds `github_raw`, `git_raw` and
 `github_source`. Stores record the `saucepan.platform-sources` contract; roots
 created by earlier releases (`nested-policy` or `flat-policy-resources`) fail
 with `unsupported_store` and are never converted in place. To upgrade a managed
 installation, move the old root aside and reinstall into a fresh root with that
-release's official installer (`vX.Y.Z` is the new release tag):
+release's official installer:
 
 ```sh
 mv ~/.saucepan ~/.saucepan.pre-upgrade
-sh ./install.sh --version vX.Y.Z --root ~/.saucepan --operation "$(uuidgen)"
+sh ./install.sh --version v0.12.0 --root ~/.saucepan --operation "$(uuidgen)"
 ```
 
-A v0.11.0 installation that runs `self-update` to that release completes the
+A v0.11.0 installation that runs `self-update` to 0.12.0 completes the
 update (its probe only runs `--version`) and then fails every store command with
 this guidance until the root is moved aside and reinstalled; release
 verification asserts exactly this.
