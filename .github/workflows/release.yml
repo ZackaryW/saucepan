@@ -215,6 +215,12 @@ jobs:
           fail_on_unmatched_files: true
           overwrite_files: false
           generate_release_notes: true
+      # Verification jobs are read-only and cannot read drafts, so prove here that
+      # the draft holds exactly the staged bytes they will test.
+      - name: Confirm the draft matches the staged set
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python -B scripts/verify_release.py check-draft
 
   # Verify: each host runs acceptance against the draft's own archive, without a
   # compiler. One failure cancels the others; any failure revokes the candidate.
@@ -249,12 +255,17 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
+      # The staged set, which stage confirmed is byte-identical to the draft.
+      - uses: actions/download-artifact@v8
+        with:
+          name: staged-release
+          path: dist
       - uses: actions/download-artifact@v8
         with:
           name: verify-twin-${{ matrix.target }}
           path: twin
       # Commands are identical under PowerShell and bash; the logic lives in Python.
-      - name: Download the draft and the previous release; check SHA256SUMS
+      - name: Check SHA256SUMS and download the previous release
         run: python -B scripts/verify_release.py fetch
       - name: Acceptance against the packaged candidate
         run: python -B scripts/verify_release.py run

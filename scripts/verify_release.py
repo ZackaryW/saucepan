@@ -1,6 +1,7 @@
 """Release-gate helpers for the release workflow; identical under PowerShell and bash.
 
-fetch      download the draft candidate, check SHA256SUMS, fetch the previous release's host archive
+check-draft confirm the draft's assets are byte-identical to the staged set (stage job only)
+fetch      check the staged candidate against SHA256SUMS and fetch the previous release's host archive
 run        run artifacts-mode acceptance, keep its report and write the job summary
 summarize  write the revoke summary from every uploaded report and the failed jobs
 
@@ -54,9 +55,9 @@ def previous_release(repo: str, tag: str) -> str | None:
 def fetch(args) -> None:
     tag, repo, target = os.environ["RELEASE_TAG"], os.environ["GITHUB_REPOSITORY"], os.environ["RELEASE_TARGET"]
     dist, previous = Path(args.dist), Path(args.previous)
-    dist.mkdir(parents=True, exist_ok=True)
     previous.mkdir(parents=True, exist_ok=True)
-    gh("release", "download", tag, "--repo", repo, "--dir", str(dist))
+    # The staged-release artifact; stage confirmed it is byte-identical to the draft.
+    # Drafts are only readable with write access, which verification jobs do not get.
     listed = checksums(dist)
     host = f"saucepan-{tag}-{target}.zip"
     if host not in listed or not (dist / host).is_file():
@@ -72,6 +73,23 @@ def fetch(args) -> None:
         print(f"previous release {prior}")
     except subprocess.CalledProcessError:
         print(f"previous release {prior} has no {target} archive; release_upgrade will be skipped")
+
+
+def check_draft(args) -> None:
+    tag, repo = os.environ["RELEASE_TAG"], os.environ["GITHUB_REPOSITORY"]
+    dist, draft = Path(args.dist), Path(args.draft)
+    draft.mkdir(parents=True, exist_ok=True)
+    gh("release", "download", tag, "--repo", repo, "--dir", str(draft))
+
+    def digests(directory: Path) -> dict[str, str]:
+        return {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in directory.iterdir() if p.is_file()}
+
+    staged, published = digests(dist), digests(draft)
+    if staged != published:
+        raise SystemExit(f"draft differs from the staged set: staged-only={sorted(set(staged) - set(published))}, "
+                         f"draft-only={sorted(set(published) - set(staged))}, "
+                         f"changed={sorted(n for n in staged.keys() & published.keys() if staged[n] != published[n])}")
+    print(f"draft {tag}: {len(published)} assets byte-identical to the staged set")
 
 
 def summary(text: str) -> None:
@@ -157,8 +175,11 @@ def main() -> None:
         command.add_argument("--previous", default="previous")
         command.add_argument("--reports", default="reports")
     commands.add_parser("summarize").add_argument("--reports", default="reports")
+    draft = commands.add_parser("check-draft")
+    draft.add_argument("--dist", default="dist")
+    draft.add_argument("--draft", default="draft")
     args = parser.parse_args()
-    {"fetch": fetch, "run": run, "summarize": summarize}[args.command](args)
+    {"fetch": fetch, "run": run, "summarize": summarize, "check-draft": check_draft}[args.command](args)
 
 
 if __name__ == "__main__":
