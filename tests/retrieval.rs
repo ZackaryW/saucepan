@@ -190,7 +190,7 @@ fn release_retrieval_selects_original_asset_and_checks_upstream_digest() {
     let digest = saucepan::utils::tree::digest(&b"payload"[..]).unwrap();
     let expected = digest.clone();
     let server = support::Server::new(move |path, base| {
-        if path.starts_with("/repos/") {
+        if path.starts_with("/repos/") && !path.contains("/releases/assets/") {
             (200, serde_json::json!({"id":1,"tag_name":"v1","draft":false,"prerelease":false,"assets":[{"id":2,"name":"tool.zip","browser_download_url":format!("{base}/asset"),"digest":format!("sha256:{digest}")}]}).to_string().into_bytes())
         } else {
             (200, b"payload".to_vec())
@@ -214,6 +214,7 @@ fn release_retrieval_selects_original_asset_and_checks_upstream_digest() {
         &RetrieveOptions {
             test_github_api: Some(server.base.clone()),
             test_now: Some(100),
+            ..Default::default()
         },
     )
     .unwrap();
@@ -257,7 +258,8 @@ fn git_retrieval_is_a_fresh_repository_with_exact_provenance() {
     git(&origin, &["commit", "-m", "first"]);
     let first_commit = git(&origin, &["rev-parse", "HEAD"]);
     let mut req = request(
-        Source::Git {
+        Source::GitRepo {
+            token_file: None,
             origin: origin.to_str().unwrap().into(),
         },
         Selector::Ref {
@@ -309,7 +311,8 @@ fn managed_git_cache_only_reads_survive_missing_origin_and_purge_keeps_objects()
     git(&origin, &["commit", "-m", "fixture"]);
     let store = Store::create(&root.path().join("root")).unwrap();
     let source = store
-        .register_source(Source::Git {
+        .register_source(Source::GitRepo {
+            token_file: None,
             origin: origin.to_str().unwrap().into(),
         })
         .unwrap();

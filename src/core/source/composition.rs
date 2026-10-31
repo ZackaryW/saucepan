@@ -2,6 +2,7 @@
 use super::{AcquireOptions, Prepared};
 use crate::{
     core::{Store, retrieval::RetrieveOptions, store::composition},
+    error::{Error, ErrorCode},
     models::{
         policy::PayloadVerification,
         retrieval::{AssetSelection, CachePolicy, RetrievalPlan, SourceInput},
@@ -51,6 +52,9 @@ impl Store {
             &RetrieveOptions {
                 test_now: options.test_now,
                 test_github_api: options.test_github_api.clone(),
+                test_gh: options.test_gh.clone(),
+                test_github_raw: options.test_github_raw.clone(),
+                test_git_raw: options.test_git_raw.clone(),
             },
             Some(exact),
         )?;
@@ -78,6 +82,9 @@ impl Store {
             &RetrieveOptions {
                 test_now: options.test_now,
                 test_github_api: options.test_github_api.clone(),
+                test_gh: options.test_gh.clone(),
+                test_github_raw: options.test_github_raw.clone(),
+                test_git_raw: options.test_git_raw.clone(),
             },
         )?;
         composition::prepare(&retrieved, &acquired, Some(&self.root.join(".staging")))
@@ -90,9 +97,19 @@ impl Store {
     ) -> Result<(RetrievalPlan, AcquisitionPlan)> {
         let source = self.source(request.source_uuid)?;
         match &source.source {
-            Source::Local { .. } | Source::Git { .. } | Source::GithubRepo { .. } => ensure!(
+            Source::Local { .. }
+            | Source::GitRepo { .. }
+            | Source::GithubRepo { .. }
+            | Source::GithubSource { .. } => ensure!(
                 request.selection.format == Format::Natural,
                 "local/Git sources require natural format"
+            ),
+            Source::GithubRaw { .. } | Source::GitRaw { .. } => ensure!(
+                request.selection.format == Format::Natural && request.selection.folder.is_none(),
+                Error::new(
+                    ErrorCode::InvalidRequest,
+                    "raw file sources require natural format without folder selection"
+                )
             ),
             Source::Url { .. } | Source::GithubRelease { .. } => ensure!(
                 matches!(request.selection.format, Format::Raw | Format::Zip),

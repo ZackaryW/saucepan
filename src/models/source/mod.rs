@@ -6,11 +6,49 @@ use uuid::Uuid;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Source {
-    Local { path: PathBuf },
-    Url { url: String },
-    GithubRelease { repo: String },
-    GithubRepo { repo: String },
-    Git { origin: String },
+    Local {
+        path: PathBuf,
+    },
+    Url {
+        url: String,
+    },
+    GithubRelease {
+        repo: String,
+    },
+    /// Cloned with the token borrowed from `gh`.
+    GithubRepo {
+        repo: String,
+    },
+    /// One file at a commit, downloaded from GitHub's raw endpoint.
+    GithubRaw {
+        repo: String,
+        path: String,
+    },
+    /// Source snapshot ZIP of one commit, without history.
+    GithubSource {
+        repo: String,
+    },
+    /// Plain Git from any host; never consults `gh`.
+    GitRepo {
+        origin: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        token_file: Option<String>,
+    },
+    /// One file through a GitLab or Gitea raw-file route.
+    GitRaw {
+        host: String,
+        platform: GitPlatform,
+        repo: String,
+        path: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        token_file: Option<String>,
+    },
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GitPlatform {
+    Gitlab,
+    Gitea,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

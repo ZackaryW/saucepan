@@ -13,8 +13,27 @@ pub struct Server {
     stop: Arc<AtomicBool>,
     thread: Option<thread::JoinHandle<()>>,
 }
+/// Reply with extra response headers, for redirects.
+pub struct Reply {
+    pub status: u16,
+    pub body: Vec<u8>,
+    pub headers: Vec<(String, String)>,
+}
 impl Server {
+    #[allow(dead_code)]
     pub fn new(handler: impl Fn(&str, &str) -> (u16, Vec<u8>) + Send + 'static) -> Self {
+        Self::with_head(move |head, base| {
+            let path = head.split_whitespace().nth(1).unwrap_or("/");
+            let (status, body) = handler(path, base);
+            Reply {
+                status,
+                body,
+                headers: Vec::new(),
+            }
+        })
+    }
+    /// The handler receives the full request head (request line and headers).
+    pub fn with_head(handler: impl Fn(&str, &str) -> Reply + Send + 'static) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
@@ -42,10 +61,17 @@ impl Server {
                             }
                         }
                         let text = String::from_utf8_lossy(&data);
-                        let path = text.split_whitespace().nth(1).unwrap_or("/");
-                        let (status, body) = handler(path, &address);
+                        let Reply {
+                            status,
+                            body,
+                            headers,
+                        } = handler(&text, &address);
+                        let extra: String = headers
+                            .iter()
+                            .map(|(name, value)| format!("{name}: {value}\r\n"))
+                            .collect();
                         let header = format!(
-                            "HTTP/1.1 {status} fixture\r\nContent-Length: {}\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n",
+                            "HTTP/1.1 {status} fixture\r\nContent-Length: {}\r\nContent-Type: application/json\r\n{extra}Connection: close\r\n\r\n",
                             body.len()
                         );
                         let _ = stream.write_all(header.as_bytes());

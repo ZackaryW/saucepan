@@ -129,7 +129,7 @@ fn platform_asset_retrieval_does_not_extend_shared_discovery_freshness() {
     let discoveries = Arc::new(AtomicUsize::new(0));
     let count = discoveries.clone();
     let server = support::Server::new(move |path, base| {
-        if path.starts_with("/repos/") {
+        if path.starts_with("/repos/") && !path.contains("/releases/assets/") {
             count.fetch_add(1, Ordering::SeqCst);
             (200, serde_json::json!({"id":1,"tag_name":"v1","draft":false,"prerelease":false,"assets":[{"id":2,"name":"windows.zip","browser_download_url":format!("{base}/windows"),"digest":null},{"id":3,"name":"linux.zip","browser_download_url":format!("{base}/linux"),"digest":null}]}).to_string().into_bytes())
         } else {
@@ -149,6 +149,7 @@ fn platform_asset_retrieval_does_not_extend_shared_discovery_freshness() {
     let mut options = RetrieveOptions {
         test_now: Some(100),
         test_github_api: Some(server.base.clone()),
+        ..Default::default()
     };
     drop(store.retrieve_with(&req, &options).unwrap());
     options.test_now = Some(150);

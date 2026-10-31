@@ -55,8 +55,12 @@ impl Retriever {
                 (Source::Local { .. }, Resolved::Local)
                     | (Source::Url { .. }, Resolved::Url { .. })
                     | (Source::GithubRelease { .. }, Resolved::Release { .. })
+                    | (Source::GitRaw { .. }, Resolved::Url { .. })
                     | (
-                        Source::Git { .. } | Source::GithubRepo { .. },
+                        Source::GitRepo { .. }
+                            | Source::GithubRepo { .. }
+                            | Source::GithubRaw { .. }
+                            | Source::GithubSource { .. },
                         Resolved::Git { .. }
                     )
             ),
@@ -102,7 +106,7 @@ impl Retriever {
                     bare && metadata.is_dir(),
                     "caller Git representation must be a bare repository"
                 );
-                let Source::Git { origin } = git::normalize(source.clone())? else {
+                let Some(origin) = git::repository_origin(source)? else {
                     anyhow::bail!("Git source mismatch")
                 };
                 let Resolved::Git { commit } = &descriptor.resolved else {
@@ -139,8 +143,7 @@ impl Retriever {
             }
             MaterialKind::File => {
                 ensure!(
-                    metadata.is_file()
-                        && !matches!(source, Source::Git { .. } | Source::GithubRepo { .. }),
+                    metadata.is_file() && !git::is_repository(source),
                     "file source mismatch"
                 );
                 ensure!(

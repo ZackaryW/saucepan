@@ -212,13 +212,8 @@ fn direct_filters_match_saved_and_native_queries_without_application_registratio
             json!({"type":"github_release","repo":"owner/repo"}),
         ),
         (
-            vec![
-                "--type",
-                "git",
-                "--origin",
-                "https://github.com/owner/repo.git",
-            ],
-            json!({"type":"git","origin":"https://github.com/owner/repo.git"}),
+            vec!["--type", "github_repo", "--repo", "owner/repo"],
+            json!({"type":"github_repo","repo":"owner/repo"}),
         ),
         (
             vec![
@@ -230,9 +225,10 @@ fn direct_filters_match_saved_and_native_queries_without_application_registratio
             json!({"type":"url","url":"https://example.invalid/archive.zip"}),
         ),
         (
-            vec!["--type", "git", "--repo", "owner/repo"],
-            json!({"type":"git","repo":"owner/repo"}),
+            vec!["--type", "git_repo", "--repo", "owner/repo"],
+            json!({"type":"git_repo","repo":"owner/repo"}),
         ),
+        (vec!["--repo", "owner/repo"], json!({"repo":"owner/repo"})),
         (vec!["--repo", "Owner/repo"], json!({"repo":"Owner/repo"})),
         (vec!["--repo", "owner/*"], json!({"repo":"owner/*"})),
     ];
@@ -272,10 +268,10 @@ fn direct_filters_match_saved_and_native_queries_without_application_registratio
 
     for invalid in [
         vec!["--type", "github-release"],
-        vec!["--type", "github_repo"],
+        vec!["--type", "git"],
         vec!["--uuid", "bad"],
         vec!["--repo", ""],
-        vec!["--type", "git", "--type", "git"],
+        vec!["--type", "git_repo", "--type", "git_repo"],
         vec!["--repo", "a", "--repo", "b"],
         vec!["--scope", "default"],
     ] {

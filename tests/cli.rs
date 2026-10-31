@@ -223,3 +223,36 @@ fn documented_initialization_and_registration_use_only_explicit_root() {
     );
     assert!(!temp.path().join(".saucepan").exists());
 }
+
+#[test]
+fn preceding_flat_policy_store_is_unsupported_and_unchanged() {
+    use serde_json::Value;
+    use std::fs;
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("root");
+    drop(native_root::create(&root).unwrap());
+    let path = root.join("root.json");
+    let current = fs::read_to_string(&path).unwrap();
+    assert!(current.contains("saucepan.platform-sources"));
+    let previous = current.replace(
+        "saucepan.platform-sources",
+        "saucepan.flat-policy-resources",
+    );
+    fs::write(&path, &previous).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_saucepan"))
+        .arg("--root")
+        .arg(&root)
+        .args(["--error-format", "json", "query-sources"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let error: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(error["error"]["code"], "unsupported_store");
+    assert!(
+        error["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("fresh root")
+    );
+    assert_eq!(fs::read_to_string(&path).unwrap(), previous);
+}

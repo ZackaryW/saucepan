@@ -69,6 +69,9 @@ impl Store {
         let options = AcquireOptions {
             test_now: options.test_now,
             test_github_api: options.test_github_api.clone(),
+            test_gh: options.test_gh.clone(),
+            test_github_raw: options.test_github_raw.clone(),
+            test_git_raw: options.test_git_raw.clone(),
         };
         let now = options.now()?;
         let lock_path = self.root.join(format!(".locks/source-{}", source.uuid));
@@ -186,10 +189,7 @@ impl Store {
         let scratch = tempfile::tempdir()?;
         let source_work = beneath(&self.root, &format!("source/{}", source.uuid))?;
         fs::create_dir_all(&source_work)?;
-        let is_git = matches!(
-            source.source,
-            Source::Git { .. } | Source::GithubRepo { .. }
-        );
+        let is_git = crate::core::source::git::is_repository(&source.source);
         let discovery_key = serde_json::to_string(&request.selector)?;
         let now = options.now()?;
         let cached_discovery = source

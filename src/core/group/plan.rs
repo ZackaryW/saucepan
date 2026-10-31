@@ -105,7 +105,7 @@ impl Store {
                     || !matches!(
                         self.source(request.source_uuid)?.source,
                         crate::models::source::Source::Local { .. }
-                            | crate::models::source::Source::Git { .. }
+                            | crate::models::source::Source::GitRepo { .. }
                             | crate::models::source::Source::GithubRepo { .. }
                     )
                 {

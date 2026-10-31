@@ -144,10 +144,7 @@ fn source_filters_find_unclaimed_metadata_without_payload_or_refresh() {
             json!({"type":"github_release","repo":"owner/project"}),
             release.uuid,
         ),
-        (
-            json!({"type":"git","origin":"https://github.com/owner/repo.git"}),
-            git.uuid,
-        ),
+        (json!({"type":"github_repo","repo":"owner/repo"}), git.uuid),
         (
             json!({"type":"url","url":"http://127.0.0.1:1/unreachable"}),
             url.uuid,
@@ -182,6 +179,39 @@ fn source_filters_find_unclaimed_metadata_without_payload_or_refresh() {
 }
 
 #[test]
+fn repository_filter_spans_github_types() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = Store::create_fixture(&tmp.path().join("root")).unwrap();
+    let repo = store
+        .register_source(Source::GithubRepo {
+            repo: "owner/project".into(),
+        })
+        .unwrap();
+    let snapshot = store
+        .register_source(Source::GithubSource {
+            repo: "owner/project".into(),
+        })
+        .unwrap();
+    store
+        .register_source(Source::GitRepo {
+            origin: "https://example.invalid/owner/project".into(),
+            token_file: None,
+        })
+        .unwrap();
+    let mut expected = vec![repo.uuid, snapshot.uuid];
+    expected.sort();
+    let app = store.register_app("simple".into()).unwrap();
+    let session = store.session(app.uuid, None).unwrap();
+    let found = session
+        .query_sources(&query(json!({"repo":"owner/project"})))
+        .unwrap();
+    assert_eq!(
+        found.sources.iter().map(|s| s.uuid).collect::<Vec<_>>(),
+        expected
+    );
+}
+
+#[test]
 fn source_filters_are_strict_even_with_empty_catalogue() {
     let tmp = tempfile::tempdir().unwrap();
     let store = Store::create_fixture(&tmp.path().join("root")).unwrap();
@@ -189,7 +219,7 @@ fn source_filters_are_strict_even_with_empty_catalogue() {
         json!({"scope":"default"}),
         json!({"where":[]}),
         json!({"uuid":"bad"}),
-        json!({"type":"github_repo"}),
+        json!({"type":"git"}),
         json!({"type":"unknown"}),
         json!({"repo":false}),
     ] {

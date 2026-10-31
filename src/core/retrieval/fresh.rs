@@ -28,6 +28,11 @@ pub struct Retriever;
 pub struct RetrieveOptions {
     pub test_now: Option<u64>,
     pub test_github_api: Option<String>,
+    /// Fake `gh` executable; without it, fixture endpoints never call `gh`.
+    pub test_gh: Option<std::path::PathBuf>,
+    pub test_github_raw: Option<String>,
+    /// Replaces `https://{host}` for `git_raw`; loopback only.
+    pub test_git_raw: Option<String>,
 }
 impl Retriever {
     pub(crate) fn retrieve_planned_with(
@@ -55,6 +60,9 @@ impl Retriever {
         let options = AcquireOptions {
             test_now: options.test_now,
             test_github_api: options.test_github_api.clone(),
+            test_gh: options.test_gh.clone(),
+            test_github_raw: options.test_github_raw.clone(),
+            test_git_raw: options.test_git_raw.clone(),
         };
         validate_retrieval(request)?;
         let SourceInput::Inline { source } = &request.source else {
@@ -168,10 +176,10 @@ fn destination_path(source: &Source, destination: &Path) -> Result<PathBuf> {
     // Resolve the parent before effects and reject capture into the local input.
     match source {
         Source::Local { path } => Ok(disjoint_destination(path, destination)?),
-        Source::Git { origin } if Path::new(origin).exists() => {
+        Source::GitRepo { origin, .. } if Path::new(origin).exists() => {
             Ok(disjoint_destination(Path::new(origin), destination)?)
         }
-        Source::Git { origin } if origin.starts_with("file:") => {
+        Source::GitRepo { origin, .. } if origin.starts_with("file:") => {
             let path = url::Url::parse(origin)?
                 .to_file_path()
                 .map_err(|_| Error::new(ErrorCode::InvalidRequest, "invalid Git file origin"))?;

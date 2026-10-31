@@ -445,7 +445,8 @@ fn compatible_git_members_select_one_commit_while_manual_members_keep_their_revi
     git(&origin, &["commit", "-m", "one"]);
     let first_commit = git(&origin, &["rev-parse", "HEAD"]);
     let source = store
-        .register_source(Source::Git {
+        .register_source(Source::GitRepo {
+            token_file: None,
             origin: origin.to_str().unwrap().into(),
         })
         .unwrap();

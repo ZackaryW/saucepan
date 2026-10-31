@@ -275,3 +275,24 @@ fn offline_export_requires_hydrated_dependencies_and_never_repairs_them() {
     );
     assert!(!object.exists());
 }
+
+#[test]
+fn authenticated_clone_keeps_token_out_of_repository_config() {
+    use saucepan::utils::source::git::HttpAuth;
+    let tmp = tempfile::tempdir().unwrap();
+    let origin = tmp.path().join("origin");
+    fs::create_dir(&origin).unwrap();
+    git(&origin, &["init", "-b", "main"]);
+    fs::write(origin.join("file"), b"one").unwrap();
+    git(&origin, &["add", "."]);
+    git(&origin, &["commit", "-m", "one"]);
+    let utility = Git {
+        auth: Some(HttpAuth::basic("https://example.com/a.git", "oauth2", "glpat-secret").unwrap()),
+        ..Git::default()
+    };
+    let repo = tmp.path().join("repo");
+    utility.repository(origin.to_str().unwrap(), &repo).unwrap();
+    utility.resolve(&repo, "main", false).unwrap();
+    let config = fs::read_to_string(repo.join("config")).unwrap();
+    assert!(!config.contains("glpat-secret") && !config.contains("extraHeader"));
+}

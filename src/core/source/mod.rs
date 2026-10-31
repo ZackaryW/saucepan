@@ -8,6 +8,7 @@ use crate::{
 use anyhow::Result;
 use std::collections::BTreeMap;
 mod composition;
+pub(crate) mod credentials;
 pub(crate) mod git;
 pub(crate) mod remote;
 pub(crate) mod retrieve;
@@ -16,8 +17,18 @@ pub(crate) mod retrieve;
 pub struct AcquireOptions {
     pub test_now: Option<u64>,
     pub test_github_api: Option<String>,
+    /// Fake `gh` executable; without it, fixture endpoints never call `gh`.
+    pub test_gh: Option<std::path::PathBuf>,
+    pub test_github_raw: Option<String>,
+    /// Replaces `https://{host}` for `git_raw`; loopback only.
+    pub test_git_raw: Option<String>,
 }
 impl AcquireOptions {
+    pub(crate) fn uses_test_endpoints(&self) -> bool {
+        self.test_github_api.is_some()
+            || self.test_github_raw.is_some()
+            || self.test_git_raw.is_some()
+    }
     pub(crate) fn now(&self) -> Result<u64> {
         Ok(self.test_now.unwrap_or(
             std::time::SystemTime::now()

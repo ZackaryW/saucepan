@@ -56,7 +56,8 @@ fn one_repository_supplies_two_independent_offline_subpaths() {
     git(&origin, &["add", "."]);
     git(&origin, &["commit", "-m", "fixture"]);
     let source = retrieve(&request(
-        Source::Git {
+        Source::GitRepo {
+            token_file: None,
             origin: origin.to_str().unwrap().into(),
         },
         Selector::Ref {

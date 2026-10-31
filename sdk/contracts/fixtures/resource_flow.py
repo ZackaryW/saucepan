@@ -184,7 +184,7 @@ class ResourceFlow(SetupFlowMixin, unittest.TestCase):
         (repo / 'one/tool.txt').write_text('A')
         git('add', '.')
         git('commit', '-m', 'A')
-        source = self.call('register_source', {'type': 'git', 'origin': str(repo)})
+        source = self.call('register_source', {'type': 'git_repo', 'origin': str(repo)})
         self.call('adopt_source_policies', source['uuid'], source['policy_revision'], [self.refresh_policy])
         request = {'source': {'kind': 'registered', 'source_uuid': source['uuid']}, 'selector': {'type': 'ref', 'reference': 'HEAD'}}
         receipt = self.call('retrieve', request)

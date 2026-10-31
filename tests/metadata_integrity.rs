@@ -417,7 +417,7 @@ fn store_initialization_retry_reuses_reserved_identity_after_key_service_failure
     fs::write(
         root.join(".staging/initializing.json"),
         serde_json::to_vec(
-            &json!({"contract":"saucepan.flat-policy-resources","store":reserved,"mode":"keyring"}),
+            &json!({"contract":"saucepan.platform-sources","store":reserved,"mode":"keyring"}),
         )
         .unwrap(),
     )
@@ -509,7 +509,7 @@ fn earlier_policy_roots_and_initialization_are_rejected_before_custody_or_writes
         saucepan::core::Store::create_with_integrity_and_keys(temp.path(), mode, &keys).unwrap();
         let metadata = Metadata::open(temp.path(), &keys).unwrap();
         let mut catalog = metadata.snapshot().unwrap().catalog;
-        assert_eq!(catalog.contract, "saucepan.flat-policy-resources");
+        assert_eq!(catalog.contract, "saucepan.platform-sources");
         catalog.contract = "saucepan.claim-registry".into();
         let bytes = metadata
             .authenticator()
@@ -569,7 +569,7 @@ fn basic_initialization_open_and_recovery_never_access_custody() {
     fs::write(
         fresh.path().join(".staging/initializing.json"),
         serde_json::to_vec(
-            &json!({"contract":"saucepan.flat-policy-resources","store":reserved,"mode":"basic"}),
+            &json!({"contract":"saucepan.platform-sources","store":reserved,"mode":"basic"}),
         )
         .unwrap(),
     )

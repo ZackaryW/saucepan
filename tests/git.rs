@@ -41,12 +41,14 @@ fn shared_source_tracked_and_pinned_outputs_with_cli_parity() {
     let first = git(&input, &["rev-parse", "HEAD"]);
     let store = native_root::create(&tmp.path().join("root")).unwrap();
     let source = store
-        .register_source(Source::Git {
+        .register_source(Source::GitRepo {
+            token_file: None,
             origin: input.to_str().unwrap().into(),
         })
         .unwrap();
     let alias = store
-        .register_source(Source::Git {
+        .register_source(Source::GitRepo {
+            token_file: None,
             origin: url::Url::from_file_path(&input).unwrap().into(),
         })
         .unwrap();
@@ -57,9 +59,17 @@ fn shared_source_tracked_and_pinned_outputs_with_cli_parity() {
         })
         .unwrap();
     assert_eq!(
+        github.source,
+        Source::GithubRepo {
+            repo: "owner/project".into()
+        }
+    );
+    // github_repo authenticates through gh, so it is never merged into git_repo.
+    assert_ne!(
         github.uuid,
         store
-            .register_source(Source::Git {
+            .register_source(Source::GitRepo {
+                token_file: None,
                 origin: "https://github.com/owner/project.git".into()
             })
             .unwrap()
@@ -140,4 +150,92 @@ fn shared_source_tracked_and_pinned_outputs_with_cli_parity() {
     let stale = store.acquire_with(&request, &opts).unwrap();
     assert!(stale.stale);
     assert_eq!(stale.entry.uuid, b.entry.uuid);
+}
+
+mod support;
+
+#[test]
+fn git_repo_token_file_sends_basic_header_and_never_calls_gh() {
+    use saucepan::error::{Error, ErrorCode};
+    use std::sync::{Arc, Mutex};
+    let seen = Arc::new(Mutex::new(Vec::<String>::new()));
+    let log = seen.clone();
+    let server = support::Server::with_head(move |head, _| {
+        if let Some(value) = head.lines().find_map(|line| {
+            let (key, value) = line.split_once(':')?;
+            key.eq_ignore_ascii_case("authorization")
+                .then(|| value.trim().to_owned())
+        }) {
+            log.lock().unwrap().push(value);
+        }
+        support::Reply {
+            status: 401,
+            body: Vec::new(),
+            headers: vec![("WWW-Authenticate".into(), "Basic realm=\"fixture\"".into())],
+        }
+    });
+    let tmp = tempfile::tempdir().unwrap();
+    let token = tmp.path().join("token");
+    fs::write(&token, "glpat-fixture\n").unwrap();
+    let marker = tmp.path().join("gh-called");
+    #[cfg(windows)]
+    let gh = {
+        let path = tmp.path().join("gh.cmd");
+        fs::write(
+            &path,
+            format!(
+                "@echo off\r\necho x> \"{}\"\r\necho gho\r\n",
+                marker.display()
+            ),
+        )
+        .unwrap();
+        path
+    };
+    #[cfg(not(windows))]
+    let gh = {
+        use std::os::unix::fs::PermissionsExt;
+        let path = tmp.path().join("gh");
+        fs::write(
+            &path,
+            format!("#!/bin/sh\ntouch '{}'\necho gho\n", marker.display()),
+        )
+        .unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+        path
+    };
+    let store = native_root::create(&tmp.path().join("root")).unwrap();
+    let source = store
+        .register_source(Source::GitRepo {
+            origin: format!("{}/owner/repo.git", server.base),
+            token_file: Some(token.to_str().unwrap().into()),
+        })
+        .unwrap();
+    let request = Request {
+        source_uuid: source.uuid,
+        selector: Selector::Ref {
+            reference: "main".into(),
+        },
+        selection: Default::default(),
+        policy_refs: Default::default(),
+    };
+    let options = AcquireOptions {
+        test_now: Some(100),
+        test_gh: Some(gh),
+        ..Default::default()
+    };
+    let error = Error::from_anyhow(&store.acquire_with(&request, &options).unwrap_err());
+    assert_eq!(error.code, ErrorCode::SourceError, "{}", error.message);
+    assert_eq!(error.details["provider"], "git");
+    assert_eq!(error.details["token_sent"], "true");
+    assert!(error.message.contains("token_file"));
+    assert!(!error.message.contains("glpat-fixture"));
+    let expected = {
+        use base64::Engine;
+        format!(
+            "Basic {}",
+            base64::engine::general_purpose::STANDARD.encode("oauth2:glpat-fixture")
+        )
+    };
+    assert!(seen.lock().unwrap().contains(&expected));
+    assert!(!marker.exists(), "git_repo must not invoke gh");
 }

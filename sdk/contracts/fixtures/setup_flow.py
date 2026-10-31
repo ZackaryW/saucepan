@@ -65,7 +65,7 @@ class SetupFlowMixin:
         class Handler(http.server.BaseHTTPRequestHandler):
             def do_GET(inner):
                 tag = inner.path.rsplit('/', 1)[-1] if '/tags/' in inner.path else 'v1'
-                data = archive.read_bytes() if inner.path == '/asset' else json.dumps({
+                data = archive.read_bytes() if '/releases/assets/' in inner.path else json.dumps({
                     'id':1,'tag_name':tag,'draft':False,'prerelease':False,'assets':[
                         {'id':index,'name':name,'browser_download_url':base+'/asset','digest':'sha256:'+digest}
                         for index, name in enumerate(['saucepan.zip', f'saucepan-{tag}-{target}.zip'], 1)]}).encode()

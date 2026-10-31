@@ -4,7 +4,7 @@ use crate::{
     core::{
         Store,
         index::Journal,
-        source::{git::normalize, retrieve},
+        source::{git::repository_origin, retrieve},
     },
     error::{Error, ErrorCode},
     models::{
@@ -14,7 +14,7 @@ use crate::{
             MaterialKind, Ownership, RetrievalPlan, RetrievalRecord, RetrievalState,
             RetrievedDescriptor, SourceInput,
         },
-        source::{Resolved, Source, SourceRecord},
+        source::{Resolved, SourceRecord},
     },
     utils::{
         lock::{LockGuard, LockMode},
@@ -103,8 +103,10 @@ impl Store {
         );
         let path = self.retrieval_path(record)?;
         crate::utils::path::plain_metadata(&path)?;
-        if let Resolved::Git { commit } = &record.resolved {
-            let Source::Git { origin } = normalize(self.source(record.source_uuid)?.source)? else {
+        if let (Resolved::Git { commit }, MaterialKind::GitRepository { .. }) =
+            (&record.resolved, &record.kind)
+        {
+            let Some(origin) = repository_origin(&self.source(record.source_uuid)?.source)? else {
                 bail!("Git retrieval source mismatch")
             };
             let scratch = tempfile::tempdir()?;

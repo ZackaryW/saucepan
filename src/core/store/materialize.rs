@@ -1,6 +1,6 @@
 //! Copy/export/extract only. Provider network access belongs to retrieval.
 use crate::{
-    core::{retrieval::RetrievedResource, source::git::normalize},
+    core::{retrieval::RetrievedResource, source::git::repository_origin},
     error::{Error, ErrorCode},
     models::{
         retrieval::MaterialKind,
@@ -8,7 +8,7 @@ use crate::{
         store::{AcquisitionPlan, Format},
     },
     utils::{
-        archive::extract_zip,
+        archive::{extract_zip, extract_zip_stripped},
         path::{beneath, plain_metadata, relative_path},
         source::git::{Git, RepositoryMaterial},
         transfer::copy_bounded,
@@ -31,7 +31,7 @@ pub(super) fn copy(
                 request.format == Format::Natural,
                 "Git acquisition requires natural format"
             );
-            let Source::Git { origin } = normalize(retrieved.source.clone())? else {
+            let Some(origin) = repository_origin(&retrieved.source)? else {
                 bail!("invalid Git source")
             };
             let Resolved::Git { commit } = &retrieved.descriptor.resolved else {
@@ -73,6 +73,18 @@ pub(super) fn copy(
                 None => source.to_owned(),
             };
             copy_tree_unhashed(&selected, &destination, TreeLimits::default())?;
+        }
+        MaterialKind::File if matches!(retrieved.source, Source::GithubSource { .. }) => {
+            ensure!(
+                request.format == Format::Natural,
+                "source snapshot acquisition requires natural format"
+            );
+            extract_zip_stripped(
+                fs::File::open(source)?,
+                &destination,
+                request.folder.as_deref(),
+                TreeLimits::default(),
+            )?;
         }
         MaterialKind::File => {
             if request.format == Format::Zip {
@@ -127,6 +139,11 @@ fn original_filename(retrieved: &RetrievedResource) -> Result<String> {
         (Source::Local { path }, _) => Ok(path
             .file_name()
             .and_then(|name| name.to_str())
+            .context("invalid source filename")?
+            .into()),
+        (Source::GithubRaw { path, .. } | Source::GitRaw { path, .. }, _) => Ok(path
+            .rsplit('/')
+            .next()
             .context("invalid source filename")?
             .into()),
         (_, Resolved::Release { assets, .. }) => Ok(assets

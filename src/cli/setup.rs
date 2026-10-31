@@ -72,6 +72,7 @@ fn run_inner(args: &Args) -> Result<()> {
                 &AcquireOptions {
                     test_now: args.test_now,
                     test_github_api: args.test_github_api.clone(),
+                    ..Default::default()
                 },
             )?;
             if result.status != Phase::Complete {

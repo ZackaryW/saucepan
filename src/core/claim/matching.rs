@@ -68,7 +68,7 @@ fn select_inner(
             }
             if !matches!(
                 store.source(request.source_uuid)?.source,
-                Source::Local { .. } | Source::Git { .. } | Source::GithubRepo { .. }
+                Source::Local { .. } | Source::GitRepo { .. } | Source::GithubRepo { .. }
             ) {
                 continue;
             }

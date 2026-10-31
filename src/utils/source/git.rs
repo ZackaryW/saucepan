@@ -19,14 +19,52 @@ use std::{
 pub struct Git {
     pub timeout: Duration,
     pub limits: TreeLimits,
+    pub auth: Option<HttpAuth>,
 }
 impl Default for Git {
     fn default() -> Self {
         Self {
             timeout: Duration::from_secs(120),
             limits: TreeLimits::default(),
+            auth: None,
         }
     }
+}
+/// Basic credentials sent only to one origin host, through the child
+/// environment rather than its arguments or the repository configuration.
+pub struct HttpAuth {
+    scope: String,
+    header: String,
+}
+impl HttpAuth {
+    pub fn basic(origin: &str, user: &str, token: &str) -> Result<Self> {
+        let url = url::Url::parse(origin)?;
+        ensure!(
+            matches!(url.scheme(), "https" | "http"),
+            "token authentication requires an HTTP(S) origin"
+        );
+        let host = url.host_str().context("missing Git host")?;
+        let scope = match url.port() {
+            Some(port) => format!("{}://{host}:{port}/", url.scheme()),
+            None => format!("{}://{host}/", url.scheme()),
+        };
+        Ok(Self {
+            scope,
+            header: format!(
+                "Authorization: Basic {}",
+                base64(format!("{user}:{token}").as_bytes())
+            ),
+        })
+    }
+}
+impl std::fmt::Debug for HttpAuth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "HttpAuth({} <redacted>)", self.scope)
+    }
+}
+fn base64(bytes: &[u8]) -> String {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD.encode(bytes)
 }
 #[derive(Default)]
 pub struct Export {
@@ -144,8 +182,17 @@ impl Git {
                 "http.lowSpeedLimit=1",
                 "-c",
                 "http.lowSpeedTime=30",
+                // Credentials come only from gh or token_file; an empty value
+                // clears system/global helpers such as Git Credential Manager.
+                "-c",
+                "credential.helper=",
+                "-c",
+                "core.askPass=",
             ])
             .env("GIT_TERMINAL_PROMPT", "0")
+            .env("GIT_ASKPASS", "")
+            .env("SSH_ASKPASS", "")
+            .env("GCM_INTERACTIVE", "never")
             .env("GIT_NO_LAZY_FETCH", "1")
             .env("GIT_LFS_SKIP_SMUDGE", "1");
         for name in [
@@ -159,6 +206,15 @@ impl Git {
             "GIT_ALTERNATE_OBJECT_DIRECTORIES",
         ] {
             command.env_remove(name);
+        }
+        if let Some(auth) = &self.auth {
+            command
+                .env("GIT_CONFIG_COUNT", "1")
+                .env(
+                    "GIT_CONFIG_KEY_0",
+                    format!("http.{}.extraHeader", auth.scope),
+                )
+                .env("GIT_CONFIG_VALUE_0", &auth.header);
         }
         command
     }
@@ -702,5 +758,70 @@ impl Git {
         );
         fs::copy(object, file)?;
         Ok(Some(oid.into()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn base64_matches_rfc4648_vectors() {
+        for (input, expected) in [
+            ("", ""),
+            ("f", "Zg=="),
+            ("fo", "Zm8="),
+            ("foo", "Zm9v"),
+            ("foob", "Zm9vYg=="),
+            ("x-access-token:gho_1", "eC1hY2Nlc3MtdG9rZW46Z2hvXzE="),
+        ] {
+            assert_eq!(base64(input.as_bytes()), expected);
+        }
+    }
+
+    #[test]
+    fn token_reaches_environment_not_arguments() {
+        let git = Git {
+            auth: Some(
+                HttpAuth::basic(
+                    "https://gitlab.example.com:8443/a/b.git",
+                    "oauth2",
+                    "glpat-secret",
+                )
+                .unwrap(),
+            ),
+            ..Default::default()
+        };
+        let command = git.command(Path::new("."));
+        let encoded = base64(b"oauth2:glpat-secret");
+        assert!(
+            command
+                .get_args()
+                .all(|arg| !arg.to_string_lossy().contains("glpat-secret")
+                    && !arg.to_string_lossy().contains(&encoded))
+        );
+        let envs: BTreeMap<_, _> = command
+            .get_envs()
+            .filter_map(|(k, v)| {
+                Some((
+                    k.to_string_lossy().into_owned(),
+                    v?.to_string_lossy().into_owned(),
+                ))
+            })
+            .collect();
+        assert_eq!(envs["GIT_CONFIG_COUNT"], "1");
+        assert_eq!(
+            envs["GIT_CONFIG_KEY_0"],
+            "http.https://gitlab.example.com:8443/.extraHeader"
+        );
+        assert_eq!(
+            envs["GIT_CONFIG_VALUE_0"],
+            format!("Authorization: Basic {encoded}")
+        );
+        assert!(!format!("{:?}", git.auth).contains("glpat-secret"));
+        // Ambient credential helpers (e.g. Git Credential Manager) never run.
+        assert!(command.get_args().any(|arg| arg == "credential.helper="));
+        assert_eq!(envs["GCM_INTERACTIVE"], "never");
+        assert!(HttpAuth::basic("ssh://git@example.com/a/b", "u", "t").is_err());
     }
 }

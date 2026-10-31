@@ -1,4 +1,7 @@
-use saucepan::utils::{archive::extract_zip, tree::TreeLimits};
+use saucepan::utils::{
+    archive::{extract_zip, extract_zip_stripped},
+    tree::TreeLimits,
+};
 use std::{
     fs,
     io::{Cursor, Write},
@@ -99,4 +102,73 @@ fn links_corruption_and_occupied_destinations_are_rejected() {
         .is_err()
     );
     assert_eq!(fs::read(out.join("sentinel")).unwrap(), b"old");
+}
+
+#[test]
+fn stripped_extraction_removes_the_single_root_folder() {
+    let tmp = tempfile::tempdir().unwrap();
+    let snapshot = zip(&[
+        ("owner-repo-0123abc/", b""),
+        ("owner-repo-0123abc/README.md", b"readme"),
+        ("owner-repo-0123abc/skills/a/SKILL.md", b"skill"),
+    ]);
+    let all = tmp.path().join("all");
+    extract_zip_stripped(
+        Cursor::new(snapshot.clone()),
+        &all,
+        None,
+        TreeLimits::default(),
+    )
+    .unwrap();
+    assert_eq!(fs::read(all.join("README.md")).unwrap(), b"readme");
+    assert_eq!(fs::read(all.join("skills/a/SKILL.md")).unwrap(), b"skill");
+    let skills = tmp.path().join("skills");
+    extract_zip_stripped(
+        Cursor::new(snapshot),
+        &skills,
+        Some("skills"),
+        TreeLimits::default(),
+    )
+    .unwrap();
+    assert_eq!(fs::read(skills.join("a/SKILL.md")).unwrap(), b"skill");
+    assert!(!skills.join("README.md").exists());
+}
+
+#[test]
+fn stripped_extraction_rejects_other_layouts_and_names_links() {
+    let tmp = tempfile::tempdir().unwrap();
+    for (i, data) in [
+        zip(&[("one/a", b"x"), ("two/b", b"y")]),
+        zip(&[("root/a", b"x"), ("loose", b"y")]),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let out = tmp.path().join(format!("layout{i}"));
+        let error =
+            extract_zip_stripped(Cursor::new(data), &out, None, TreeLimits::default()).unwrap_err();
+        assert!(
+            error.to_string().contains("one top-level folder"),
+            "{error}"
+        );
+        assert!(!out.exists());
+    }
+    let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    writer
+        .add_symlink(
+            "root/docs/link",
+            "../x",
+            zip::write::SimpleFileOptions::default(),
+        )
+        .unwrap();
+    let out = tmp.path().join("link");
+    let error = extract_zip_stripped(
+        Cursor::new(writer.finish().unwrap().into_inner()),
+        &out,
+        None,
+        TreeLimits::default(),
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("root/docs/link"), "{error}");
+    assert!(!out.exists());
 }

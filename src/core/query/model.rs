@@ -20,8 +20,12 @@ pub struct SourceQuery {
 pub enum SourceType {
     Local,
     Url,
-    Git,
+    GitRepo,
+    GithubRepo,
     GithubRelease,
+    GithubRaw,
+    GitRaw,
+    GithubSource,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

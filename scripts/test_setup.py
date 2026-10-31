@@ -62,7 +62,9 @@ class SetupAcceptance(unittest.TestCase):
         class Handler(http.server.BaseHTTPRequestHandler):
             def do_GET(self):
                 cls.requests.append(self.path)
-                if self.path.startswith("/repos/"):
+                if "/releases/assets/" in self.path:
+                    data = cls.invalid if self.path.endswith("/2") else cls.archive
+                elif self.path.startswith("/repos/"):
                     tag = self.path.rsplit("/", 1)[-1]
                     if cls.block:
                         cls.blocked.set()
@@ -72,7 +74,7 @@ class SetupAcceptance(unittest.TestCase):
                     bad = tag == 'vbad' or tag.endswith('-bad')
                     payload = cls.invalid if bad else cls.archive
                     data = json.dumps({"id": 1, "tag_name": tag, "draft": False, "prerelease": False,
-                                       "assets": [{"id": 1, "name": f"saucepan-{tag}-{TARGET}.zip",
+                                       "assets": [{"id": 2 if bad else 1, "name": f"saucepan-{tag}-{TARGET}.zip",
                                                    "browser_download_url": cls.base + ("/invalid" if bad else "/archive"),
                                                    "digest": "sha256:" + hashlib.sha256(payload).hexdigest()}]}).encode()
                 elif self.path == "/archive":

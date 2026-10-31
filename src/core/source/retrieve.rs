@@ -1,5 +1,5 @@
 //! Provider retrieval into caller-supplied private working data. No Store access.
-use super::{AcquireOptions, git, remote};
+use super::{AcquireOptions, credentials, git, remote};
 use crate::{
     core::policy::select_asset,
     error::{Error, ErrorCode},
@@ -57,7 +57,11 @@ pub(crate) fn validate_selector(source: &Source, request: &RetrievalPlan) -> Res
                 Selector::LatestStable | Selector::Tag { .. }
             )
             | (
-                Source::Git { .. } | Source::GithubRepo { .. },
+                Source::GitRepo { .. }
+                    | Source::GithubRepo { .. }
+                    | Source::GithubRaw { .. }
+                    | Source::GithubSource { .. }
+                    | Source::GitRaw { .. },
                 Selector::Ref { .. } | Selector::Tag { .. } | Selector::Commit { .. }
             )
     );
@@ -75,7 +79,7 @@ pub(crate) fn validate_selector(source: &Source, request: &RetrievalPlan) -> Res
             "unsupported download transport"
         );
     }
-    if matches!(source, Source::Git { .. } | Source::GithubRepo { .. }) {
+    if git::is_repository(source) {
         ensure!(
             request.expected_sha256.is_none()
                 && request.verification != PayloadVerification::Required,
@@ -98,7 +102,8 @@ pub(crate) fn obtain(
 ) -> Result<Material> {
     validate(source, request)?;
     match git::normalize(source.clone())? {
-        Source::Git { origin } => {
+        source if git::is_repository(&source) => {
+            let origin = git::repository_origin(&source)?.expect("repository source");
             let (reference, pinned) = match &request.selector {
                 Selector::Ref { reference } => (reference.as_str(), false),
                 Selector::Tag { tag } => (tag.as_str(), false),
@@ -106,13 +111,19 @@ pub(crate) fn obtain(
                 _ => unreachable!("validated Git selector"),
             };
             let path = work.join("repo");
-            let git = Git::default();
-            git.repository(&origin, &path)?;
-            let commit = match exact {
-                Some(Resolved::Git { commit }) => git.resolve(&path, commit, true)?,
-                Some(_) => bail!("invalid Git provenance"),
-                None => git.resolve(&path, reference, pinned)?,
+            let git = Git {
+                auth: credentials::repository(&source, &origin, options)?,
+                ..Git::default()
             };
+            let denied =
+                |error: anyhow::Error| credentials::git_denied(error, &source, git.auth.is_some());
+            git.repository(&origin, &path).map_err(denied)?;
+            let commit = match exact {
+                Some(Resolved::Git { commit }) => git.resolve(&path, commit, true),
+                Some(_) => bail!("invalid Git provenance"),
+                None => git.resolve(&path, reference, pinned),
+            }
+            .map_err(denied)?;
             let dependencies = git
                 .hydrate(
                     RepositoryMaterial {
@@ -200,10 +211,24 @@ pub(crate) fn obtain(
                     )
                 }
             };
-            let mut response = remote::agent()
-                .get(&url)
-                .header("User-Agent", "saucepan")
-                .call()?;
+            let mut response = match (&source, &resolved) {
+                // The asset API works for private releases; browser URLs do not.
+                (Source::GithubRelease { repo }, Some(Resolved::Release { assets, .. })) => {
+                    let auth = remote::Auth::github(options);
+                    let base = remote::github_api(options)?;
+                    auth.call(
+                        auth.get(&format!(
+                            "{base}/repos/{repo}/releases/assets/{}",
+                            assets[0].id
+                        ))
+                        .header("Accept", "application/octet-stream"),
+                    )?
+                }
+                _ => remote::agent()
+                    .get(&url)
+                    .header("User-Agent", "saucepan")
+                    .call()?,
+            };
             let resolved = resolved.unwrap_or_else(|| Resolved::Url {
                 url: url.clone(),
                 etag: response
@@ -234,7 +259,54 @@ pub(crate) fn obtain(
                 verification,
             })
         }
-        Source::GithubRepo { .. } => unreachable!("normalized GitHub repository"),
+        Source::GitRepo { .. } | Source::GithubRepo { .. } => unreachable!("repository source"),
+        source @ (Source::GithubRaw { .. }
+        | Source::GithubSource { .. }
+        | Source::GitRaw { .. }) => {
+            let resolved = match exact {
+                Some(resolved) => resolved.clone(),
+                None => remote::discover(&source, &request.selector, options)?,
+            };
+            let mut response = match (&source, &resolved) {
+                (Source::GithubRaw { repo, path }, Resolved::Git { commit }) => {
+                    let auth = remote::Auth::github(options);
+                    auth.call(auth.get(&remote::github_raw_url(repo, path, commit, options)?))?
+                }
+                // Snapshot ZIPs carry no history; no bare repository is created.
+                (Source::GithubSource { repo }, Resolved::Git { commit }) => {
+                    let auth = remote::Auth::github(options);
+                    let base = remote::github_api(options)?;
+                    auth.call(auth.get(&format!("{base}/repos/{repo}/zipball/{commit}")))?
+                }
+                (
+                    Source::GitRaw {
+                        platform,
+                        token_file,
+                        ..
+                    },
+                    Resolved::Url { url, .. },
+                ) => {
+                    let auth = remote::Auth::platform(*platform, token_file.as_deref())?;
+                    auth.call(auth.get(url))?
+                }
+                _ => bail!("invalid provider provenance"),
+            };
+            let expected = expected_digest(request, None)?;
+            let path = work.join("material");
+            let transferred = copy_bounded(
+                response.body_mut().as_reader(),
+                &mut fs::File::create(&path)?,
+                TreeLimits::default().bytes,
+                expected.is_some(),
+            )?;
+            Ok(Material {
+                path,
+                kind: MaterialKind::File,
+                resolved,
+                dependencies: BTreeMap::new(),
+                verification: verify_digest(expected.as_deref(), transferred.sha256.as_deref())?,
+            })
+        }
     }
 }
 

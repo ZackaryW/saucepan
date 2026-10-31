@@ -29,8 +29,12 @@ pub(super) struct SourceQueryArgs {
 enum Kind {
     Local,
     Url,
-    Git,
+    GitRepo,
+    GithubRepo,
     GithubRelease,
+    GithubRaw,
+    GitRaw,
+    GithubSource,
 }
 
 impl SourceQueryArgs {
@@ -43,8 +47,12 @@ impl SourceQueryArgs {
             kind: self.kind.map(|kind| match kind {
                 Kind::Local => SourceType::Local,
                 Kind::Url => SourceType::Url,
-                Kind::Git => SourceType::Git,
+                Kind::GitRepo => SourceType::GitRepo,
+                Kind::GithubRepo => SourceType::GithubRepo,
                 Kind::GithubRelease => SourceType::GithubRelease,
+                Kind::GithubRaw => SourceType::GithubRaw,
+                Kind::GitRaw => SourceType::GitRaw,
+                Kind::GithubSource => SourceType::GithubSource,
             }),
             repo: self.repo,
             origin: self.origin,

@@ -379,6 +379,7 @@ fn run_store(args: Args) -> Result<()> {
     let options = crate::core::source::AcquireOptions {
         test_now: args.test_now,
         test_github_api: args.test_github_api,
+        ..Default::default()
     };
     let mut exit_code = 0;
     let value = match args.command {

@@ -357,7 +357,8 @@ fn git_coverage_preserves_selection_constraints_and_does_not_refresh_a_moving_br
     git(&["add", "."]);
     git(&["commit", "-m", "original"]);
     request.source_uuid = store
-        .register_source(Source::Git {
+        .register_source(Source::GitRepo {
+            token_file: None,
             origin: input.to_str().unwrap().into(),
         })
         .unwrap()

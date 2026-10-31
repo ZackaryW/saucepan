@@ -640,7 +640,8 @@ fn fresh_zip_and_git_consumers_ignore_preexisting_caches_without_home() {
         let mut retrieval = request(&input, CachePolicy::default());
         if repository {
             retrieval.source = SourceInput::Inline {
-                source: Source::Git {
+                source: Source::GitRepo {
+                    token_file: None,
                     origin: input.to_str().unwrap().into(),
                 },
             };

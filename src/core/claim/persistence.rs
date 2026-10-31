@@ -23,7 +23,7 @@ use std::{
 };
 use uuid::Uuid;
 
-const CONTRACT: &str = "saucepan.flat-policy-resources";
+const CONTRACT: &str = "saucepan.platform-sources";
 const ROOT: &str = "root.json";
 const PENDING: &str = ".staging/metadata-transaction.json";
 const INITIALIZING: &str = ".staging/initializing.json";
@@ -252,7 +252,7 @@ impl Metadata {
         if hint.payload.contract != CONTRACT {
             return Err(Error::new(
                 ErrorCode::UnsupportedStore,
-                "earlier nested-policy stores are unsupported; use a fresh root",
+                "earlier store contracts (nested-policy or flat-policy-resources) are unsupported; move the root aside and reinstall into a fresh root (install.sh --root ROOT; see docs/managed-setup.md#store-contract-upgrades)",
             ));
         }
         let (store, mode) = Authenticator::root_hint(&bytes)?;

@@ -110,6 +110,7 @@ fn options(args: &Args) -> RetrieveOptions {
     RetrieveOptions {
         test_now: args.test_now,
         test_github_api: args.test_github_api.clone(),
+        ..Default::default()
     }
 }
 fn command(args: &[OsString]) -> Command {

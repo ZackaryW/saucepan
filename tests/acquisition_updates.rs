@@ -64,7 +64,8 @@ fn setup() -> (
     git(&origin, &["commit", "-m", "first"]);
     let store = Store::create(&root.path().join("root")).unwrap();
     let source = store
-        .register_source(Source::Git {
+        .register_source(Source::GitRepo {
+            token_file: None,
             origin: origin.to_str().unwrap().into(),
         })
         .unwrap();

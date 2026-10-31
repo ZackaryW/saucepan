@@ -13,6 +13,45 @@ pub fn extract_zip(
     selection: Option<&str>,
     limits: TreeLimits,
 ) -> io::Result<()> {
+    extract(reader, destination, selection, limits, false)
+}
+
+/// Extract an archive whose entries all sit beneath one top-level folder,
+/// such as a source snapshot, as if that folder were the archive root.
+pub fn extract_zip_stripped(
+    reader: impl Read + Seek,
+    destination: &Path,
+    selection: Option<&str>,
+    limits: TreeLimits,
+) -> io::Result<()> {
+    extract(reader, destination, selection, limits, true)
+}
+
+/// The single top-level folder every entry sits beneath.
+fn single_root<R: Read + Seek>(archive: &zip::ZipArchive<R>) -> io::Result<String> {
+    let mut root = None;
+    for name in archive.file_names() {
+        let (first, rest) = name.split_once('/').unwrap_or((name, ""));
+        if first.is_empty()
+            || (rest.is_empty() && !name.ends_with('/'))
+            || root.get_or_insert(first) != &first
+        {
+            return Err(io::Error::other(
+                "archive must contain exactly one top-level folder",
+            ));
+        }
+    }
+    root.map(|root| format!("{root}/"))
+        .ok_or_else(|| io::Error::other("archive is empty"))
+}
+
+fn extract(
+    reader: impl Read + Seek,
+    destination: &Path,
+    selection: Option<&str>,
+    limits: TreeLimits,
+    strip_root: bool,
+) -> io::Result<()> {
     if let Some(folder) = selection {
         relative_path(folder)?;
     }
@@ -20,6 +59,11 @@ pub fn extract_zip(
     if archive.len() > limits.entries {
         return Err(io::Error::other("archive entry limit exceeded"));
     }
+    let root = if strip_root {
+        Some(single_root(&archive)?)
+    } else {
+        None
+    };
     staged_directory(destination, |stage| {
         let mut seen = BTreeSet::new();
         let mut files = BTreeSet::new();
@@ -31,7 +75,15 @@ pub fn extract_zip(
             if entry.enclosed_name().is_none() {
                 return Err(io::Error::other("escaping archive path"));
             }
-            let name = entry.name().trim_end_matches('/').to_owned();
+            let name = match &root {
+                Some(root) => entry.name().strip_prefix(root.as_str()).unwrap_or_default(),
+                None => entry.name(),
+            }
+            .trim_end_matches('/')
+            .to_owned();
+            if name.is_empty() && root.is_some() {
+                continue;
+            }
             relative_path(&name)?;
             let folded = name.to_lowercase();
             let original_parts: Vec<_> = name.split('/').collect();
@@ -60,9 +112,10 @@ pub fn extract_zip(
             }
             let mode = entry.unix_mode().unwrap_or(0);
             if mode & 0o170000 != 0 && mode & 0o170000 != 0o100000 && mode & 0o170000 != 0o040000 {
-                return Err(io::Error::other(
-                    "archive links/special entries unsupported",
-                ));
+                return Err(io::Error::other(format!(
+                    "archive links/special entries unsupported: {}",
+                    entry.name()
+                )));
             }
             let relative = match selection {
                 Some(folder) if name == folder && entry.is_dir() => Some(String::new()),

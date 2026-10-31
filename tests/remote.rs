@@ -23,7 +23,7 @@ fn release_cache_expiry_fallback_and_cli_use_real_transport() {
     let f = fail.clone();
     let v = version.clone();
     let server = support::Server::new(move |path, base| {
-        if path.starts_with("/repos/") {
+        if path.starts_with("/repos/") && !path.contains("/releases/assets/") {
             h.fetch_add(1, Ordering::SeqCst);
             if f.load(Ordering::SeqCst) {
                 return (503, b"unavailable".to_vec());
@@ -59,6 +59,7 @@ fn release_cache_expiry_fallback_and_cli_use_real_transport() {
     let mut opts = AcquireOptions {
         test_now: Some(100),
         test_github_api: Some(server.base.clone()),
+        ..Default::default()
     };
     let first = store.acquire_with(&request, &opts).unwrap();
     assert!(first.update_checked);
@@ -73,7 +74,7 @@ fn release_cache_expiry_fallback_and_cli_use_real_transport() {
     assert_eq!(hits.load(Ordering::SeqCst), 2);
     assert_eq!(
         std::fs::read(first.directory.join("tool.exe")).unwrap(),
-        b"/asset/1"
+        b"/repos/owner/tool/releases/assets/1"
     );
     fail.store(true, Ordering::SeqCst);
     policy_fixture::replace(
@@ -252,7 +253,7 @@ fn zip_integrity_tag_and_shared_platform_discovery() {
     let corrupt = Arc::new(AtomicBool::new(false));
     let c = corrupt.clone();
     let server = support::Server::new(move |path, base| {
-        if path.starts_with("/repos/") {
+        if path.starts_with("/repos/") && !path.contains("/releases/assets/") {
             assert!(path.ends_with("/releases/tags/v1"));
             h.fetch_add(1, Ordering::SeqCst);
             (200, serde_json::json!({"id":1,"tag_name":"v1","draft":false,"prerelease":false,"assets":[
@@ -300,6 +301,7 @@ fn zip_integrity_tag_and_shared_platform_discovery() {
     let opts = AcquireOptions {
         test_now: Some(100),
         test_github_api: Some(server.base.clone()),
+        ..Default::default()
     };
     let first = store.acquire_with(&request, &opts).unwrap();
     assert_eq!(
@@ -339,4 +341,194 @@ fn zip_integrity_tag_and_shared_platform_discovery() {
             .count(),
         2
     );
+}
+
+fn fake_gh(dir: &std::path::Path, body: &str) -> std::path::PathBuf {
+    #[cfg(windows)]
+    {
+        let path = dir.join("gh.cmd");
+        std::fs::write(&path, format!("@echo off\r\n{body}\r\n")).unwrap();
+        path
+    }
+    #[cfg(not(windows))]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let path = dir.join("gh");
+        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        path
+    }
+}
+
+fn header(head: &str, name: &str) -> Option<String> {
+    head.lines().find_map(|line| {
+        let (key, value) = line.split_once(':')?;
+        key.trim()
+            .eq_ignore_ascii_case(name)
+            .then(|| value.trim().to_owned())
+    })
+}
+
+fn release_request(store: &saucepan::core::Store, source: uuid::Uuid) -> Request {
+    let mut request = Request {
+        source_uuid: source,
+        selector: Selector::LatestStable,
+        selection: Default::default(),
+        policy_refs: Default::default(),
+    };
+    request.selection.format = Format::Raw;
+    request.selection.filter_refs = policy_fixture::filters(
+        store,
+        vec![AssetFilter {
+            platform: None,
+            asset_patterns: vec!["*.bin".into()],
+        }],
+    );
+    request
+}
+
+#[test]
+fn release_requests_carry_gh_token_and_redirects_drop_it() {
+    use std::sync::Mutex;
+    let seen = Arc::new(Mutex::new(Vec::<(String, Option<String>)>::new()));
+    let log = seen.clone();
+    let server = support::Server::with_head(move |head, base| {
+        let path = head.split_whitespace().nth(1).unwrap_or("/").to_owned();
+        log.lock()
+            .unwrap()
+            .push((path.clone(), header(head, "authorization")));
+        if path.ends_with("/releases/assets/7") {
+            assert_eq!(
+                header(head, "accept").as_deref(),
+                Some("application/octet-stream")
+            );
+            support::Reply {
+                status: 302,
+                body: Vec::new(),
+                headers: vec![("Location".into(), format!("{base}/download/7"))],
+            }
+        } else if path == "/download/7" {
+            support::Reply {
+                status: 200,
+                body: b"payload".to_vec(),
+                headers: Vec::new(),
+            }
+        } else {
+            support::Reply {
+                status: 200,
+                body: serde_json::json!({"id":1,"tag_name":"v1","draft":false,"prerelease":false,"assets":[{"id":7,"name":"tool.bin","browser_download_url":format!("{base}/browser/7"),"digest":null}]}).to_string().into_bytes(),
+                headers: Vec::new(),
+            }
+        }
+    });
+    let tmp = tempfile::tempdir().unwrap();
+    let store = native_root::create(&tmp.path().join("root")).unwrap();
+    let source = store
+        .register_source(Source::GithubRelease {
+            repo: "owner/private".into(),
+        })
+        .unwrap();
+    let opts = AcquireOptions {
+        test_now: Some(100),
+        test_github_api: Some(server.base.clone()),
+        test_gh: Some(fake_gh(tmp.path(), "echo gho_fixture")),
+        ..Default::default()
+    };
+    let result = store
+        .acquire_with(&release_request(&store, source.uuid), &opts)
+        .unwrap();
+    assert_eq!(
+        std::fs::read(result.directory.join("tool.bin")).unwrap(),
+        b"payload"
+    );
+    let seen = seen.lock().unwrap().clone();
+    let bearer = Some("Bearer gho_fixture".to_owned());
+    assert_eq!(
+        seen,
+        vec![
+            (
+                "/repos/owner/private/releases/latest".into(),
+                bearer.clone()
+            ),
+            ("/repos/owner/private/releases/assets/7".into(), bearer),
+            ("/download/7".into(), None),
+        ]
+    );
+}
+
+#[test]
+fn denied_release_reports_provider_status_without_token_text() {
+    use saucepan::error::{Error, ErrorCode};
+    let status = Arc::new(AtomicUsize::new(401));
+    let s = status.clone();
+    let server = support::Server::new(move |_, _| (s.load(Ordering::SeqCst) as u16, Vec::new()));
+    let tmp = tempfile::tempdir().unwrap();
+    let store = native_root::create(&tmp.path().join("root")).unwrap();
+    let source = store
+        .register_source(Source::GithubRelease {
+            repo: "owner/private".into(),
+        })
+        .unwrap();
+    let request = release_request(&store, source.uuid);
+    let mut opts = AcquireOptions {
+        test_now: Some(100),
+        test_github_api: Some(server.base.clone()),
+        test_gh: Some(fake_gh(tmp.path(), "echo gho_fixture")),
+        ..Default::default()
+    };
+    let denied = store.acquire_with(&request, &opts).unwrap_err();
+    let error = Error::from_anyhow(&denied);
+    assert_eq!(error.code, ErrorCode::SourceError);
+    assert_eq!(error.details["provider"], "github");
+    assert_eq!(error.details["http_status"], "401");
+    assert_eq!(error.details["token_sent"], "true");
+    assert!(error.message.contains("gh auth login"));
+    assert!(!format!("{denied:?}").contains("gho_fixture"));
+
+    status.store(404, Ordering::SeqCst);
+    opts.test_gh = Some(tmp.path().join("missing-gh"));
+    let error = Error::from_anyhow(&store.acquire_with(&request, &opts).unwrap_err());
+    assert_eq!(error.code, ErrorCode::SourceError);
+    assert_eq!(error.details["token_sent"], "false");
+    assert!(error.message.contains("gh auth login"));
+}
+
+#[test]
+fn denied_refresh_preserves_prior_output() {
+    let denied = Arc::new(AtomicBool::new(false));
+    let d = denied.clone();
+    let server = support::Server::new(move |path, base| {
+        if d.load(Ordering::SeqCst) {
+            (401, Vec::new())
+        } else if path.contains("/releases/assets/") {
+            (200, b"first".to_vec())
+        } else {
+            (200, serde_json::json!({"id":1,"tag_name":"v1","draft":false,"prerelease":false,"assets":[{"id":1,"name":"tool.bin","browser_download_url":format!("{base}/x"),"digest":null}]}).to_string().into_bytes())
+        }
+    });
+    let tmp = tempfile::tempdir().unwrap();
+    let store = native_root::create(&tmp.path().join("root")).unwrap();
+    let source = store
+        .register_source(Source::GithubRelease {
+            repo: "owner/tool".into(),
+        })
+        .unwrap();
+    let request = release_request(&store, source.uuid);
+    let mut opts = AcquireOptions {
+        test_now: Some(100),
+        test_github_api: Some(server.base.clone()),
+        ..Default::default()
+    };
+    let first = store.acquire_with(&request, &opts).unwrap();
+    denied.store(true, Ordering::SeqCst);
+    opts.test_now = Some(86500);
+    let error =
+        saucepan::error::Error::from_anyhow(&store.acquire_with(&request, &opts).unwrap_err());
+    assert_eq!(error.details["http_status"], "401");
+    assert_eq!(
+        std::fs::read(store.path(first.entry.uuid).unwrap().join("tool.bin")).unwrap(),
+        b"first"
+    );
+    let discovery = &store.source(source.uuid).unwrap().discovery;
+    assert!(discovery.values().all(|entry| entry.checked_at == 100));
 }

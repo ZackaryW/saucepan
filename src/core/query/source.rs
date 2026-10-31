@@ -27,10 +27,12 @@ impl SourceQuery {
         let (kind, repo, origin, url) = match &record.source {
             Source::Local { .. } => (SourceType::Local, None, None, None),
             Source::Url { url } => (SourceType::Url, None, None, Some(url)),
-            Source::Git { origin } => (SourceType::Git, None, Some(origin), None),
+            Source::GitRepo { origin, .. } => (SourceType::GitRepo, None, Some(origin), None),
+            Source::GithubRepo { repo } => (SourceType::GithubRepo, Some(repo), None, None),
             Source::GithubRelease { repo } => (SourceType::GithubRelease, Some(repo), None, None),
-            // Registration normalizes this input alias to Git before persistence.
-            Source::GithubRepo { .. } => return false,
+            Source::GithubRaw { repo, .. } => (SourceType::GithubRaw, Some(repo), None, None),
+            Source::GitRaw { repo, .. } => (SourceType::GitRaw, Some(repo), None, None),
+            Source::GithubSource { repo } => (SourceType::GithubSource, Some(repo), None, None),
         };
         self.uuid.is_none_or(|id| id == record.uuid)
             && self.kind.is_none_or(|expected| expected == kind)

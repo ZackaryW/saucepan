@@ -287,7 +287,8 @@ fn referenced_git_updates_compare_the_selected_subpath_and_retain_definition_evi
     git(&origin, &["commit", "-m", "first"]);
     let store = Store::create(&temp.path().join("root")).unwrap();
     let source = store
-        .register_source(Source::Git {
+        .register_source(Source::GitRepo {
+            token_file: None,
             origin: origin.to_str().unwrap().into(),
         })
         .unwrap();
@@ -359,7 +360,7 @@ fn release_filters_keep_explicit_order_and_share_discovery_without_a_checkout() 
     let discoveries = Arc::new(AtomicUsize::new(0));
     let count = discoveries.clone();
     let server = support::Server::new(move |path, base| {
-        if path.starts_with("/repos/") {
+        if path.starts_with("/repos/") && !path.contains("/releases/assets/") {
             let n = count.fetch_add(1, Ordering::SeqCst);
             let mut assets = vec![
                 json!({"id":1,"name":"first.bin","browser_download_url":format!("{base}/first")}),
@@ -401,6 +402,7 @@ fn release_filters_keep_explicit_order_and_share_discovery_without_a_checkout() 
     let options = RetrieveOptions {
         test_now: Some(100),
         test_github_api: Some(server.base.clone()),
+        ..Default::default()
     };
     let catalog = PolicyCatalog::default();
     for refresh in [false, false, true] {
@@ -412,7 +414,10 @@ fn release_filters_keep_explicit_order_and_share_discovery_without_a_checkout() 
         let retrieved = store
             .retrieve_referenced(&request, &catalog, &options)
             .unwrap();
-        assert_eq!(fs::read(retrieved.source_path()).unwrap(), b"/preferred");
+        assert_eq!(
+            fs::read(retrieved.source_path()).unwrap(),
+            b"/repos/owner/repo/releases/assets/2"
+        );
         assert!(
             retrieved
                 .request()

@@ -66,7 +66,8 @@ fn root_free_git_worker() {
     let no_store = policy(json!({"type":"cache_policy","mode":"no_store"}));
     let request = Retrieval {
         source: SourceInput::Inline {
-            source: Source::Git {
+            source: Source::GitRepo {
+                token_file: None,
                 origin: origin.to_string_lossy().into(),
             },
         },
@@ -121,7 +122,8 @@ fn two_scope_git_consumer_adopts_updates_reclaims_and_fetches_without_a_store() 
     commit(&origin, "packages/tool/resource", "first");
     let store = Store::create(&temp.path().join("saucepan")).unwrap();
     let source = store
-        .register_source(Source::Git {
+        .register_source(Source::GitRepo {
+            token_file: None,
             origin: origin.to_string_lossy().into(),
         })
         .unwrap();

@@ -117,6 +117,9 @@ impl Store {
             &RetrieveOptions {
                 test_now: options.test_now,
                 test_github_api: options.test_github_api.clone(),
+                test_gh: options.test_gh.clone(),
+                test_github_raw: options.test_github_raw.clone(),
+                test_git_raw: options.test_git_raw.clone(),
             },
             Some(authorization.clone()),
         )?;

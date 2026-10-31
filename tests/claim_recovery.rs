@@ -211,7 +211,8 @@ fn exact_git_restores_saved_commit_after_branch_moves() {
     git(&["commit", "-m", "original"]);
     let store = Store::create_with_keys(&tmp.path().join("root"), &MemoryKeys::default()).unwrap();
     let source = store
-        .register_source(Source::Git {
+        .register_source(Source::GitRepo {
+            token_file: None,
             origin: input.to_str().unwrap().into(),
         })
         .unwrap();
@@ -250,7 +251,7 @@ fn remote_exact_uses_saved_url_and_rejects_replacement_while_refresh_honors_ttl(
         let h = hits.clone();
         let server = support::Server::new(move |path, base| {
             let n = v.load(Ordering::SeqCst);
-            if path.starts_with("/repos/") {
+            if path.starts_with("/repos/") && !path.contains("/releases/assets/") {
                 h.fetch_add(1, Ordering::SeqCst);
                 (200, serde_json::json!({"id":n,"tag_name":format!("v{n}"),"draft":false,"prerelease":false,
                     "assets":[{"id":n,"name":"tool","browser_download_url":format!("{base}/asset/{n}"),"digest":null}]}).to_string().into_bytes())
@@ -291,6 +292,7 @@ fn remote_exact_uses_saved_url_and_rejects_replacement_while_refresh_honors_ttl(
         let mut options = AcquireOptions {
             test_now: Some(100),
             test_github_api: Some(server.base.clone()),
+            ..Default::default()
         };
         let first = store.ensure_claim(app, &request, &options).unwrap();
         evict(&store, &first, &options);

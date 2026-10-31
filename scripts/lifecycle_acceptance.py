@@ -53,7 +53,9 @@ archives = {1: zip_a, 2: zip_b, 3: bad}
 state = {"version": 1}
 class Fixture(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path.startswith("/repos/"):
+        if "/releases/assets/" in self.path:
+            data = archives[int(self.path.rsplit("/", 1)[1])].read_bytes()
+        elif self.path.startswith("/repos/"):
             n = state["version"]
             data = json.dumps({"id": n, "tag_name": f"v{n}", "draft": False, "prerelease": False,
                 "assets": [{"id": n, "name": "saucepan.zip", "browser_download_url": f"{base}/asset/{n}",
