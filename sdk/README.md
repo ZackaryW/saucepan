@@ -10,13 +10,13 @@ Paths and retention are different: bare lookup is read-only, guarded execution r
 
 ## Install from a release
 
-The upcoming Saucepan 0.11.0 release includes Python and TypeScript SDKs 0.3.0. Their setup, profile, explanation and managed lifecycle methods need the matching manager contract; installing an updated SDK does not upgrade an existing executable. Obtain the manager and shim separately from the platform ZIP.
+Saucepan 0.12.0 includes Python and TypeScript SDKs 0.4.0, whose source models add `git_repo`, `github_raw`, `git_raw` and `github_source` and drop `git`. Their setup, profile, explanation and managed lifecycle methods need the matching manager contract; installing an updated SDK does not upgrade an existing executable. Obtain the manager and shim separately from the platform ZIP.
 
-After v0.11.0 is published, download `saucepan_sdk-0.3.0-py3-none-any.whl` (or the Python source distribution) and `saucepan-sdk-0.3.0.tgz` from [GitHub releases](https://github.com/ZackaryW/saucepan/releases), verify them against that release's `SHA256SUMS`, then install the needed package. Until then, use an explicit local build; these version numbers alone are not release evidence.
+Download `saucepan_sdk-0.4.0-py3-none-any.whl` (or the Python source distribution) and `saucepan-sdk-0.4.0.tgz` from [GitHub releases](https://github.com/ZackaryW/saucepan/releases), verify them against that release's `SHA256SUMS`, then install the needed package. A release appears only after its artifacts pass verification; version numbers alone are not release evidence.
 
 ```sh
-pip install ./saucepan_sdk-0.3.0-py3-none-any.whl
-npm install ./saucepan-sdk-0.3.0.tgz
+pip install ./saucepan_sdk-0.4.0-py3-none-any.whl
+npm install ./saucepan-sdk-0.4.0.tgz
 ```
 
 `sdk-manifest.json` records the package versions, hashes and associated manager tag/commit. Use that evidence when pinning consumer dependencies. These packages are distributed as release assets; no npm or PyPI publication is configured.
@@ -43,7 +43,7 @@ npm pack
 # In a separate consumer:
 npm install /absolute/path/to/sdk/ts
 # Or install the built distributable:
-npm install /absolute/path/to/saucepan-sdk-0.3.0.tgz
+npm install /absolute/path/to/saucepan-sdk-0.4.0.tgz
 ```
 
 npm's Git dependency support does not select a package subdirectory. Use the built local folder or tarball instead. Import `Client` from `saucepan-sdk`; its client/types entry point has no eager Node filesystem/process dependency, while actual operations need the default Node transport or an explicit capable host transport.

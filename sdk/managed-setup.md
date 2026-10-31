@@ -1,8 +1,7 @@
 # Managed setup SDK calls
 
-Use native manager 0.11.0 and SDK 0.3.0 built from the same release commit. These
-versions are currently unreleased; development uses explicit local builds.
-Published manager v0.10.0 and SDK 0.2.0 do not expose this new setup contract.
+Use native manager 0.12.0 with SDK 0.4.0 (or 0.11.0 with 0.3.0) from the same
+release. Manager v0.10.0 and SDK 0.2.0 do not expose this setup contract.
 Installing or constructing an SDK client never downloads native binaries.
 
 ```python

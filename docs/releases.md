@@ -10,7 +10,7 @@ not build or download the Rust manager.
 ## Checks and publication
 
 v0.11.0 (manager/shim) and SDKs 0.3.0 are published. The checkout targets
-manager/shim 0.12.0, which introduces the `saucepan.platform-sources` store
+manager/shim 0.12.0 and SDKs 0.4.0; 0.12.0 introduces the `saucepan.platform-sources` store
 contract. Earlier roots fail with `unsupported_store`, so the 0.12.0 notes must point
 users to [store contract upgrades](managed-setup.md#store-contract-upgrades) and
 pair it with consumers (such as Powerspec) that register the new source types.

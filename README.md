@@ -6,7 +6,7 @@ Saucepan retrieves sources, produces immutable outputs, and manages optional app
 
 Build with Rust 1.89 or newer, or obtain the manager and shim from a release. Git and Git LFS must also be installed when required by a repository source.
 
-The upcoming 0.11.0 release pairs the Rust manager/shim with Python and TypeScript SDKs 0.3.0. Once published, download the platform ZIP and, when needed, the separate SDK archives from [GitHub releases](https://github.com/ZackaryW/saucepan/releases). Extract both binaries from the same ZIP; SDK installation does not install them. See [release assets and checksums](docs/releases.md#assets) and [SDK installation](sdk/README.md#install-from-a-release).
+Saucepan 0.12.0 pairs the Rust manager/shim with Python and TypeScript SDKs 0.4.0. Download the platform ZIP and, when needed, the separate SDK archives from [GitHub releases](https://github.com/ZackaryW/saucepan/releases). Extract both binaries from the same ZIP; SDK installation does not install them. See [release assets and checksums](docs/releases.md#assets) and [SDK installation](sdk/README.md#install-from-a-release).
 
 ```powershell
 cargo build --locked --bins
@@ -107,7 +107,7 @@ For an update with delayed readers: pin A, prepare and pin B, switch consumers, 
 
 The SDKs accept request objects and invoke an explicitly selected manager or find it on PATH. Installing an SDK does not install the manager. Rust owns policy evaluation, retrieval, publication and retention.
 
-Use SDK 0.3.0 with manager 0.11.0 for managed setup, profile expansion, policy explanations and managed lifecycle calls. Upgrading the SDK or expanding a profile does not change existing claims' adopted policies; changing those associations requires explicit adoption.
+Use SDK 0.4.0 with manager 0.12.0 (or SDK 0.3.0 with manager 0.11.0) for managed setup, profile expansion, policy explanations and managed lifecycle calls. Upgrading the SDK or expanding a profile does not change existing claims' adopted policies; changing those associations requires explicit adoption.
 
 - [Language SDK overview](sdk/README.md): source installation, context/lifetime choices and development commands.
 - [Python SDK](sdk/python/README.md): Python 3.12+ installation and typed usage.
