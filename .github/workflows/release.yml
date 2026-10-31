@@ -72,7 +72,7 @@ jobs:
           compression-level: 0
 
   build:
-    name: Package ${{ matrix.target }}
+    name: Package ${{ matrix.target }}${{ matrix.twin && ' (verification twin)' || '' }}
     needs: prepare
     strategy:
       fail-fast: false
@@ -84,10 +84,15 @@ jobs:
           - { os: windows-latest, target: aarch64-pc-windows-msvc }
           - { os: windows-latest, target: i686-pc-windows-msvc }
           - { os: ubuntu-latest, target: x86_64-unknown-linux-musl }
+          # Verification twins: the same commit with a distinct build ID, so the
+          # lifecycle check can update between two builds. Never published.
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, twin: true }
+          - { os: macos-latest, target: aarch64-apple-darwin, twin: true }
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-musl, twin: true }
     runs-on: ${{ matrix.os }}
     env:
       RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
-      SAUCEPAN_BUILD_ID: ${{ needs.prepare.outputs.tag }}
+      SAUCEPAN_BUILD_ID: ${{ matrix.twin && format('{0}-verify', needs.prepare.outputs.tag) || needs.prepare.outputs.tag }}
       RELEASE_TARGET: ${{ matrix.target }}
     steps:
       - uses: actions/checkout@v7
@@ -108,10 +113,10 @@ jobs:
         run: cargo build --locked --release --bins --target "$RELEASE_TARGET"
       - name: Package binaries with executable modes
         shell: bash
-        run: python scripts/release.py package --target "$RELEASE_TARGET" --binary-dir "target/$RELEASE_TARGET/release"
+        run: python scripts/release.py package --target "$RELEASE_TARGET" --binary-dir "target/$RELEASE_TARGET/release" ${{ matrix.twin && '--twin' || '' }}
       - uses: actions/upload-artifact@v7
         with:
-          name: release-${{ matrix.target }}
+          name: ${{ matrix.twin && 'verify-twin' || 'release' }}-${{ matrix.target }}
           path: dist/*.zip
           if-no-files-found: error
           compression-level: 0
@@ -154,8 +159,11 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
-  release:
-    name: Publish complete release
+  # Stage: the complete validated set as a draft. Drafts are invisible to
+  # releases/latest, releases/tags/<tag> and releases/download, so installers,
+  # setup, self-update and Powerspec cannot obtain an unverified candidate.
+  stage:
+    name: Stage draft release
     needs: [prepare, sdk-packages, build, macos-universal]
     runs-on: ubuntu-latest
     permissions:
@@ -180,12 +188,20 @@ jobs:
         run: |
           python scripts/release.py installers
           python scripts/release.py checksums
+      # Kept so a revoked candidate can still be reproduced after its draft is deleted.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: staged-release
+          path: dist/*
+          if-no-files-found: error
+          compression-level: 0
       - uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
           # prepare requires an existing tag; no tag-creation target is needed.
           # An older target_commitish can require Workflows write permission.
           name: ${{ needs.prepare.outputs.tag }}
+          draft: true
           prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}
           files: |
             dist/*.zip
@@ -199,3 +215,127 @@ jobs:
           fail_on_unmatched_files: true
           overwrite_files: false
           generate_release_notes: true
+
+  # Verify: each host runs acceptance against the draft's own archive, without a
+  # compiler. One failure cancels the others; any failure revokes the candidate.
+  verify:
+    name: Verify ${{ matrix.name }}
+    needs: [prepare, stage]
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { name: windows-pwsh, os: windows-latest, shell: pwsh, target: x86_64-pc-windows-msvc }
+          - { name: windows-bash, os: windows-latest, shell: bash, target: x86_64-pc-windows-msvc }
+          - { name: macos, os: macos-latest, shell: bash, target: aarch64-apple-darwin }
+          - { name: linux, os: ubuntu-latest, shell: bash, target: x86_64-unknown-linux-musl }
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      RELEASE_TARGET: ${{ matrix.target }}
+      VERIFY_NAME: ${{ matrix.name }}
+      SAUCEPAN_ACCEPTANCE_SHELL: ${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@v8
+        with:
+          name: verify-twin-${{ matrix.target }}
+          path: twin
+      # Commands are identical under PowerShell and bash; the logic lives in Python.
+      - name: Download the draft and the previous release; check SHA256SUMS
+        run: python -B scripts/verify_release.py fetch
+      - name: Acceptance against the packaged candidate
+        run: python -B scripts/verify_release.py run
+      - name: Upload acceptance report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: acceptance-${{ matrix.name }}
+          path: reports/*.json
+          if-no-files-found: warn
+
+  # Promote: publish the verified draft unchanged; assets, digests, installers and
+  # SHA256SUMS stay byte-identical. A failure here leaves the draft and the tag
+  # in place for a rerun of this job; it never revokes.
+  promote:
+    name: Publish verified release
+    needs: [prepare, verify]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+    steps:
+      - name: Publish the draft
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$PRERELEASE" = true ]; then
+            gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false
+          else
+            gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+          fi
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,isPrerelease
+
+  # Revoke: any failure or cancellation before promotion withdraws the candidate.
+  # A published release is never revoked; the version tag moves to revoked/.
+  revoke:
+    name: Revoke failed candidate
+    needs: [prepare, sdk-packages, build, macos-universal, stage, verify]
+    if: ${{ always() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag || (github.event_name == 'workflow_dispatch' && inputs.tag) || github.ref_name }}
+      NEEDS_JSON: ${{ toJSON(needs) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Withdraw the draft and move the tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="$GITHUB_REPOSITORY"
+          if draft=$(gh release view "$RELEASE_TAG" --repo "$repo" --json isDraft --jq .isDraft 2>/dev/null); then
+            if [ "$draft" != true ]; then
+              echo "::error::$RELEASE_TAG is already published; published releases are never revoked"
+              exit 1
+            fi
+            gh release delete "$RELEASE_TAG" --repo "$repo" --yes
+          fi
+          if commit=$(gh api "repos/$repo/commits/$RELEASE_TAG" --jq .sha 2>/dev/null); then
+            revoked="revoked/$RELEASE_TAG-${commit:0:12}"
+            gh api "repos/$repo/git/refs" -f ref="refs/tags/$revoked" -f sha="$commit" > /dev/null
+            gh api -X DELETE "repos/$repo/git/refs/tags/$RELEASE_TAG"
+            echo "REVOKED_TAG=$revoked" >> "$GITHUB_ENV"
+          else
+            echo "::warning::tag $RELEASE_TAG was not found; nothing to move"
+          fi
+      - uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          pattern: acceptance-*
+          path: reports
+      - name: Summarize failures and reproduction steps
+        if: always()
+        run: python -B scripts/verify_release.py summarize

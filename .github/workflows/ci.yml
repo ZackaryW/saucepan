@@ -1,0 +1,42 @@
+name: Linux checks
+
+# The only automatic checks: one Linux compile and test pass per push or pull
+# request. Windows, macOS and from-source acceptance stay in the manual
+# core-platforms workflow; releases verify their packaged artifacts instead.
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Format, lint and test (Linux)
+    runs-on: ubuntu-latest
+    env:
+      RUST_BACKTRACE: '1'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Install Git LFS
+        run: sudo apt-get update && sudo apt-get install -y git-lfs
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Rust tests
+        run: cargo test --locked --all-targets
+      - name: Release packaging tests
+        run: python -B -m unittest discover -s scripts -p 'test_*release.py'
+      - name: Acceptance harness self-tests
+        run: python -B -m unittest discover -s acceptance/tests -t .
