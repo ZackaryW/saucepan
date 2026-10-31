@@ -1,4 +1,5 @@
 use crate::{
+    error::{Error, ErrorCode},
     models::source::Source,
     utils::{
         path::{plain_metadata, relative_path},
@@ -7,6 +8,23 @@ use crate::{
 };
 use anyhow::{Result, ensure};
 use std::fs;
+
+/// Parse a source definition, naming the replacements for the removed `git` type.
+pub(crate) fn parse(input: &[u8]) -> Result<Source> {
+    serde_json::from_slice(input).map_err(|error| {
+        let removed = serde_json::from_slice::<serde_json::Value>(input)
+            .is_ok_and(|value| value.get("type").and_then(|t| t.as_str()) == Some("git"));
+        if removed {
+            Error::new(
+                ErrorCode::InvalidRequest,
+                "source type `git` was removed; use `git_repo` or `github_repo`",
+            )
+            .into()
+        } else {
+            error.into()
+        }
+    })
+}
 
 /// Canonicalize within one source type; types are never rewritten into others.
 pub(crate) fn normalize(source: Source) -> Result<Source> {
@@ -179,6 +197,11 @@ mod tests {
             serde_json::from_str(r#"{"type":"git","origin":"https://example.com/a"}"#);
         let message = parsed.unwrap_err().to_string();
         assert!(message.contains("git_repo") && message.contains("github_repo"));
+        let error = Error::from_anyhow(
+            &parse(br#"{"type":"git","origin":"https://example.com/a"}"#).unwrap_err(),
+        );
+        assert_eq!(error.code, ErrorCode::InvalidRequest);
+        assert!(error.message.contains("git_repo") && error.message.contains("github_repo"));
     }
 
     #[test]

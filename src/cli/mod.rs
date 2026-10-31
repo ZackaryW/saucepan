@@ -1,5 +1,5 @@
+use crate::core::Store;
 use crate::models::store::VerificationMode;
-use crate::{core::Store, models::source::Source};
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
@@ -612,7 +612,7 @@ fn run_store(args: Args) -> Result<()> {
                     serde_json::json!({"build":env!("SAUCEPAN_BUILD_ID"),"root":store.root()})
                 }
                 Commands::RegisterSource { file } => {
-                    let source: Source = serde_json::from_slice(&std::fs::read(file)?)?;
+                    let source = crate::core::source::git::parse(&std::fs::read(file)?)?;
                     serde_json::to_value(store.register_source(source)?)?
                 }
                 Commands::QuerySources(input) => {
