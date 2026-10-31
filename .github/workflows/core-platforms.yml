@@ -83,13 +83,15 @@ jobs:
       # setup and installer suite (tag setup); some defects only reproduce under one
       # launcher (for example the git binary Git Bash resolves).
       - name: Real-build acceptance (Windows PowerShell)
+        id: acceptance_pwsh
         if: runner.os == 'Windows'
         shell: pwsh
         env:
           SAUCEPAN_ACCEPTANCE_SHELL: powershell
         run: python -B -m acceptance
       - name: Real-build acceptance (Windows Git Bash)
-        if: runner.os == 'Windows'
+        # Still runs when the PowerShell run failed, so each environment reports.
+        if: runner.os == 'Windows' && (success() || steps.acceptance_pwsh.outcome == 'failure')
         shell: bash
         env:
           SAUCEPAN_ACCEPTANCE_SHELL: git-bash

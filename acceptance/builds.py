@@ -54,7 +54,7 @@ class Builds:
         """Debug manager and shim from the checkout."""
         with self._lock:
             if "debug" not in self._cache:
-                self._cargo(["build", "--bins"], dict(ORIGINAL_ENV))
+                self._cargo(["build", "--locked", "--bins"], dict(ORIGINAL_ENV))
                 target = REPO / "target" / "debug"
                 manager = target / ("saucepan" + EXE)
                 self._cache["debug"] = Build("debug", manager, target / ("saucepan-shim" + EXE),
@@ -65,7 +65,7 @@ class Builds:
         """Release build stamped with ``label``, copied out and packed as ``saucepan.zip``."""
         with self._lock:
             if label not in self._cache:
-                self._cargo(["build", "--release", "--bins"], dict(ORIGINAL_ENV, SAUCEPAN_BUILD_ID=label))
+                self._cargo(["build", "--locked", "--release", "--bins"], dict(ORIGINAL_ENV, SAUCEPAN_BUILD_ID=label))
                 target = REPO / "target" / "release"
                 directory = self.directory / label
                 directory.mkdir(parents=True, exist_ok=True)

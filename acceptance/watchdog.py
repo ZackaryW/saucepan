@@ -83,8 +83,10 @@ class Watchdog:
         def expire():
             report = {"label": label, "elapsed": time.monotonic() - start, "processes": []}
             try:
+                # Drop the snapshot command itself (PowerShell on Windows, ps elsewhere).
                 tree = [r for r in descendants(os.getpid(), processes())
-                        if "Get-CimInstance Win32_Process" not in r["command"]]
+                        if "Get-CimInstance Win32_Process" not in r["command"]
+                        and not r["command"].startswith("ps -eo")]
                 report["processes"] = tree
             except Exception as error:  # the kill still runs without a snapshot
                 report["snapshot_error"] = repr(error)
