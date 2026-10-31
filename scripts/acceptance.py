@@ -1,7 +1,8 @@
-"""Build two real releases and exercise the isolated, inspectable mock installation.
+"""Build two real releases and exercise an isolated, inspectable installation.
 
-Run with python scripts/acceptance.py. Never deletes an existing mock root.
-Fixtures and build copies live under target/acceptance, not inside package data.
+Run with python scripts/acceptance.py. Each run initializes its own root under
+target/acceptance/RUN; no existing root is opened or deleted. Freshness is driven
+by the explicit --test-now clock and registered policies.
 """
 from __future__ import annotations
 import hashlib
@@ -17,8 +18,9 @@ import uuid
 import zipfile
 
 REPO = Path(__file__).resolve().parents[1]
-ROOT = REPO / "mock"
 RUN = REPO / "target" / "acceptance" / str(uuid.uuid4())
+ROOT = RUN / "root"
+DAY = 86400
 EXT = ".exe" if os.name == "nt" else ""
 NAME = "saucepan" + EXT
 RUN.mkdir(parents=True)
@@ -55,7 +57,9 @@ state = {"version": 1, "checks": 0, "fail": False}
 
 class Fixture(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path.startswith("/repos/"):
+        if "/releases/assets/" in self.path:
+            data = archives[int(self.path.rsplit("/", 1)[1])].read_bytes()
+        elif self.path.startswith("/repos/"):
             state["checks"] += 1
             if state["fail"]:
                 self.send_error(503)
@@ -86,16 +90,15 @@ threading.Thread(target=server.serve_forever, daemon=True).start()
 now = 100
 
 
-def call(*args, executable=exe_b, ok=True, raw=False, force=False):
+def call(*args, executable=exe_b, ok=True, raw=False):
     command = [str(executable), "--root", str(ROOT), "--test-github-api", base, "--test-now", str(now)]
-    if force:
-        command.append("--force-refresh")
     result = subprocess.run(command + list(map(str, args)), cwd=REPO, capture_output=True, text=True, timeout=90)
     if ok:
         assert result.returncode == 0, result.stderr
     else:
         assert result.returncode != 0, result.stdout
-        return result.stderr.strip()
+        # Lifecycle outcomes are recorded JSON on stdout (exit 2); errors use stderr.
+        return json.loads(result.stdout) if result.stdout.strip() else result.stderr.strip()
     return result.stdout.strip() if raw else json.loads(result.stdout)
 
 
@@ -109,6 +112,10 @@ def record(entry):
     return call("inspect", entry)
 
 
+def claims(app):
+    return {view["claim"]["uuid"]: view["claim"] for view in call("claims", app)}
+
+
 def await_file(path):
     end = time.monotonic() + 30
     while not path.exists():
@@ -117,50 +124,49 @@ def await_file(path):
 
 
 try:
-    if ROOT.exists() and any(ROOT.iterdir()):
-        # Open and inspect every existing record before adding this run's fixtures.
-        assert all((ROOT / p).is_dir() for p in ("source", "index", "store", "bin", ".locks", ".staging"))
-        for index in (ROOT / "index").iterdir():
-            record(index.name)
-        print("Reusing compatible mock; preserving all existing contents", flush=True)
-    else:
-        call("init")
+    call("init")
     # Unique fixture source per run keeps prior source metadata inspectable.
     source = call("register-source", payload("source.json", {"type": "github_release", "repo": f"fixture/saucepan-{RUN.name}"}))
     platform = {"os": "windows" if os.name == "nt" else ("macos" if __import__("sys").platform == "darwin" else "linux"),
                 "arch": "aarch64" if __import__("platform").machine().lower() in ("arm64", "aarch64") else "x86_64"}
+    # Profiles expand to flat policies; each run customizes one leaf per request family.
+    keep_one = {"uuid": str(uuid.uuid4()), "type": "revision_policy", "history": "latest", "keep": 1}
+    app_profile = call("profile", "managed", "--for-install", "--catalog", payload("app-custom.json", [keep_one]),
+                       "--acquisition-policy", keep_one["uuid"])
+    new_entry = {"uuid": str(uuid.uuid4()), "type": "identical_pull_policy", "strategy": "new_entry"}
+    ordinary_profile = call("profile", "managed", "--catalog", payload("ordinary-custom.json", [new_entry]),
+                            "--acquisition-policy", new_entry["uuid"])
+    reuse_profile = call("profile", "managed")
+    allow_stale = {"uuid": str(uuid.uuid4()), "type": "stale_policy", "allow_stale": True}
+    stale_profile = call("profile", "managed", "--catalog", payload("stale-custom.json", [allow_stale]),
+                         "--retrieval-policy", allow_stale["uuid"])
+    asset_filter = {"uuid": str(uuid.uuid4()), "type": "github_release_asset_filter", "asset_patterns": ["saucepan.zip"]}
+    catalog = {policy["uuid"]: policy for profile in (app_profile, ordinary_profile, reuse_profile, stale_profile)
+               for policy in profile["catalog"]}
+    call("register-policies", payload("policies.json", [*catalog.values(), asset_filter]))
     request = {"source_uuid": source["uuid"], "selector": {"type": "latest_stable"},
-               "selection": {"platform": platform, "format": "zip", "bin": [NAME],
-                             "filters": [{"platform": platform, "asset_patterns": ["saucepan.zip"]}]},
-               "policies": {"eviction": {"strategy": "latest", "keep": 1}, "protection": {"type": "useable_app"}}}
+               "selection": {"format": "zip", "bin": [NAME], "filter_refs": [asset_filter["uuid"]]},
+               "policy_refs": app_profile["combined_policy_refs"]}
     request_path = payload("request.json", request)
     probe = payload("probe.json", {"args": ["--version"], "stdout_contains": "saucepan ", "timeout_seconds": 10})
     shim = ROOT / "bin" / NAME
     built_shim = REPO / "target" / "release" / ("saucepan-shim" + EXT)
-    if shim.exists():
-        config = json.loads(shim.with_suffix(".shim.json").read_text())
-        app = config["app"]
-        claimed = call("acquire", request_path, "--app", app)
-        call("activate", app, claimed["claim"]["entry_uuid"], NAME, probe)
-        boot = {"app": app, "claimed": claimed}
-    else:
-        operation = call("bootstrap", request_path, built_shim)
-        boot = {"app": operation["app"], "claimed": {"claim": {"uuid": operation["claim"], "entry_uuid": operation["candidate"]}}}
-    app, claim = boot["app"], boot["claimed"]["claim"]["uuid"]
-    a = boot["claimed"]["claim"]["entry_uuid"]
+    boot = call("bootstrap", request_path, built_shim, "--operation", uuid.uuid4())
+    assert boot["status"] == "complete", boot
+    app, claim, a = boot["app"], boot["claim"], boot["candidate"]
     assert digest(ROOT / "store" / a / NAME) == digest(exe_a)
     version_a = call("--version", executable=shim, raw=True)
     assert "acceptance-a" in version_a
     initial_checks = state["checks"]
     state["version"] = 2
-    now = 86499
+    now = 100 + DAY - 1
     cached = call("update-claim", app, claim)
     assert cached["claim"]["entry_uuid"] == a and state["checks"] == initial_checks
     ready, release = RUN / "ready", RUN / "release"
     old = subprocess.Popen([str(shim), "--root", str(ROOT), "test-hold", str(ready), str(release)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     await_file(ready)
     assert ready.read_text() == "acceptance-a"
-    now = 86500
+    now = 100 + DAY
     update = call("self-update", app, claim)
     b = update["candidate"]
     assert a != b and state["checks"] == initial_checks + 1
@@ -168,11 +174,15 @@ try:
     version_b = call("--version", executable=shim, raw=True)
     assert "acceptance-b" in version_b
     assert a in call("reclaim")["deferred"]
-    call("activate", app, a, NAME, probe)
+    # Activation follows the claim; rollback moves the claim and binding together.
+    assert call("rollback", app, claim, a, probe)["status"] == "complete"
     assert "acceptance-a" in call("--version", executable=shim, raw=True)
-    call("activate", app, b, NAME, probe)
+    assert call("rollback", app, claim, b, probe)["status"] == "complete"
+    # An expired discovery observes release 3, whose executable fails the probe.
     state["version"] = 3
-    failure = call("self-update", app, claim, force=True, ok=False)
+    now += DAY
+    failure = call("self-update", app, claim, ok=False)
+    assert failure["status"] == "failed", failure
     assert record(app)["active"]["entry_uuid"] == b
     assert "acceptance-b" in call("--version", executable=shim, raw=True)
     release.write_text("exit")
@@ -183,39 +193,46 @@ try:
     call("reclaim")
     assert record(a)["state"] == "reclaimed"
     state["version"] = 2
-    call("self-update", app, claim, force=True)
+    now += DAY
+    call("self-update", app, claim)
     # Two independent ordinary app claims and eleven-entry retention.
     ordinary = json.loads(json.dumps(request))
-    ordinary["policies"] = {"identical": "new_entry"}
+    ordinary["policy_refs"] = ordinary_profile["combined_policy_refs"]
     ordinary["selection"]["bin"] = []  # generic archive content is a separate item
     ordinary_path = payload("ordinary.json", ordinary)
     app_a = call("register-app", f"consumer-a-{RUN.name}")["uuid"]
     app_b = call("register-app", f"consumer-b-{RUN.name}")["uuid"]
-    first = call("acquire", ordinary_path, "--app", app_a)
+    first = call("acquire", ordinary_path, "--app", app_a, "--scope", "acceptance/ordinary")
     oldest = first["claim"]["entry_uuid"]
-    other = call("acquire", ordinary_path, "--app", app_b)
+    other = call("acquire", ordinary_path, "--app", app_b, "--scope", "acceptance/ordinary")
     for _ in range(9):
         call("acquire", ordinary_path)
     assert record(oldest)["state"] == "reclaimed"
-    assert record(app_a)["claims"][first["claim"]["uuid"]]["entry_uuid"] == oldest
+    assert claims(app_a)[first["claim"]["uuid"]]["entry_uuid"] == oldest
     refreshed = call("update-claim", app_a, first["claim"]["uuid"])
     assert refreshed["claim"]["entry_uuid"] != oldest
-    assert record(app_b)["claims"][other["claim"]["uuid"]]["entry_uuid"] == other["claim"]["entry_uuid"]
-    reuse = json.loads(json.dumps(ordinary)); reuse["policies"]["identical"] = "reuse"
+    assert claims(app_b)[other["claim"]["uuid"]]["entry_uuid"] == other["claim"]["entry_uuid"]
+    reuse = json.loads(json.dumps(ordinary)); reuse["policy_refs"] = reuse_profile["combined_policy_refs"]
     reused = call("acquire", payload("reuse.json", reuse))
     assert reused["reused"]
+    # With the provider down, expired discovery fails unless stale results are allowed.
+    stale_request = json.loads(json.dumps(reuse)); stale_request["policy_refs"] = stale_profile["combined_policy_refs"]
+    stale_path = payload("stale.json", stale_request)
+    call("acquire", stale_path)
     state["fail"] = True
-    call("update-claim", app, claim, force=True, ok=False)
-    stale = call("--allow-stale", "update-claim", app, claim, force=True)
-    assert stale["acquired"]["stale"]
+    now += DAY
+    call("update-claim", app, claim, ok=False)
+    stale = call("acquire", stale_path)
+    assert stale["stale"], stale
     state["fail"] = False
-    assert not (ROOT / "source" / source["uuid"]).exists()
+    # Release retrievals are cached as downloaded assets; no Git checkout is created.
+    assert not (ROOT / "source" / source["uuid"] / "repo").exists()
     call("--version", executable=shim, raw=True)
     report = {"root": str(ROOT), "run": str(RUN), "platform": platform, "build_a": {"version": version_a, "sha256": digest(exe_a), "entry": a},
               "build_b": {"version": version_b, "sha256": digest(exe_b), "entry": b}, "app": app, "claim": claim,
               "active": record(app)["active"], "old_process": old_result, "failed_candidate": failure,
               "oldest_reclaimed": oldest, "reacquired": refreshed["claim"]["entry_uuid"], "discovery_checks": state["checks"],
-              "root_isolation": "all commands explicit root; child root matched; no production-root fallback", "result": "passed"}
+              "root_isolation": "fresh per-run root; all commands explicit root; child root matched; no production-root fallback", "result": "passed"}
     (RUN / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     (REPO / "target" / "acceptance" / "latest.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(json.dumps(report, indent=2), flush=True)
