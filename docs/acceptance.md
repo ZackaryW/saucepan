@@ -23,6 +23,7 @@ The harness builds the debug manager and shim once. The `lifecycle` tag also bui
 | `platform-sources` | `github_raw`, `github_source` and `git_raw` with credentials |
 | `cli` | Help, `--root` precedence, JSON error envelope, exit codes |
 | `setup` | Managed setup and the PowerShell/POSIX installers (`scripts/test_setup.py`) |
+| `release` | Self-update from the previous published release (artifacts mode with `--previous`) |
 
 Harness self-tests: `python -m unittest discover -s acceptance/tests -t .`
 
@@ -50,4 +51,18 @@ Add `acceptance/scenarios/test_<topic>.py` with a `Scenario` subclass and a `tag
 
 Do not start servers or build manager argv in a scenario. Extend the forge or the admin adapter, so a provider or CLI change is fixed in one place.
 
-Hosted checks (`core-platforms.yml`) run acceptance on Windows from PowerShell and Git Bash and on macOS and Linux from bash. Each run uploads its own report.
+Hosted checks (`core-platforms.yml`) run acceptance from source on Windows from PowerShell and Git Bash and on macOS and Linux from bash. Each run uploads its own report.
+
+## Test packaged release artifacts
+
+`--artifacts` runs the same scenarios against downloaded release assets instead of building; nothing is compiled.
+
+```sh
+python -m acceptance --artifacts dist --twin twin --previous previous
+```
+
+- `dist`: the candidate's assets (at least `saucepan-<tag>-<host-target>.zip`, `install.ps1`, `install.sh`, `SHA256SUMS`). The host archive supplies the manager and shim; setup scenarios run the candidate's own installers, and one installs the candidate tag from its real archive and checksums.
+- `twin`: `verify-twin-<host-target>.zip`, the same commit with build ID `<tag>-verify`. The `lifecycle` scenario updates from the candidate to the twin.
+- `previous` (optional): the previous published release's host archive. The `release` tag's upgrade scenario installs it through its own setup, self-updates to the candidate and asserts a working upgrade when the store contract is unchanged, or the documented `unsupported_store` reinstall guidance when it changed.
+
+The report adds an `artifacts` section with the candidate tag, every archive digest, the twin and previous release, and the packaged targets that were not verified. The release workflow runs this mode on each verified platform before publishing (see [gated publication](releases.md#gated-publication)), and a revoked run's summary prints the `gh run download` and `python -m acceptance` commands that reproduce a failure against the same archives.

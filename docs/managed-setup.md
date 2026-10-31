@@ -1,9 +1,8 @@
 # Managed setup
 
-This command surface is introduced in manager 0.11.0 with SDKs 0.3.0, currently
-unreleased. Published v0.10.0 binaries do not have it; installing an SDK does not
-add native commands. An actual immutable release must be selected before
-production installer adoption.
+This command surface was introduced in manager v0.11.0 with SDKs 0.3.0, both
+published. v0.10.0 binaries do not have it; installing an SDK does not add native
+commands. Select an exact published release for production installer adoption.
 
 Obtain a matching manager and shim outside the selected store. Run the manager
 directly for first setup, passing an exact release tag:
@@ -56,18 +55,23 @@ roots containing these records, and a separate root for older incompatible tools
 
 ## Store contract upgrades
 
-Saucepan 0.11.0 replaces the `git` source type with `git_repo`, makes
+The release after v0.11.0 replaces the `git` source type with `git_repo`, makes
 `github_repo` a persisted type and adds `github_raw`, `git_raw` and
 `github_source`. Stores record the `saucepan.platform-sources` contract; roots
 created by earlier releases (`nested-policy` or `flat-policy-resources`) fail
 with `unsupported_store` and are never converted in place. To upgrade a managed
-installation, move the old root aside and reinstall into a fresh root with the
-official installer:
+installation, move the old root aside and reinstall into a fresh root with that
+release's official installer (`vX.Y.Z` is the new release tag):
 
 ```sh
-mv ~/.saucepan ~/.saucepan.pre-0.11
-sh ./install.sh --version v0.11.0 --root ~/.saucepan --operation "$(uuidgen)"
+mv ~/.saucepan ~/.saucepan.pre-upgrade
+sh ./install.sh --version vX.Y.Z --root ~/.saucepan --operation "$(uuidgen)"
 ```
+
+A v0.11.0 installation that runs `self-update` to that release completes the
+update (its probe only runs `--version`) and then fails every store command with
+this guidance until the root is moved aside and reinstalled; release
+verification asserts exactly this.
 
 Consumers must register sources with the new types in a paired release; for
 example, Powerspec moves from `{"type": "git"}` to `github_repo` or `git_repo`.
