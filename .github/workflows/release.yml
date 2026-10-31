@@ -301,6 +301,19 @@ jobs:
             gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
           fi
           gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,isPrerelease
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: acceptance-*
+          path: reports
+      - name: Summarize verification and unverified targets
+        run: python -B scripts/verify_release.py published
 
   # Revoke: any failure or cancellation before promotion withdraws the candidate.
   # A published release is never revoked; the version tag moves to revoked/.

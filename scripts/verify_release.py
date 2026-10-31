@@ -4,6 +4,7 @@ check-draft confirm the draft's assets are byte-identical to the staged set (sta
 fetch      check the staged candidate against SHA256SUMS and fetch the previous release's host archive
 run        run artifacts-mode acceptance, keep its report and write the job summary
 summarize  write the revoke summary from every uploaded report and the failed jobs
+published  write the promotion summary: per-platform results and targets no job verified
 
 Environment: RELEASE_TAG, GITHUB_REPOSITORY, RELEASE_TARGET (fetch/run),
 VERIFY_NAME (run), NEEDS_JSON and REVOKED_TAG (summarize). Requires the gh CLI.
@@ -137,12 +138,30 @@ def run(args) -> None:
              f"{'FAILED' if failed or code else 'passed'}",
              f"summary: {report['summary']}"]
     lines += [f"- failed: `{scenario}`" for scenario in failed]
-    if artifacts.get("unverified_targets"):
-        lines.append(f"- {UNVERIFIED_NOTE}: {', '.join(artifacts['unverified_targets'])}")
     if failed:
         lines.append(f"- reproduce: `{reproduction(report, os.environ.get('GITHUB_RUN_ID', '<run>'), failed[0].rsplit('.', 1)[-1])}`")
     summary("\n".join(lines))
     raise SystemExit(code)
+
+
+def unverified(reports: list[dict]) -> list[str]:
+    """Packaged targets that no verification job exercised."""
+    packaged = {t for r in reports for t in (r.get("artifacts") or {}).get("unverified_targets", [])}
+    verified = {r.get("target") for r in reports}
+    return sorted((packaged | verified) - verified)
+
+
+def load_reports(directory: str) -> list[dict]:
+    return [json.loads(p.read_text(encoding="utf-8")) for p in sorted(Path(directory).rglob("acceptance-*.json"))]
+
+
+def published(args) -> None:
+    reports = load_reports(args.reports)
+    lines = [f"## Release {os.environ.get('RELEASE_TAG', '')} published after verification"]
+    lines += [f"- {r.get('verify_name')} ({r.get('target')}): {r['summary']}" for r in reports]
+    if unverified(reports):
+        lines.append(f"- {UNVERIFIED_NOTE}: {', '.join(unverified(reports))}")
+    summary("\n".join(lines))
 
 
 def summarize(args) -> None:
@@ -161,6 +180,8 @@ def summarize(args) -> None:
         lines += [f"- `{scenario}`" for scenario in failed]
         if failed:
             lines.append(f"- reproduce: `{reproduction(report, run_id, failed[0].rsplit('.', 1)[-1])}`")
+    if unverified(load_reports(args.reports)):
+        lines.append(f"- {UNVERIFIED_NOTE}: {', '.join(unverified(load_reports(args.reports)))}")
     lines.append("Fix the cause, commit, and push the same version tag again to retry.")
     summary("\n".join(lines))
 
@@ -175,11 +196,13 @@ def main() -> None:
         command.add_argument("--previous", default="previous")
         command.add_argument("--reports", default="reports")
     commands.add_parser("summarize").add_argument("--reports", default="reports")
+    commands.add_parser("published").add_argument("--reports", default="reports")
     draft = commands.add_parser("check-draft")
     draft.add_argument("--dist", default="dist")
     draft.add_argument("--draft", default="draft")
     args = parser.parse_args()
-    {"fetch": fetch, "run": run, "summarize": summarize, "check-draft": check_draft}[args.command](args)
+    {"fetch": fetch, "run": run, "summarize": summarize, "published": published,
+     "check-draft": check_draft}[args.command](args)
 
 
 if __name__ == "__main__":
