@@ -402,7 +402,7 @@ class SetupAcceptance(unittest.TestCase):
         shutil.copy2(EXE, launcher)
         expected = hashlib.sha256(launcher.read_bytes()).hexdigest()
         ready, release = Path(self.temp.name) / "ready", Path(self.temp.name) / "release"
-        running = subprocess.Popen([str(launcher), "test-hold", str(ready), str(release)],
+        running = subprocess.Popen([str(launcher), "--root", str(self.root), "test-hold", str(ready), str(release)],
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         try:
             deadline = time.monotonic() + 10
